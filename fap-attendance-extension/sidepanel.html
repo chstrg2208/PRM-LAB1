@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAP Attendance Assistant</title>
+  <link rel="stylesheet" href="sidepanel.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Header Bar -->
+  <header class="app-header">
+    <div class="brand-group">
+      <div class="logo-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+          <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+        </svg>
+      </div>
+      <div>
+        <div class="title-wrap">
+          <h1 class="app-title">FAP Assistant</h1>
+          <span class="version-tag">PRO</span>
+        </div>
+        <p class="app-desc">Điểm danh FPT & Google Sheet DB</p>
+      </div>
+    </div>
+    <div id="connectionStatus" class="pulse-badge disconnected">
+      <span class="beacon"></span>
+      <span id="statusText">Chưa kết nối DB</span>
+    </div>
+  </header>
+
+  <!-- Modern Navigation Tabs -->
+  <nav class="nav-segment">
+    <button class="nav-pill active" data-tab="tab-attendance">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="9 11 12 14 22 4"></polyline>
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+      </svg>
+      Điểm danh
+    </button>
+    <button class="nav-pill" data-tab="tab-students">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+        <circle cx="9" cy="7" r="4"></circle>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+      </svg>
+      Sinh viên
+    </button>
+    <button class="nav-pill" data-tab="tab-settings">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+      Cài đặt
+    </button>
+  </nav>
+
+  <!-- Main Views Container -->
+  <main class="main-body">
+    <!-- TAB 1: ATTENDANCE -->
+    <section id="tab-attendance" class="tab-view active">
+      <!-- Session Bar -->
+      <div class="glass-card control-panel">
+        <div class="row-inputs">
+          <div class="input-wrap">
+            <span class="input-label">LỚP HỌC</span>
+            <div class="select-box">
+              <select id="selectClass">
+                <option value="SE1801">SE1801</option>
+                <option value="SE1802">SE1802</option>
+                <option value="SE1803">SE1803</option>
+                <option value="IA1801">IA1801</option>
+                <option value="PRM392">PRM392-Lab</option>
+              </select>
+            </div>
+          </div>
+          <div class="input-wrap flex-2">
+            <span class="input-label">SLOT HỌC</span>
+            <div class="select-box">
+              <select id="selectSlot">
+                <option value="1">Slot 1 (07:30 - 09:50)</option>
+                <option value="2">Slot 2 (10:00 - 12:20)</option>
+                <option value="3">Slot 3 (12:50 - 15:10)</option>
+                <option value="4">Slot 4 (15:20 - 17:40)</option>
+                <option value="5">Slot 5 (18:00 - 20:20)</option>
+                <option value="6">Slot 6 (20:30 - 22:50)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Attendance Rate Progress Bar -->
+        <div class="rate-progress-box">
+          <div class="rate-header">
+            <span class="rate-title">Tỷ lệ có mặt hôm nay</span>
+            <span id="ratePercentage" class="rate-val">100%</span>
+          </div>
+          <div class="progress-track">
+            <div id="rateProgressBar" class="progress-fill" style="width: 100%;"></div>
+          </div>
+        </div>
+
+        <!-- Hero Buttons Grid -->
+        <div class="action-grid">
+          <button id="btnScrapeFap" class="action-btn btn-scrape" title="Lấy danh sách SV từ trang FAP">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Quét FAP
+          </button>
+          <button id="btnReloadSheet" class="action-btn btn-sheet-load" title="Tải dữ liệu từ Google Sheet">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            Tải Sheet
+          </button>
+          <button id="btnSaveSheet" class="action-btn btn-save" title="Lưu điểm danh vào Google Sheet">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+            Lưu Sheet
+          </button>
+          <button id="btnApplyFap" class="action-btn btn-fap-sync" title="Tự động tick chọn lên FAP">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            Điền FAP
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Status Filter Chips & Counters -->
+      <div class="filter-strip">
+        <div class="filter-chips">
+          <button class="chip active" data-filter="all">Tất cả <span id="countAll">0</span></button>
+          <button class="chip chip-present" data-filter="present">Có mặt <span id="countPresent">0</span></button>
+          <button class="chip chip-absent" data-filter="absent">Vắng <span id="countAbsent">0</span></button>
+        </div>
+        <div class="quick-batch">
+          <button id="btnAllPresent" class="batch-link text-emerald" title="Đặt tất cả có mặt">✓ Tất cả</button>
+          <span class="sep">•</span>
+          <button id="btnAllAbsent" class="batch-link text-rose" title="Đặt tất cả vắng">✕ Vắng hết</button>
+        </div>
+      </div>
+
+      <!-- Live Search -->
+      <div class="search-wrap">
+        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="inputSearch" placeholder="Tìm theo MSSV hoặc họ tên...">
+      </div>
+
+      <!-- Scrollable Student List -->
+      <div id="studentListContainer" class="student-deck">
+        <!-- Rendered by JS -->
+      </div>
+    </section>
+
+    <!-- TAB 2: STUDENTS VIEW -->
+    <section id="tab-students" class="tab-view">
+      <div class="glass-card">
+        <div class="card-head">
+          <div>
+            <h2 class="head-title">Danh sách sinh viên</h2>
+            <p class="head-sub">Lớp <span id="lblCurrentClass" class="text-orange">SE1801</span></p>
+          </div>
+          <button id="btnSyncStudents" class="btn-gradient-sm">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            Đồng bộ Sheet
+          </button>
+        </div>
+        <div id="studentsManageList" class="student-deck" style="max-height: 480px;">
+          <!-- Injected via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: SETTINGS -->
+    <section id="tab-settings" class="tab-view">
+      <div class="glass-card">
+        <h2 class="head-title">Google Apps Script Web App</h2>
+        <p class="head-sub">Dán URL Web App triển khai từ Google Sheet DB:</p>
+        <div class="input-wrap mt-3">
+          <input type="text" id="inputSheetUrl" class="text-input" placeholder="https://script.google.com/macros/s/.../exec">
+        </div>
+        <div class="btn-row mt-3">
+          <button id="btnTestSheet" class="btn-primary-action">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+            Kiểm tra & Lưu
+          </button>
+          <button id="btnOpenSheet" class="btn-secondary-action">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            Mở Sheet
+          </button>
+        </div>
+        <div id="testResultBox" class="result-alert hidden"></div>
+      </div>
+
+      <div class="glass-card mt-3">
+        <h2 class="head-title">Mã Nguồn Google Apps Script</h2>
+        <p class="head-sub">Copy mã sau dán vào <b>Extensions > Apps Script</b> trên Google Sheet:</p>
+        <button id="btnCopyAppsScript" class="btn-code-copy mt-3">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          Sao chép toàn bộ mã Apps Script
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

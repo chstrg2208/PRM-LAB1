@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "FAP Attendance Assistant - Hỗ trợ Điểm danh FAP",
+  "version": "1.0.0",
+  "description": "Tiện ích hỗ trợ điểm danh sinh viên trên cổng đào tạo FAP và đồng bộ dữ liệu với Google Sheets.",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://fap.fpt.edu.vn/*",
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*",
+    "file:///*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Mở Bảng Điểm Danh FAP",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://fap.fpt.edu.vn/*",
+        "file:///*test-mock-fap.html*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

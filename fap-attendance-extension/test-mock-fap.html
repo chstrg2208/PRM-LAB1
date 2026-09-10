@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>FPT Academic Portal - Take Attendance (Mock Testing)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, Tahoma, sans-serif; }
+    body { background-color: #f0f2f5; color: #333; padding: 20px; }
+    .header { background: #fff; padding: 16px 24px; border-radius: 8px; margin-bottom: 20px; border-top: 4px solid #f36f21; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    h1 { color: #f36f21; font-size: 20px; margin-bottom: 8px; }
+    .meta { font-size: 13px; color: #555; }
+    .container { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+    th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; }
+    th { background-color: #f36f21; color: white; font-weight: bold; text-align: center; }
+    tr:nth-child(even) { background-color: #fafafa; }
+    tr:hover { background-color: #f5f5f5; }
+    .radio-label { margin-right: 12px; cursor: pointer; font-weight: 500; font-size: 12px; }
+    .radio-label input { cursor: pointer; }
+    .note-input { width: 100%; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+    .btn-submit { background-color: #f36f21; color: white; border: none; padding: 10px 24px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 16px; font-size: 14px; }
+    .btn-submit:hover { background-color: #e05c10; }
+    .avatar { width: 36px; height: 36px; border-radius: 50%; background-color: #ffe0cc; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #f36f21; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>FPT University Academic Portal (FAP)</h1>
+    <p class="meta"><b>Course:</b> PRM392 (Mobile Programming) | <b>Class:</b> SE1801 | <b>Slot:</b> Slot 1 (07:30 - 09:50) | <b>Campus:</b> FU - Hòa Lạc</p>
+  </div>
+
+  <div class="container">
+    <h3 style="color: #333; margin-bottom: 6px;">Take Attendance (Điểm danh học viên)</h3>
+    <p style="font-size: 12px; color: #666;">Trang thử nghiệm giả lập cấu trúc HTML của fap.fpt.edu.vn để bạn kiểm tra tính năng tự động điền của Extension.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 40px;">No</th>
+          <th style="width: 50px;">Image</th>
+          <th style="width: 110px;">RollNumber</th>
+          <th>Full Name</th>
+          <th style="width: 240px;">Attendance Status</th>
+          <th style="width: 200px;">Comment</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td align="center">1</td>
+          <td align="center"><div class="avatar">AN</div></td>
+          <td><b>SE170123</b></td>
+          <td>Nguyễn Văn An</td>
+          <td>
+            <label class="radio-label"><input type="radio" name="att_1" value="1" checked> Present (Có mặt)</label>
+            <label class="radio-label"><input type="radio" name="att_1" value="0"> Absent (Vắng)</label>
+          </td>
+          <td><input type="text" class="note-input" placeholder="Note..."></td>
+        </tr>
+        <tr>
+          <td align="center">2</td>
+          <td align="center"><div class="avatar">BI</div></td>
+          <td><b>SE170456</b></td>
+          <td>Trần Thị Bình</td>
+          <td>
+            <label class="radio-label"><input type="radio" name="att_2" value="1" checked> Present (Có mặt)</label>
+            <label class="radio-label"><input type="radio" name="att_2" value="0"> Absent (Vắng)</label>
+          </td>
+          <td><input type="text" class="note-input" placeholder="Note..."></td>
+        </tr>
+        <tr>
+          <td align="center">3</td>
+          <td align="center"><div class="avatar">CU</div></td>
+          <td><b>SE170789</b></td>
+          <td>Lê Hoàng Cường</td>
+          <td>
+            <label class="radio-label"><input type="radio" name="att_3" value="1" checked> Present (Có mặt)</label>
+            <label class="radio-label"><input type="radio" name="att_3" value="0"> Absent (Vắng)</label>
+          </td>
+          <td><input type="text" class="note-input" placeholder="Note..."></td>
+        </tr>
+        <tr>
+          <td align="center">4</td>
+          <td align="center"><div class="avatar">DU</div></td>
+          <td><b>SE171012</b></td>
+          <td>Phạm Minh Đức</td>
+          <td>
+            <label class="radio-label"><input type="radio" name="att_4" value="1" checked> Present (Có mặt)</label>
+            <label class="radio-label"><input type="radio" name="att_4" value="0"> Absent (Vắng)</label>
+          </td>
+          <td><input type="text" class="note-input" placeholder="Note..."></td>
+        </tr>
+        <tr>
+          <td align="center">5</td>
+          <td align="center"><div class="avatar">DA</div></td>
+          <td><b>SE171345</b></td>
+          <td>Vũ Hải Đăng</td>
+          <td>
+            <label class="radio-label"><input type="radio" name="att_5" value="1" checked> Present (Có mặt)</label>
+            <label class="radio-label"><input type="radio" name="att_5" value="0"> Absent (Vắng)</label>
+          </td>
+          <td><input type="text" class="note-input" placeholder="Note..."></td>
+        </tr>
+        <tr>
+          <td align="center">6</td>
+          <td align="center"><div class="avatar">LI</div></td>
+          <td><b>HE160234</b></td>
+          <td>Đỗ Thùy Linh</td>
+          <td>
+            <label class="radio-label"><input type="radio" name="att_6" value="1" checked> Present (Có mặt)</label>
+            <label class="radio-label"><input type="radio" name="att_6" value="0"> Absent (Vắng)</label>
+          </td>
+          <td><input type="text" class="note-input" placeholder="Note..."></td>
+        </tr>
+        <tr>
+          <td align="center">7</td>
+          <td align="center"><div class="avatar">NA</div></td>
+          <td><b>HE160567</b></td>
+          <td>Ngô Quốc Nam</td>
+          <td>
+            <label class="radio-label"><input type="radio" name="att_7" value="1" checked> Present (Có mặt)</label>
+            <label class="radio-label"><input type="radio" name="att_7" value="0"> Absent (Vắng)</label>
+          </td>
+          <td><input type="text" class="note-input" placeholder="Note..."></td>
+        </tr>
+        <tr>
+          <td align="center">8</td>
+          <td align="center"><div class="avatar">PH</div></td>
+          <td><b>IA160890</b></td>
+          <td>Hoàng Mai Phương</td>
+          <td>
+            <label class="radio-label"><input type="radio" name="att_8" value="1" checked> Present (Có mặt)</label>
+            <label class="radio-label"><input type="radio" name="att_8" value="0"> Absent (Vắng)</label>
+          </td>
+          <td><input type="text" class="note-input" placeholder="Note..."></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <button class="btn-submit" onclick="alert('✅ Dữ liệu điểm danh FAP đã được lưu thành công!')">Save Changes (Lưu Điểm Danh FAP)</button>
+  </div>
+</body>
+</html>
