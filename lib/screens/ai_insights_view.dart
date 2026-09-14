@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/student.dart';
 import '../models/attendance_record.dart';
 import '../services/ai_analytics_service.dart';
+import '../services/storage_service.dart';
 import '../widgets/status_badge.dart';
 
 class AiInsightsView extends StatefulWidget {
@@ -26,6 +27,7 @@ class _AiInsightsViewState extends State<AiInsightsView> {
   final TextEditingController _questionCtrl = TextEditingController();
   final List<Map<String, String>> _chatHistory = [];
   late AiAttendanceReport _report;
+  bool _isLoadingAi = false;
 
   @override
   void initState() {
@@ -49,14 +51,29 @@ class _AiInsightsViewState extends State<AiInsightsView> {
     );
   }
 
-  void _askAi(String question) {
-    if (question.trim().isEmpty) return;
+  void _askAi(String question) async {
+    final q = question.trim();
+    if (q.isEmpty || _isLoadingAi) return;
 
-    final answer = AiAnalyticsService.answerAiQuestion(question, _report);
+    final apiKey = StorageService.getGeminiApiKey();
     setState(() {
-      _chatHistory.insert(0, {'q': question, 'a': answer});
-      _questionCtrl.clear();
+      _isLoadingAi = true;
     });
+
+    final answer = await AiAnalyticsService.askGeminiAi(
+      apiKey: apiKey,
+      prompt: q,
+      report: _report,
+      students: widget.students,
+    );
+
+    if (mounted) {
+      setState(() {
+        _isLoadingAi = false;
+        _chatHistory.insert(0, {'q': q, 'a': answer});
+        _questionCtrl.clear();
+      });
+    }
   }
 
   @override
@@ -114,9 +131,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                               color: Colors.white.withAlpha(50),
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            child: const Text(
-                              'AI ATTENDANCE INSIGHTS ENGINE',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1.0),
+                            child: Text(
+                              StorageService.getGeminiApiKey().isNotEmpty
+                                  ? '✨ GOOGLE GEMINI 1.5 FLASH AI'
+                                  : '📊 REAL DATA ANALYTICS ENGINE',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1.0),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -401,9 +420,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      icon: const Icon(Icons.send_rounded, size: 18),
-                      label: const Text('Hỏi AI', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () => _askAi(_questionCtrl.text),
+                      icon: _isLoadingAi
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.send_rounded, size: 18),
+                      label: Text(_isLoadingAi ? 'Đang phân tích...' : 'Hỏi AI', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: _isLoadingAi ? null : () => _askAi(_questionCtrl.text),
                     ),
                   ],
                 ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/google_sheet_service.dart';
+import '../services/storage_service.dart';
 
 class SettingsView extends StatefulWidget {
   final String initialSheetUrl;
@@ -18,6 +19,7 @@ class SettingsView extends StatefulWidget {
 
 class _SettingsViewState extends State<SettingsView> {
   late TextEditingController _urlController;
+  late TextEditingController _geminiKeyController;
   bool _isTesting = false;
   String? _testResult;
   bool _isSuccess = false;
@@ -26,11 +28,13 @@ class _SettingsViewState extends State<SettingsView> {
   void initState() {
     super.initState();
     _urlController = TextEditingController(text: widget.initialSheetUrl);
+    _geminiKeyController = TextEditingController(text: StorageService.getGeminiApiKey());
   }
 
   @override
   void dispose() {
     _urlController.dispose();
+    _geminiKeyController.dispose();
     super.dispose();
   }
 
@@ -280,6 +284,96 @@ function doPost(e) {
                     ),
                   ),
                 ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Google Gemini AI Configuration Card
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.auto_awesome, color: Color(0xFF6366F1), size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Cấu hình Google Gemini AI (Kích hoạt AI Thật 100%):',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text('LLM Model Free', style: TextStyle(color: Color(0xFF4F46E5), fontSize: 11, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Nhập Google Gemini API Key để trợ lý AI thực sự trò chuyện và phân tích dữ liệu điểm danh bằng mô hình ngôn ngữ lớn:',
+                  style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _geminiKeyController,
+                        obscureText: true,
+                        decoration: InputDecoration(
+                          hintText: 'AIzaSy... (Lấy miễn phí tại aistudio.google.com)',
+                          prefixIcon: const Icon(Icons.key),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4F46E5),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.save),
+                      label: const Text('Lưu Key', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        await StorageService.setGeminiApiKey(_geminiKeyController.text);
+                        if (!mounted) return;
+                        messenger.showSnackBar(
+                          const SnackBar(
+                            content: Text('✅ Đã lưu cấu hình Google Gemini AI Key thành công!'),
+                            backgroundColor: Color(0xFF10B981),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text('Lấy Key Free'),
+                      onPressed: () => StorageService.openBrowser('https://aistudio.google.com/app/apikey'),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

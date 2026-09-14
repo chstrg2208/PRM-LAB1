@@ -51,6 +51,15 @@ class StorageService {
     await _saveSettings();
   }
 
+  static String getGeminiApiKey() {
+    return _settings['geminiApiKey'] as String? ?? '';
+  }
+
+  static Future<void> setGeminiApiKey(String apiKey) async {
+    _settings['geminiApiKey'] = apiKey.trim();
+    await _saveSettings();
+  }
+
   static Future<void> _saveSettings() async {
     try {
       await PlatformHelper.instance.saveString(_defaultSettingsKey, jsonEncode(_settings));

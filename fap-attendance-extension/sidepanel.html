@@ -182,6 +182,7 @@
       <div class="ai-banner">
         <div class="ai-banner-title">
           <span>🤖 Trợ lý AI Phân tích Chuyên cần</span>
+          <span id="aiActiveEngineBadge" class="info-chip" style="background:#4F46E5; color:#FFFFFF; margin-left:auto;">📊 Sheet Analytics Thật</span>
         </div>
         <p class="ai-banner-sub">Hệ thống AI tự động tổng hợp phân tích điểm danh, cảnh báo sinh viên vắng nhiều và nguy cơ cấm thi.</p>
       </div>
@@ -265,6 +266,30 @@
           </button>
         </div>
         <div id="testResultBox" class="result-alert hidden"></div>
+      </div>
+
+      <!-- GEMINI AI SETTINGS -->
+      <div class="glass-card mt-3">
+        <div class="card-head" style="margin-bottom: 6px;">
+          <div>
+            <h2 class="head-title">Google Gemini AI (Kích hoạt AI Thật)</h2>
+            <p class="head-sub">Dán Gemini API Key để trò chuyện với mô hình AI thực tế:</p>
+          </div>
+          <span class="info-chip primary">LLM Free</span>
+        </div>
+        <div class="input-wrap mt-2">
+          <input type="password" id="inputGeminiApiKey" class="text-input" placeholder="AIzaSy... (Lấy miễn phí tại aistudio.google.com)">
+        </div>
+        <div class="btn-row mt-3">
+          <button id="btnSaveGeminiKey" class="btn-primary-action">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+            Lưu Gemini Key
+          </button>
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn-secondary-action" style="text-decoration:none; display:flex; align-items:center; justify-content:center; font-size:11px;">
+            Lấy Key Free
+          </a>
+        </div>
+        <div id="geminiKeyResultBox" class="result-alert hidden"></div>
       </div>
 
       <div class="glass-card mt-3">

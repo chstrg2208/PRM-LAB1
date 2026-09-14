@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../models/student.dart';
 import '../models/attendance_record.dart';
 import '../models/class_session.dart';
@@ -232,6 +234,67 @@ class AiAnalyticsService {
     return '🤖 **AI Insights:** Lớp hiện có tỷ lệ chuyên cần **${report.overallAttendanceRate.toStringAsFixed(1)}%**. '
         'Slot nghỉ nhiều nhất là **Slot ${report.worstSlot.slot}**, thứ vắng nhiều nhất là **${report.worstDay.dayName}**, '
         'và có **${report.failedStudents.length} sinh viên** đã chạm ngưỡng cấm thi.';
+  }
+
+  /// Gửi câu hỏi kèm context dữ liệu thực tế tới Google Gemini LLM API (AI Thật)
+  static Future<String> askGeminiAi({
+    required String apiKey,
+    required String prompt,
+    required AiAttendanceReport report,
+    required List<Student> students,
+  }) async {
+    final cleanKey = apiKey.trim();
+    if (cleanKey.isEmpty) {
+      return answerAiQuestion(prompt, report);
+    }
+
+    try {
+      final studentSummary = students.map((s) {
+        final isFail = s.absentRate >= 20.0;
+        final isWarn = s.absentRate >= 15.0 && s.absentRate < 20.0;
+        final status = isFail ? 'CẤM THI (>=20%)' : (isWarn ? 'CẢNH BÁO (>=15%)' : 'ĐỦ ĐIỀU KIỆN');
+        return '- MSSV: ${s.member}, Họ tên: ${s.fullName}, Vắng: ${s.absentSlots}/${s.totalSlots} (${s.absentRate.toStringAsFixed(1)}%) -> $status';
+      }).join('\n');
+
+      final contextText = '''
+Dữ liệu điểm danh thực tế lớp học:
+- Tỷ lệ chuyên cần trung bình toàn lớp: ${report.overallAttendanceRate.toStringAsFixed(1)}%
+- Slot vắng nhiều nhất: Slot ${report.worstSlot.slot} (${report.worstSlot.slotTime}) với ${report.worstSlot.absentCount} lượt vắng (${report.worstSlot.absentRate.toStringAsFixed(1)}%)
+- Thứ vắng nhiều nhất trong tuần: ${report.worstDay.dayName} với ${report.worstDay.absentCount} lượt vắng (${report.worstDay.absentRate.toStringAsFixed(1)}%)
+- Số sinh viên bị cấm thi (>=20%): ${report.failedStudents.length} sinh viên
+- Số sinh viên cảnh báo (15-20%): ${report.warningStudents.length} sinh viên
+
+Danh sách sinh viên:
+$studentSummary
+''';
+
+      final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$cleanKey');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'contents': [
+            {
+              'parts': [
+                {
+                  'text': 'Bạn là trợ lý AI phân tích chuyên cần FAP tại Đại học FPT. Dưới đây là dữ liệu điểm danh thực tế được trích xuất trực tiếp từ hệ thống:\n\n$contextText\n\nDựa vào dữ liệu thực tế trên, hãy trả lời câu hỏi sau của giảng viên một cách tự nhiên, chính xác, súc tích, dẫn chứng số liệu cụ thể:\n"$prompt"'
+                }
+              ]
+            }
+          ]
+        }),
+      ).timeout(const Duration(seconds: 12));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final text = data['candidates']?[0]?['content']?['parts']?[0]?['text'];
+        if (text != null && text.toString().trim().isNotEmpty) {
+          return text.toString().trim();
+        }
+      }
+    } catch (_) {}
+
+    return answerAiQuestion(prompt, report);
   }
 
   static String _generateNaturalLanguageSummary({
