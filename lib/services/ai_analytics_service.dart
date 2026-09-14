@@ -362,6 +362,66 @@ class AiAnalyticsService {
         '✨ *Mẹo:* Nhập Google Gemini API Key tại tab **Cài Đặt** để kích hoạt trí tuệ nhân tạo Gemini 1.5 Flash trò chuyện tự do!';
   }
 
+  static String? _activeGeminiModel;
+
+  static Future<String> _resolveAvailableGeminiModel(String apiKey) async {
+    if (_activeGeminiModel != null && _activeGeminiModel!.isNotEmpty) {
+      return _activeGeminiModel!;
+    }
+
+    try {
+      final listUrl = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey');
+      final res = await http.get(listUrl).timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final List models = (data['models'] as List?) ?? [];
+        final usable = models
+            .where((m) {
+              final methods = (m['supportedGenerationMethods'] as List?) ?? [];
+              return methods.contains('generateContent');
+            })
+            .map((m) => (m['name'] as String? ?? '').replaceFirst('models/', ''))
+            .where((m) => m.isNotEmpty)
+            .toList();
+
+        const priorities = [
+          'gemini-2.5-flash',
+          'gemini-2.0-flash',
+          'gemini-2.0-flash-exp',
+          'gemini-1.5-flash-latest',
+          'gemini-1.5-flash',
+          'gemini-1.5-flash-001',
+          'gemini-1.5-flash-002',
+          'gemini-1.5-pro',
+          'gemini-pro',
+        ];
+
+        for (final p in priorities) {
+          if (usable.contains(p)) {
+            _activeGeminiModel = p;
+            return p;
+          }
+        }
+
+        final anyFlash = usable.firstWhere(
+          (m) => m.toLowerCase().contains('flash'),
+          orElse: () => '',
+        );
+        if (anyFlash.isNotEmpty) {
+          _activeGeminiModel = anyFlash;
+          return anyFlash;
+        }
+
+        if (usable.isNotEmpty) {
+          _activeGeminiModel = usable.first;
+          return usable.first;
+        }
+      }
+    } catch (_) {}
+
+    return 'gemini-2.0-flash';
+  }
+
   /// Gửi câu hỏi kèm context dữ liệu thực tế tới Google Gemini LLM API (AI Thật)
   static Future<String> askGeminiAi({
     required String apiKey,
@@ -405,49 +465,71 @@ Quy tắc trả lời:
 5. Trình bày đẹp mắt, tự nhiên bằng định dạng Markdown (in đậm, bullet points).
 ''';
 
-      final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$cleanKey');
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'contents': [
-            {
-              'parts': [
+      final discoveredModel = await _resolveAvailableGeminiModel(cleanKey);
+      final candidateModels = <String>{
+        discoveredModel,
+        'gemini-2.0-flash',
+        'gemini-2.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-pro',
+      }.toList();
+
+      int lastStatusCode = 0;
+      String lastErrorMessage = 'Lỗi kết nối';
+
+      for (final modelName in candidateModels) {
+        try {
+          final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$cleanKey');
+          final response = await http.post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'contents': [
                 {
-                  'text': '$systemInstruction\n\nDỮ LIỆU ĐIỂM DANH THỰC TẾ:\n$contextText\n\nCÂU HỎI CỦA GIẢNG VIÊN:\n"$prompt"'
+                  'parts': [
+                    {
+                      'text': '$systemInstruction\n\nDỮ LIỆU ĐIỂM DANH THỰC TẾ:\n$contextText\n\nCÂU HỎI CỦA GIẢNG VIÊN:\n"$prompt"'
+                    }
+                  ]
                 }
               ]
-            }
-          ]
-        }),
-      ).timeout(const Duration(seconds: 12));
+            }),
+          ).timeout(const Duration(seconds: 12));
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final text = data['candidates']?[0]?['content']?['parts']?[0]?['text'];
-        if (text != null && text.toString().trim().isNotEmpty) {
-          return text.toString().trim();
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final text = data['candidates']?[0]?['content']?['parts']?[0]?['text'];
+            if (text != null && text.toString().trim().isNotEmpty) {
+              _activeGeminiModel = modelName;
+              return text.toString().trim();
+            }
+          } else {
+            lastStatusCode = response.statusCode;
+            try {
+              final errData = jsonDecode(response.body);
+              lastErrorMessage = errData['error']?['message'] ?? 'Mã lỗi: ${response.statusCode}';
+            } catch (_) {
+              lastErrorMessage = 'Mã phản hồi: ${response.statusCode}';
+            }
+            if (response.statusCode == 404) {
+              continue; // Model not supported, try next model
+            } else {
+              break; // Auth error or quota error
+            }
+          }
+        } catch (e) {
+          lastErrorMessage = e.toString();
         }
-      } else {
-        // Parse error message from Gemini API
-        String errMsg = 'Lỗi kết nối';
-        try {
-          final errData = jsonDecode(response.body);
-          errMsg = errData['error']?['message'] ?? 'Mã lỗi: ${response.statusCode}';
-        } catch (_) {
-          errMsg = 'Mã phản hồi: ${response.statusCode}';
-        }
-        final localResp = answerAiQuestion(prompt, report, students: students);
-        return '⚠️ **Lỗi gọi Google Gemini API (${response.statusCode}):** $errMsg\n\n'
-            '💡 *Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:*\n\n$localResp';
       }
+
+      final localResp = answerAiQuestion(prompt, report, students: students);
+      return '⚠️ **Lỗi gọi Google Gemini API ($lastStatusCode):** $lastErrorMessage\n\n'
+          '💡 *Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:*\n\n$localResp';
     } catch (e) {
       final localResp = answerAiQuestion(prompt, report, students: students);
       return '⚠️ **Lỗi kết nối mạng tới Gemini:** $e\n\n'
           '💡 *Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:*\n\n$localResp';
     }
-
-    return answerAiQuestion(prompt, report, students: students);
   }
 
   static String _generateNaturalLanguageSummary({

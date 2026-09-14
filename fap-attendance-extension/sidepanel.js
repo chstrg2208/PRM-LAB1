@@ -5,6 +5,7 @@ let currentRecords = {}; // rollNumber -> { status, note }
 let currentFilter = 'all';
 let sheetUrl = '';
 let geminiApiKey = '';
+let activeGeminiModel = 'gemini-2.0-flash';
 let computedStats = {
   worstSlot: { slot: 1, time: '07:30 - 09:50', absentCount: 7, rate: 23.3 },
   worstDay: { name: 'Thứ Hai', absentCount: 9, rate: 30.0 },
@@ -58,9 +59,10 @@ function setupTabs() {
 // Load settings from storage
 async function loadSettings() {
   try {
-    const result = await chrome.storage.local.get(['sheetUrl', 'cachedStudents', 'geminiApiKey']);
+    const result = await chrome.storage.local.get(['sheetUrl', 'cachedStudents', 'geminiApiKey', 'activeGeminiModel']);
     sheetUrl = result.sheetUrl || '';
     geminiApiKey = result.geminiApiKey || '';
+    if (result.activeGeminiModel) activeGeminiModel = result.activeGeminiModel;
     if (document.getElementById('inputSheetUrl')) {
       document.getElementById('inputSheetUrl').value = sheetUrl;
     }
@@ -276,28 +278,47 @@ function setupEventListeners() {
       }
 
       try {
-        const testRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: 'Ping test' }] }] })
-        });
+        const testModel = await resolveAvailableGeminiModel(key);
+        const candidateModels = [testModel, 'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-latest', 'gemini-pro'].filter((v, i, a) => a.indexOf(v) === i);
+        let success = false;
+        let lastStatus = 0;
+        let lastMsg = '';
+        let matchedModel = testModel;
 
-        if (testRes.ok) {
+        for (const m of candidateModels) {
+          const testRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${key}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: 'Ping test' }] }] })
+          });
+
+          if (testRes.ok) {
+            success = true;
+            matchedModel = m;
+            activeGeminiModel = m;
+            break;
+          } else {
+            lastStatus = testRes.status;
+            const errData = await testRes.json().catch(() => ({}));
+            lastMsg = errData.error?.message || testRes.statusText;
+            if (testRes.status !== 404) break; // If invalid key (e.g. 400), don't loop
+          }
+        }
+
+        if (success) {
           geminiApiKey = key;
-          await chrome.storage.local.set({ geminiApiKey: key });
+          await chrome.storage.local.set({ geminiApiKey: key, activeGeminiModel: matchedModel });
           if (resBox) {
             resBox.className = 'result-alert success';
-            resBox.innerText = '✅ Google Gemini API Key CHÍNH XÁC 100%! Đã kích hoạt mô hình Gemini 1.5 Flash AI thực tế. Bạn có thể trò chuyện tự nhiên!';
+            resBox.innerText = `✅ Google Gemini API Key CHÍNH XÁC 100%! Đã kích hoạt mô hình ${matchedModel} AI thực tế.`;
             resBox.classList.remove('hidden');
           }
           updateAiEngineBadge();
-          showToast('✅ Đã kích hoạt Google Gemini AI!');
+          showToast(`✅ Đã kích hoạt ${matchedModel}!`);
         } else {
-          const errData = await testRes.json().catch(() => ({}));
-          const errMsg = errData.error?.message || testRes.statusText;
           if (resBox) {
             resBox.className = 'result-alert error';
-            resBox.innerText = `❌ Key không hợp lệ (Lỗi ${testRes.status}): ${errMsg}. Vui lòng lấy lại key tại aistudio.google.com!`;
+            resBox.innerText = `❌ Key không hợp lệ (Lỗi ${lastStatus}): ${lastMsg}. Vui lòng lấy lại key tại aistudio.google.com!`;
             resBox.classList.remove('hidden');
           }
           showToast('❌ Gemini API Key không hợp lệ!');
@@ -512,11 +533,68 @@ function setupAiListeners() {
   }
 }
 
+// Auto-discover the best supported Gemini model for the user's API key
+async function resolveAvailableGeminiModel(apiKey) {
+  if (activeGeminiModel && activeGeminiModel !== 'gemini-2.0-flash') {
+    return activeGeminiModel;
+  }
+
+  const cleanKey = (apiKey || '').trim();
+  if (!cleanKey) return 'gemini-2.0-flash';
+
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+    if (res.ok) {
+      const data = await res.json();
+      const models = data.models || [];
+      const usable = models
+        .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => m.name.replace(/^models\//, ''));
+
+      const priorities = [
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-exp',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-001',
+        'gemini-1.5-flash-002',
+        'gemini-1.5-pro',
+        'gemini-pro'
+      ];
+
+      for (const p of priorities) {
+        if (usable.includes(p)) {
+          activeGeminiModel = p;
+          chrome.storage.local.set({ activeGeminiModel: p });
+          return p;
+        }
+      }
+
+      const anyFlash = usable.find(m => m.toLowerCase().includes('flash'));
+      if (anyFlash) {
+        activeGeminiModel = anyFlash;
+        chrome.storage.local.set({ activeGeminiModel: anyFlash });
+        return anyFlash;
+      }
+
+      if (usable.length > 0) {
+        activeGeminiModel = usable[0];
+        chrome.storage.local.set({ activeGeminiModel: usable[0] });
+        return usable[0];
+      }
+    }
+  } catch (_) {}
+
+  return 'gemini-2.0-flash';
+}
+
 function updateAiEngineBadge() {
   const badge = document.getElementById('aiActiveEngineBadge');
   if (!badge) return;
   if (geminiApiKey) {
-    badge.innerText = '✨ Google Gemini 1.5 Flash AI Thật';
+    const modelName = activeGeminiModel || 'Gemini 2.0 Flash';
+    badge.innerText = `✨ ${modelName} AI Thật`;
     badge.style.background = '#059669';
   } else {
     badge.innerText = '📊 Sheet Analytics Thật 100%';
@@ -912,29 +990,62 @@ Quy tắc trả lời:
 4. Khi tư vấn giải pháp, hãy đưa ra các đề xuất sư phạm thực tế, đúng quy chế đào tạo ĐH FPT (vắng >= 20% tổng số buổi sẽ bị cấm thi / fail attendance).
 5. Trình bày đẹp mắt, dễ đọc với định dạng Markdown (in đậm, bullet points).`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey.trim()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `${systemInstruction}\n\nDỮ LIỆU ĐIỂM DANH THỰC TẾ:\n${contextData}\n\nCÂU HỎI CỦA GIẢNG VIÊN:\n"${query}"`
-            }]
-          }]
-        })
-      });
+      const resolvedModel = await resolveAvailableGeminiModel(geminiApiKey);
+      const candidateModels = [
+        resolvedModel,
+        'gemini-2.0-flash',
+        'gemini-2.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-pro'
+      ].filter((v, i, a) => a.indexOf(v) === i);
 
-      if (response.ok) {
-        const resJson = await response.json();
-        const geminiText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (geminiText) {
-          resBox.innerHTML = geminiText.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-          return;
+      let geminiText = null;
+      let lastStatus = 0;
+      let lastErrMsg = '';
+
+      for (const modelName of candidateModels) {
+        try {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiApiKey.trim()}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [{
+                  text: `${systemInstruction}\n\nDỮ LIỆU ĐIỂM DANH THỰC TẾ:\n${contextData}\n\nCÂU HỎI CỦA GIẢNG VIÊN:\n"${query}"`
+                }]
+              }]
+            })
+          });
+
+          if (response.ok) {
+            const resJson = await response.json();
+            geminiText = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (geminiText) {
+              activeGeminiModel = modelName;
+              await chrome.storage.local.set({ activeGeminiModel: modelName });
+              updateAiEngineBadge();
+              break;
+            }
+          } else {
+            lastStatus = response.status;
+            const errJson = await response.json().catch(() => ({}));
+            lastErrMsg = errJson.error?.message || response.statusText;
+            if (response.status === 404) {
+              continue; // Model not found in this endpoint, try next candidate
+            } else {
+              break; // Auth or quota error, don't retry loop
+            }
+          }
+        } catch (e) {
+          lastErrMsg = e.message;
         }
+      }
+
+      if (geminiText) {
+        resBox.innerHTML = geminiText.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+        return;
       } else {
-        const errJson = await response.json().catch(() => ({}));
-        const errMsg = errJson.error?.message || response.statusText;
-        resBox.innerHTML = `⚠️ <b>Lỗi gọi Google Gemini API (${response.status}):</b> ${errMsg}<br><br><small style="color:#64748B;">💡 <i>Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:</i></small><br><br>` +
+        resBox.innerHTML = `⚠️ <b>Lỗi gọi Google Gemini API (${lastStatus}):</b> ${lastErrMsg}<br><br><small style="color:#64748B;">💡 <i>Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:</i></small><br><br>` +
           localAnswer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
         return;
       }
