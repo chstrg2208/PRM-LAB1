@@ -13,7 +13,8 @@
     "*://fap.fpt.edu.vn/*",
     "https://script.google.com/*",
     "https://script.googleusercontent.com/*",
-    "file:///*"
+    "https://generativelanguage.googleapis.com/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"

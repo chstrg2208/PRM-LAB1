@@ -274,27 +274,40 @@ async function testSheetConnection(url, showAlert = false) {
   const statusText = document.getElementById('statusText');
   const resultBox = document.getElementById('testResultBox');
 
+  // Auto clean and fix URL if missing /exec
+  let cleanUrl = (url || '').trim();
+  if (cleanUrl.includes('/macros/s/') && !cleanUrl.endsWith('/exec')) {
+    if (cleanUrl.endsWith('/')) {
+      cleanUrl = cleanUrl + 'exec';
+    } else {
+      cleanUrl = cleanUrl + '/exec';
+    }
+  }
+  const inputUrlEl = document.getElementById('inputSheetUrl');
+  if (inputUrlEl) inputUrlEl.value = cleanUrl;
+
   try {
-    const res = await fetch(`${url}?action=test`);
+    const res = await fetch(`${cleanUrl}?action=test`, { redirect: 'follow' });
     const data = await res.json();
 
     if (data.status === 'success') {
-      sheetUrl = url;
-      await chrome.storage.local.set({ sheetUrl: url });
+      sheetUrl = cleanUrl;
+      await chrome.storage.local.set({ sheetUrl: cleanUrl });
       statusBadge.className = 'pulse-badge connected';
       statusText.innerText = 'Đã kết nối DB';
       resultBox.className = 'result-alert success';
       resultBox.innerText = '✅ Kết nối Google Sheet DB thành công!';
       resultBox.classList.remove('hidden');
       if (showAlert) showToast('✅ Kết nối Google Sheet thành công!');
+      updateAiInsights();
     } else {
-      throw new Error('Phản hồi không hợp lệ');
+      throw new Error(data.message || 'Phản hồi không hợp lệ');
     }
   } catch (err) {
     statusBadge.className = 'pulse-badge disconnected';
     statusText.innerText = 'Chưa kết nối DB';
     resultBox.className = 'result-alert error';
-    resultBox.innerText = '❌ Không thể kết nối. Hãy kiểm tra URL Web App và quyền Anyone!';
+    resultBox.innerText = '❌ Không thể kết nối: ' + err.message + ' (Vui lòng đảm bảo link có đuôi /exec)';
     resultBox.classList.remove('hidden');
     if (showAlert) alert('❌ Không thể kết nối Google Sheet: ' + err.message);
   }
