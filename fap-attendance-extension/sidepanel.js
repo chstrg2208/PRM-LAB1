@@ -503,22 +503,15 @@ function renderManageStudentsList() {
 
 // Setup AI listeners
 function setupAiListeners() {
-  const chips = document.querySelectorAll('.ai-ask-chip');
-  chips.forEach(chip => {
-    chip.addEventListener('click', () => {
-      const q = chip.dataset.q;
-      const input = document.getElementById('inputAiQuestion');
-      if (input) input.value = q;
-      handleAiQuery(q);
-    });
-  });
-
   const btnAsk = document.getElementById('btnAskAi');
   if (btnAsk) {
     btnAsk.addEventListener('click', () => {
       const input = document.getElementById('inputAiQuestion');
       const q = input ? input.value.trim() : '';
-      if (q) handleAiQuery(q);
+      if (q) {
+        input.value = '';
+        handleAiQuery(q);
+      }
     });
   }
 
@@ -527,8 +520,29 @@ function setupAiListeners() {
     inputQ.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         const q = e.target.value.trim();
-        if (q) handleAiQuery(q);
+        if (q) {
+          e.target.value = '';
+          handleAiQuery(q);
+        }
       }
+    });
+  }
+
+  const btnClear = document.getElementById('btnClearAiChat');
+  if (btnClear) {
+    btnClear.addEventListener('click', () => {
+      const stream = document.getElementById('aiChatStream');
+      if (stream) {
+        stream.innerHTML = `
+          <div class="chat-msg ai">
+            <div class="msg-avatar">✦</div>
+            <div class="msg-bubble">
+              Chào Thầy/Cô ạ! Em là <b>Trợ lý AI Điểm danh FAP</b>. Thầy/Cô có thể hỏi em bất cứ điều gì về tình hình đi học, slot vắng, sinh viên nguy cơ cấm thi hoặc nhờ tư vấn giải pháp quản lý chuyên cần.
+            </div>
+          </div>
+        `;
+      }
+      showToast('🧹 Đã làm mới đoạn chat');
     });
   }
 }
@@ -949,17 +963,55 @@ Hiện tại lớp **${cls}** đang đạt tỷ lệ chuyên cần **${computedS
 ✨ *Mẹo:* Thêm **Google Gemini API Key** (miễn phí) tại tab **⚙️ Cài Đặt** để kích hoạt AI tạo sinh trò chuyện thông minh như ChatGPT!`;
 }
 
-async function handleAiQuery(query) {
-  const resBox = document.getElementById('aiChatResponse');
-  if (!resBox) return;
+function escapeHtml(str) {
+  const p = document.createElement('p');
+  p.textContent = str;
+  return p.innerHTML;
+}
 
+function formatAiMarkdown(text) {
+  return text
+    .replace(/\n/g, '<br>')
+    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+    .replace(/\*(.*?)\*/g, '<i>$1</i>');
+}
+
+async function handleAiQuery(query) {
+  const stream = document.getElementById('aiChatStream');
+  const resBox = document.getElementById('aiChatResponse');
   const q = query.toLowerCase().trim();
   const cls = document.getElementById('selectClass')?.value || 'SE1801';
-  const localAnswer = getSmartLocalAnswer(q, query);
 
-  // If Gemini API Key is configured, call Google Gemini 1.5 Flash LLM!
+  // 1. Append User Message Bubble
+  if (stream) {
+    const userMsg = document.createElement('div');
+    userMsg.className = 'chat-msg user';
+    userMsg.innerHTML = `<div class="msg-bubble">${escapeHtml(query)}</div>`;
+    stream.appendChild(userMsg);
+
+    // 2. Append Loading / Typing indicator bubble
+    const loadingMsg = document.createElement('div');
+    loadingMsg.className = 'chat-msg ai loading';
+    loadingMsg.id = 'aiChatLoadingIndicator';
+    loadingMsg.innerHTML = `
+      <div class="msg-avatar">✦</div>
+      <div class="msg-bubble">
+        <div class="typing-indicator">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    `;
+    stream.appendChild(loadingMsg);
+    stream.scrollTop = stream.scrollHeight;
+  } else if (resBox) {
+    resBox.innerHTML = '✨ <i>Đang phân tích và suy luận...</i>';
+  }
+
+  const localAnswer = getSmartLocalAnswer(q, query);
+  let finalAiHtml = '';
+
+  // If Gemini API Key is configured, call Google Gemini LLM!
   if (geminiApiKey && geminiApiKey.trim().length > 10) {
-    resBox.innerHTML = '✨ <i>Google Gemini 1.5 Flash đang phân tích và suy luận...</i>';
     try {
       const studentSummary = currentStudents.map(s => {
         const total = s.totalSlots || 30;
@@ -1031,9 +1083,9 @@ Quy tắc trả lời:
             const errJson = await response.json().catch(() => ({}));
             lastErrMsg = errJson.error?.message || response.statusText;
             if (response.status === 404) {
-              continue; // Model not found in this endpoint, try next candidate
+              continue;
             } else {
-              break; // Auth or quota error, don't retry loop
+              break;
             }
           }
         } catch (e) {
@@ -1042,22 +1094,36 @@ Quy tắc trả lời:
       }
 
       if (geminiText) {
-        resBox.innerHTML = geminiText.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-        return;
+        finalAiHtml = formatAiMarkdown(geminiText);
       } else {
-        resBox.innerHTML = `⚠️ <b>Lỗi gọi Google Gemini API (${lastStatus}):</b> ${lastErrMsg}<br><br><small style="color:#64748B;">💡 <i>Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:</i></small><br><br>` +
-          localAnswer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-        return;
+        finalAiHtml = `⚠️ <b>Lỗi gọi Google Gemini API (${lastStatus}):</b> ${lastErrMsg}<br><br><small style="color:#64748B;">💡 <i>Hệ thống tự động chuyển sang phân tích nội bộ:</i></small><br><br>` +
+          formatAiMarkdown(localAnswer);
       }
     } catch (e) {
-      resBox.innerHTML = `⚠️ <b>Lỗi kết nối mạng tới Gemini:</b> ${e.message}<br><br><small style="color:#64748B;">💡 <i>Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:</i></small><br><br>` +
-        localAnswer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-      return;
+      finalAiHtml = `⚠️ <b>Lỗi kết nối mạng tới Gemini:</b> ${e.message}<br><br><small style="color:#64748B;">💡 <i>Hệ thống tự động chuyển sang phân tích nội bộ:</i></small><br><br>` +
+        formatAiMarkdown(localAnswer);
     }
+  } else {
+    // If Gemini API is not configured, render the smart local NLP engine output directly
+    finalAiHtml = formatAiMarkdown(localAnswer);
   }
 
-  // If Gemini API is not configured, render the smart local NLP engine output directly!
-  resBox.innerHTML = localAnswer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+  // 3. Render AI Response Bubble
+  if (stream) {
+    const loadingElem = document.getElementById('aiChatLoadingIndicator');
+    if (loadingElem) loadingElem.remove();
+
+    const aiMsg = document.createElement('div');
+    aiMsg.className = 'chat-msg ai';
+    aiMsg.innerHTML = `
+      <div class="msg-avatar">✦</div>
+      <div class="msg-bubble">${finalAiHtml}</div>
+    `;
+    stream.appendChild(aiMsg);
+    stream.scrollTop = stream.scrollHeight;
+  } else if (resBox) {
+    resBox.innerHTML = finalAiHtml;
+  }
 }
 
 // Show Smooth Toast Notification

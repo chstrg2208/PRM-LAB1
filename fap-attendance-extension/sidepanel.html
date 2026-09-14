@@ -214,25 +214,40 @@
         </div>
       </div>
 
-      <!-- Ask AI & Interactive Prompts -->
-      <div class="glass-card mt-3">
-        <h2 class="head-title">Hỏi đáp với AI</h2>
-        <p class="head-sub">Bấm chọn câu hỏi mẫu hoặc gõ thắc mắc cần phân tích:</p>
-        
-        <div class="ai-chips-list mt-3">
-          <button class="ai-ask-chip" data-q="Slot mấy sv nghỉ nhiều?">⏰ Slot mấy sv nghỉ nhiều?</button>
-          <button class="ai-ask-chip" data-q="Thứ mấy nghỉ nhiều?">📅 Thứ mấy nghỉ nhiều?</button>
-          <button class="ai-ask-chip" data-q="Thằng nào fail attendance?">🚨 Thằng nào fail attendance?</button>
-          <button class="ai-ask-chip" data-q="Tư vấn giải pháp cải thiện chuyên cần">💡 Lời khuyên & Đề xuất</button>
+      <!-- Modern Conversational AI Chat -->
+      <div class="glass-card mt-3 ai-chat-box">
+        <div class="card-head" style="margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="ai-sparkle-badge">✦</div>
+            <div>
+              <h2 class="head-title">Trò chuyện cùng Trợ lý AI</h2>
+              <p class="head-sub">Hỏi đáp tự nhiên về điểm danh, nề nếp và chuyên cần</p>
+            </div>
+          </div>
+          <button id="btnClearAiChat" class="btn-clear-chat" title="Làm mới đoạn hội thoại">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </button>
         </div>
 
-        <div style="display: flex; gap: 6px; margin-top: 8px;">
-          <input type="text" id="inputAiQuestion" class="text-input" placeholder="Hỏi AI (VD: ai sắp bị cấm thi?)..." style="flex: 1; padding: 7px 10px; font-size: 11px;">
-          <button id="btnAskAi" class="btn-gradient-sm">Hỏi AI</button>
+        <!-- Chat Stream with Message Bubbles -->
+        <div id="aiChatStream" class="ai-chat-stream">
+          <div class="chat-msg ai">
+            <div class="msg-avatar">✦</div>
+            <div class="msg-bubble">
+              Chào Thầy/Cô ạ! Em là <b>Trợ lý AI Điểm danh FAP</b>. Thầy/Cô có thể hỏi em bất kỳ câu hỏi nào về tình hình chuyên cần, slot vắng, sinh viên cấm thi hoặc đề xuất giải pháp quản lý lớp học.
+            </div>
+          </div>
         </div>
 
-        <div id="aiChatResponse" class="ai-chat-response">
-👋 Chào thầy cô! Tôi là Trợ lý AI Phân tích Chuyên cần. Thầy cô có thể bấm các câu hỏi nhanh phía trên hoặc hỏi tôi về slot vắng nhiều, ngày vắng nhiều, danh sách SV cấm thi!
+        <!-- Modern Rounded Input Bar -->
+        <div class="chat-input-bar mt-2">
+          <input type="text" id="inputAiQuestion" class="chat-input-field" placeholder="Hỏi AI bất kỳ điều gì (nhấn Enter để gửi)..." autocomplete="off">
+          <button id="btnAskAi" class="btn-chat-send" title="Gửi câu hỏi">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
         </div>
       </div>
 

@@ -28,6 +28,7 @@ class _AiInsightsViewState extends State<AiInsightsView> {
   final List<Map<String, String>> _chatHistory = [];
   late AiAttendanceReport _report;
   bool _isLoadingAi = false;
+  String? _currentAsking;
 
   @override
   void initState() {
@@ -58,6 +59,8 @@ class _AiInsightsViewState extends State<AiInsightsView> {
     final apiKey = StorageService.getGeminiApiKey();
     setState(() {
       _isLoadingAi = true;
+      _currentAsking = q;
+      _questionCtrl.clear();
     });
 
     final answer = await AiAnalyticsService.askGeminiAi(
@@ -70,8 +73,8 @@ class _AiInsightsViewState extends State<AiInsightsView> {
     if (mounted) {
       setState(() {
         _isLoadingAi = false;
-        _chatHistory.insert(0, {'q': q, 'a': answer});
-        _questionCtrl.clear();
+        _chatHistory.add({'q': q, 'a': answer});
+        _currentAsking = null;
       });
     }
   }
@@ -362,104 +365,192 @@ class _AiInsightsViewState extends State<AiInsightsView> {
 
           // Interactive AI Chat / Ask Section
           Container(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(8),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
+                // Chat Header
+                Row(
                   children: [
-                    Icon(Icons.chat_bubble_outline, color: Color(0xFF6366F1)),
-                    SizedBox(width: 8),
-                    Text(
-                      'Hỏi đáp trực tiếp với Trợ lý AI về Điểm danh',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // Quick Prompt Chips
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _buildPromptChip('⏰ Slot mấy sinh viên nghỉ nhiều nhất?'),
-                    _buildPromptChip('📅 Thứ mấy trong tuần nghỉ nhiều nhất?'),
-                    _buildPromptChip('🚫 Thằng nào fail attendance (cấm thi)?'),
-                    _buildPromptChip('💡 Lời khuyên của AI cho lớp này'),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hội thoại Trợ lý AI Điểm danh',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Hỏi đáp tự nhiên về chuyên cần, xu hướng vắng và tư vấn giải pháp học vụ',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_chatHistory.isNotEmpty || _isLoadingAi)
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF64748B),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        label: const Text('Làm mới', style: TextStyle(fontSize: 12)),
+                        onPressed: () {
+                          setState(() {
+                            _chatHistory.clear();
+                            _currentAsking = null;
+                          });
+                        },
+                      ),
                   ],
                 ),
                 const SizedBox(height: 16),
+                const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                const SizedBox(height: 16),
 
-                // Input box
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _questionCtrl,
-                        decoration: InputDecoration(
-                          hintText: 'Nhập câu hỏi phân tích cho AI (ví dụ: Thứ mấy vắng nhiều?)...',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          filled: true,
-                          fillColor: Colors.grey.shade50,
+                // Chat Messages Area
+                if (_chatHistory.isEmpty && !_isLoadingAi)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFF1F5F9)),
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEEF2FF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.forum_outlined, size: 28, color: Color(0xFF6366F1)),
                         ),
-                        onSubmitted: _askAi,
-                      ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Chưa có tin nhắn nào',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: Color(0xFF334155),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Đặt bất kỳ câu hỏi nào cho Trợ lý AI ở khung bên dưới để bắt đầu trò chuyện.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6366F1),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: _isLoadingAi
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Icon(Icons.send_rounded, size: 18),
-                      label: Text(_isLoadingAi ? 'Đang phân tích...' : 'Hỏi AI', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: _isLoadingAi ? null : () => _askAi(_questionCtrl.text),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 480),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _chatHistory.length + (_isLoadingAi ? 1 : 0),
+                      separatorBuilder: (context, index) => const SizedBox(height: 16),
+                      itemBuilder: (context, index) {
+                        if (index == _chatHistory.length) {
+                          return _buildAiLoadingBubble();
+                        }
+                        final item = _chatHistory[index];
+                        return _buildConversationItem(item['q']!, item['a']!);
+                      },
                     ),
-                  ],
+                  ),
+
+                const SizedBox(height: 16),
+
+                // Modern Rounded Input Bar
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  padding: const EdgeInsets.only(left: 18, right: 6, top: 4, bottom: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _questionCtrl,
+                          decoration: const InputDecoration(
+                            hintText: 'Nhập câu hỏi cho AI (ví dụ: Slot mấy nghỉ nhiều, phân tích tình hình lớp)...',
+                            hintStyle: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          onSubmitted: _askAi,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Material(
+                        color: Colors.transparent,
+                        child: Ink(
+                          decoration: const ShapeDecoration(
+                            shape: CircleBorder(),
+                            gradient: LinearGradient(
+                              colors: [Color(0xFF6366F1), Color(0xFF4F46E5)],
+                            ),
+                          ),
+                          child: IconButton(
+                            icon: _isLoadingAi
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 20),
+                            tooltip: 'Gửi câu hỏi',
+                            onPressed: _isLoadingAi ? null : () => _askAi(_questionCtrl.text),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-
-                // Answers Stream
-                if (_chatHistory.isNotEmpty) ...[
-                  const SizedBox(height: 18),
-                  const Divider(),
-                  ..._chatHistory.map((item) => Container(
-                        margin: const EdgeInsets.only(top: 12),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.help_outline, size: 16, color: Color(0xFF6366F1)),
-                                const SizedBox(width: 6),
-                                Text(item['q']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            SelectableText(
-                              item['a']!,
-                              style: const TextStyle(fontSize: 13, height: 1.4, color: Colors.black87),
-                            ),
-                          ],
-                        ),
-                      )),
-                ],
               ],
             ),
           ),
@@ -602,13 +693,199 @@ class _AiInsightsViewState extends State<AiInsightsView> {
     );
   }
 
-  Widget _buildPromptChip(String prompt) {
-    return ActionChip(
-      avatar: const Icon(Icons.lightbulb_outline, size: 14, color: Color(0xFF6366F1)),
-      label: Text(prompt, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-      backgroundColor: const Color(0xFFEEF2FF),
-      side: const BorderSide(color: Color(0xFFC7D2FE)),
-      onPressed: () => _askAi(prompt),
+  Widget _buildConversationItem(String question, String answer) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // User Question (Right aligned)
+        Align(
+          alignment: Alignment.centerRight,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 580),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF6366F1), Color(0xFF4F46E5)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(4),
+                bottomLeft: Radius.circular(16),
+                bottomRight: Radius.circular(16),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF6366F1).withAlpha(40),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    question,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.person_rounded, size: 16, color: Colors.white70),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // AI Answer (Left aligned)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 2),
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.auto_awesome, size: 13, color: Colors.white),
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 680),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(4),
+                      topRight: Radius.circular(16),
+                      bottomLeft: Radius.circular(16),
+                      bottomRight: Radius.circular(16),
+                    ),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: SelectableText(
+                    answer,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAiLoadingBubble() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_currentAsking != null) ...[
+          Align(
+            alignment: Alignment.centerRight,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 580),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF6366F1), Color(0xFF4F46E5)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(4),
+                  bottomLeft: Radius.circular(16),
+                  bottomRight: Radius.circular(16),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      _currentAsking!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.person_rounded, size: 16, color: Colors.white70),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.auto_awesome, size: 13, color: Colors.white),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF6366F1),
+                      ),
+                    ),
+                    SizedBox(width: 10),
+                    Text(
+                      'AI đang phân tích và soạn câu trả lời...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF64748B),
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
