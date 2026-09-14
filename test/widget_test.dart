@@ -143,6 +143,19 @@ void main() {
 
       final qFail = AiAnalyticsService.answerAiQuestion('Thằng nào fail attendance?', report);
       expect(qFail.contains('CE190585') || qFail.contains('Lâm Quốc Minh'), true);
+
+      // Test natural conversational greetings & identity
+      final qHello = AiAnalyticsService.answerAiQuestion('xin chào', report);
+      expect(qHello.contains('Xin chào'), true);
+      expect(qHello.contains('FAP Attendance Assistant'), true);
+
+      final qWho = AiAnalyticsService.answerAiQuestion('Bạn là ai?', report);
+      expect(qWho.contains('FAP AI Assistant'), true);
+
+      // Test specific student lookup
+      final qStudent = AiAnalyticsService.answerAiQuestion('tình hình CE190585', report, students: students);
+      expect(qStudent.contains('Lâm Quốc Minh') || qStudent.contains('CE190585'), true);
+      expect(qStudent.contains('CẤM THI'), true);
     });
   });
 

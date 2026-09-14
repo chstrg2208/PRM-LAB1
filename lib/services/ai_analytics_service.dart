@@ -197,43 +197,169 @@ class AiAnalyticsService {
   }
 
   /// Trả lời câu hỏi tương tác người dùng
-  static String answerAiQuestion(String query, AiAttendanceReport report) {
-    final q = query.toLowerCase();
+  static String answerAiQuestion(String query, AiAttendanceReport report, {List<Student>? students}) {
+    final q = query.toLowerCase().trim();
 
-    if (q.contains('slot') || q.contains('tiết')) {
+    // 1. Chào hỏi & Thăm hỏi tự nhiên
+    if (RegExp(r'^(xin\s+)?chào|\b(hello|hi|hey|alo)\b|\bchúc\b|good\s+(morning|afternoon|evening)|bạn\s+ơi|bot\s+ơi', caseSensitive: false).hasMatch(q)) {
+      return '👋 **Xin chào Thầy/Cô!** Em là **FAP Attendance Assistant** - Trợ lý AI hỗ trợ quản lý và phân tích chuyên cần sinh viên FPTU.\n\n'
+          '📊 **Tổng quan lớp hiện tại:**\n'
+          '• Tỷ lệ chuyên cần chung: **${report.overallAttendanceRate.toStringAsFixed(1)}%**\n'
+          '• Slot vắng cao nhất: **Slot ${report.worstSlot.slot}** (${report.worstSlot.absentRate.toStringAsFixed(1)}% vắng)\n'
+          '• Thứ vắng nhiều nhất: **${report.worstDay.dayName}** (${report.worstDay.absentRate.toStringAsFixed(1)}% vắng)\n'
+          '• Tình trạng cấm thi (≥20%): **${report.failedStudents.length} sinh viên** | Nguy cơ (15-20%): **${report.warningStudents.length} sinh viên**\n\n'
+          '💡 Thầy/Cô có thể hỏi em về danh sách sinh viên vắng, phân tích theo slot/thứ, tra cứu theo tên/MSSV hoặc đề xuất giải pháp cải thiện!';
+    }
+
+    // 2. Hỏi về danh tính AI (bạn là ai, ai tạo ra bạn)
+    if (RegExp(r'bạn\s+là\s+ai|who\s+are\s+you|bạn\s+tên\s+gì|ai\s+tạo|giới\s+thiệu\s+bạn', caseSensitive: false).hasMatch(q)) {
+      return '🤖 **Em là FAP AI Assistant!**\n'
+          'Trợ lý trí tuệ nhân tạo chuyên sâu về quản lý điểm danh và phân tích học vụ tại Đại học FPT.\n\n'
+          'Em có khả năng:\n'
+          '1. Quét và phát hiện các trường hợp có nguy cơ Fail Attendance (vắng ≥ 20%).\n'
+          '2. Phân tích xu hướng vắng theo Slot học và Thứ trong tuần.\n'
+          '3. Tra cứu nhanh hồ sơ chuyên cần của từng sinh viên.\n'
+          '4. Đưa ra khuyến nghị thực tế giúp giảng viên quản lý lớp học hiệu quả hơn.';
+    }
+
+    // 3. Cảm ơn & Lịch sự
+    if (RegExp(r'cảm\s+ơn|thank|tks|tạm\s+biệt|bye|ok\b|tốt\s+lắm|hay\s+quá|good\s+job', caseSensitive: false).hasMatch(q)) {
+      return '😊 **Rất vui được đồng hành cùng Thầy/Cô!**\n'
+          'Chúc Thầy/Cô có buổi dạy tràn đầy năng lượng và hiệu quả. Nếu cần kiểm tra thêm dữ liệu lớp học, Thầy/Cô cứ nhắn em nhé!';
+    }
+
+    // 4. Hướng dẫn sử dụng
+    if (RegExp(r'hướng\s+dẫn|giúp|help|chức\s+năng|cách\s+dùng|làm\s+được\s+gì', caseSensitive: false).hasMatch(q)) {
+      return '🛠️ **Gợi ý các câu hỏi Thầy/Cô có thể hỏi em:**\n'
+          '• *"Slot mấy sinh viên nghỉ nhiều nhất?"*\n'
+          '• *"Thứ mấy sinh viên hay vắng?"*\n'
+          '• *"Danh sách sinh viên cấm thi hoặc nguy cơ"* hoặc *"Thằng nào fail attendance?"*\n'
+          '• *"Tra cứu sinh viên [Tên hoặc MSSV]"* (Ví dụ: *CE190585*)\n'
+          '• *"Ai đi học đầy đủ 100%?"*\n'
+          '• *"Tư vấn giải pháp nâng cao tỷ lệ chuyên cần"*';
+    }
+
+    // 5. Tra cứu sinh viên cụ thể theo tên hoặc mã số sinh viên
+    if (students != null && students.isNotEmpty) {
+      for (final s in students) {
+        final roll = s.member.toLowerCase();
+        final name = s.fullName.toLowerCase();
+        final code = s.code.toLowerCase();
+        if ((roll.isNotEmpty && q.contains(roll)) ||
+            (code.isNotEmpty && q.contains(code)) ||
+            (name.isNotEmpty && q.contains(name))) {
+          final isFail = s.absentRate >= 20.0;
+          final isWarn = s.absentRate >= 15.0 && s.absentRate < 20.0;
+          final status = isFail
+              ? '⛔ **CẤM THI (Fail Attendance - vắng ≥ 20%)**'
+              : (isWarn
+                  ? '⚠️ **CẢNH BÁO NGUY CƠ (Vắng 15% - 20%)**'
+                  : '✅ **AN TOÀN (Đi học đầy đủ / Chuyên cần tốt)**');
+          final maxAllowed = (s.totalSlots * 0.2).floor();
+          final remaining = maxAllowed - s.absentSlots;
+          final advice = isFail
+              ? 'Sinh viên đã vượt hạn mức vắng cho phép ($maxAllowed buổi) và không đủ điều kiện thi cuối môn.'
+              : (remaining <= 1
+                  ? 'Sinh viên chỉ còn được phép vắng tối đa **$remaining buổi nữa** trước khi bị cấm thi!'
+                  : 'Sinh viên còn được phép vắng tối đa **$remaining buổi**.');
+
+          return '👤 **Hồ sơ chuyên cần sinh viên:**\n'
+              '• **Họ và tên:** ${s.fullName}\n'
+              '• **Mã sinh viên:** ${s.member} (Code: ${s.code})\n'
+              '• **Số buổi vắng:** ${s.absentSlots}/${s.totalSlots} buổi (**${s.absentRate.toStringAsFixed(1)}%**)\n'
+              '• **Trạng thái:** $status\n'
+              '• **Ghi chú học vụ:** $advice';
+        }
+      }
+    }
+
+    // 6. Sinh viên đi học đầy đủ / chăm chỉ
+    if (RegExp(r'chăm|đầy\s+đủ|100%|không\s+vắng|chuyên\s+cần\s+tốt', caseSensitive: false).hasMatch(q)) {
+      if (students != null) {
+        final goodStudents = students.where((s) => s.absentSlots == 0).toList();
+        if (goodStudents.isNotEmpty) {
+          final names = goodStudents.take(8).map((s) => '• **${s.member} - ${s.fullName}** (Vắng 0 buổi - 100%)').join('\n');
+          return '🌟 **Sinh viên đi học đầy đủ 100% (${goodStudents.length} bạn):**\n$names'
+              '${goodStudents.length > 8 ? '\n• ... và ${goodStudents.length - 8} sinh viên khác.' : ''}\n\n'
+              '👏 Rất đáng khen ngợi! Giảng viên có thể cộng điểm khuyến khích hoặc tuyên dương trước lớp.';
+        }
+      }
+      return '🌟 Lớp hiện có nhiều sinh viên duy trì tỷ lệ đi học rất tốt!';
+    }
+
+    // 7. Hỏi về Slot / Tiết học
+    if (q.contains('slot') || q.contains('tiết') || RegExp(r'\bca\b').hasMatch(q) || q.contains('giờ')) {
       return '⏰ **Phân tích Slot vắng nhiều nhất:**\n'
           'Sinh viên nghỉ nhiều nhất ở **Slot ${report.worstSlot.slot}** (${report.worstSlot.slotTime}) '
           'với tỷ lệ vắng lên đến **${report.worstSlot.absentRate.toStringAsFixed(1)}%** '
           '(${report.worstSlot.absentCount} lượt vắng).\n\n'
-          '*Nhận xét của AI:* Đây là khung giờ sáng sớm hoặc cuối ngày, sinh viên thường gặp vấn đề thức muộn hoặc trùng lịch cá nhân.';
+          '*Nhận xét của AI:* Đây là khung giờ sinh viên hay gặp trở ngại về thức dậy sớm hoặc kẹt xe giờ cao điểm.\n'
+          '💡 *Khuyến nghị:* Giảng viên nên chốt sĩ số điểm danh ngay trong 15 phút đầu slot.';
     }
 
-    if (q.contains('thứ') || q.contains('ngày')) {
+    // 8. Hỏi về Thứ / Ngày trong tuần
+    if (q.contains('thứ') || q.contains('ngày') || q.contains('day') || q.contains('tuần')) {
       return '📅 **Phân tích Thứ vắng nhiều nhất trong tuần:**\n'
           'Sinh viên nghỉ nhiều nhất vào **${report.worstDay.dayName}** '
           'với tỷ lệ vắng chiếm **${report.worstDay.absentRate.toStringAsFixed(1)}%** '
           '(${report.worstDay.absentCount} lượt vắng).\n\n'
-          '*Nhận xét của AI:* Sinh viên thường có tâm lý uể oải đầu tuần hoặc nghỉ sớm vào cuối tuần.';
+          '*Nhận xét của AI:* Sau những ngày nghỉ cuối tuần, sinh viên thường có xu hướng chậm lại hoặc vướng lịch cá nhân.\n'
+          '💡 *Khuyến nghị:* Thầy cô nên gửi thông báo lịch học vào tối Chủ Nhật để sinh viên chủ động chuẩn bị bài.';
     }
 
-    if (q.contains('fail') || q.contains('cấm thi') || q.contains('ai') || q.contains('thằng nào') || q.contains('sinh viên')) {
-      if (report.failedStudents.isEmpty) {
-        return '🎉 **Tuyệt vời!** Hiện tại lớp chưa có sinh viên nào bị Fail Attendance (cấm thi).';
+    // 9. Danh sách Cấm thi / Fail attendance / Nguy cơ
+    if (RegExp(r'fail|cấm\s+thi|thằng\s+nào|ai\s+(vắng|nghỉ|bị|fail)|danh\s+sách\s+vắng|nguy\s+cơ|cảnh\s+báo|bị\s+cấm|rớt', caseSensitive: false).hasMatch(q)) {
+      if (report.failedStudents.isEmpty && report.warningStudents.isEmpty) {
+        return '🎉 **Tuyệt vời!** Hiện tại lớp chưa có sinh viên nào bị Fail Attendance (cấm thi) hoặc chạm ngưỡng cảnh báo!';
       }
 
-      final names = report.failedStudents
-          .map((s) => '• **${s.rollNumber} - ${s.fullName}**: Vắng ${s.absentSlots}/${s.totalSlots} buổi (${s.absentRate.toStringAsFixed(0)}%)')
-          .join('\n');
+      final buffer = StringBuffer();
+      if (report.failedStudents.isNotEmpty) {
+        buffer.writeln('🚫 **Danh sách sinh viên FAIL ATTENDANCE (Cấm thi ≥ 20%):**');
+        buffer.writeln('Hiện có **${report.failedStudents.length} sinh viên** đã vượt ngưỡng vắng 20%:');
+        for (final s in report.failedStudents) {
+          buffer.writeln('• **${s.member} - ${s.fullName}**: Vắng ${s.absentSlots}/${s.totalSlots} buổi (${s.absentRate.toStringAsFixed(0)}%) - ⛔ **CẤM THI**');
+        }
+      }
 
-      return '🚫 **Danh sách sinh viên FAIL ATTENDANCE (Cấm thi >= 20%):**\n'
-          'Hiện có **${report.failedStudents.length} sinh viên** đã chính thức vượt quá 20% số buổi vắng:\n\n'
-          '$names\n\n'
-          '⚠️ Các sinh viên này theo quy chế đào tạo ĐH FPT sẽ không đủ điều kiện dự thi kết thúc môn (Final Exam).';
+      if (report.warningStudents.isNotEmpty) {
+        if (buffer.isNotEmpty) buffer.writeln('');
+        buffer.writeln('⚠️ **Sinh viên trong diện NGUY CƠ CAO (15% - 20%):**');
+        for (final s in report.warningStudents) {
+          buffer.writeln('• **${s.member} - ${s.fullName}**: Vắng ${s.absentSlots}/${s.totalSlots} buổi (${s.absentRate.toStringAsFixed(0)}%) - Chỉ còn 0-1 buổi vắng!');
+        }
+      }
+
+      buffer.writeln('\n📢 *Đề xuất:* Giảng viên lập biên bản báo phòng Khảo thí / CTSV và gửi thông báo nhắc nhở các bạn sắp vượt ngưỡng.');
+      return buffer.toString();
     }
 
-    return '🤖 **AI Insights:** Lớp hiện có tỷ lệ chuyên cần **${report.overallAttendanceRate.toStringAsFixed(1)}%**. '
-        'Slot nghỉ nhiều nhất là **Slot ${report.worstSlot.slot}**, thứ vắng nhiều nhất là **${report.worstDay.dayName}**, '
-        'và có **${report.failedStudents.length} sinh viên** đã chạm ngưỡng cấm thi.';
+    // 10. Tư vấn giải pháp / Khuyến nghị
+    if (RegExp(r'giải\s+pháp|lời\s+khuyên|tư\s+vấn|khuyến\s+nghị|làm\s+sao|cải\s+thiện|biện\s+pháp|đề\s+xuất', caseSensitive: false).hasMatch(q)) {
+      return '💡 **Đề xuất & Giải pháp nâng cao chuyên cần cho lớp học:**\n\n'
+          '1. **Tập trung vào ${report.worstDay.dayName} & Slot ${report.worstSlot.slot}:** Đây là thời điểm sinh viên có tỷ lệ vắng cao nhất (**${report.worstSlot.absentRate.toStringAsFixed(1)}%**). Giảng viên nên tổ chức mini-quiz tính điểm cộng hoặc điểm danh vào 15 phút đầu giờ.\n'
+          '2. **Can thiệp sớm nhóm nguy cơ:** Lớp hiện có **${report.warningStudents.length} sinh viên cảnh báo** và **${report.failedStudents.length} sinh viên cấm thi**. Hãy trao đổi trực tiếp hoặc gửi email cảnh báo trước khi các em chạm mốc 20%.\n'
+          '3. **Tạo sự gắn kết trong tiết học:** Sử dụng phương pháp thảo luận nhóm và bài tập thực hành ngắn (hands-on coding) để sinh viên thấy rõ giá trị của việc có mặt tại lớp.';
+    }
+
+    // 11. Báo cáo tổng quan / Chuyên cần
+    if (RegExp(r'tổng\s+quan|tình\s+hình|báo\s+cáo|tỷ\s+lệ|chuyên\s+cần|overview', caseSensitive: false).hasMatch(q)) {
+      return '📊 **Báo cáo tổng quan chuyên cần lớp học:**\n'
+          '• Tỷ lệ chuyên cần trung bình toàn lớp: **${report.overallAttendanceRate.toStringAsFixed(1)}%**\n'
+          '• Slot sinh viên nghỉ nhiều nhất: **Slot ${report.worstSlot.slot}** (${report.worstSlot.slotTime}) với **${report.worstSlot.absentRate.toStringAsFixed(1)}%**\n'
+          '• Thứ vắng nhiều nhất trong tuần: **${report.worstDay.dayName}** với **${report.worstDay.absentRate.toStringAsFixed(1)}%**\n'
+          '• Số sinh viên bị cấm thi (≥ 20%): **${report.failedStudents.length} sinh viên**\n'
+          '• Số sinh viên cảnh báo (15-20%): **${report.warningStudents.length} sinh viên**\n\n'
+          '${report.aiSummary}';
+    }
+
+    // Default Fallback
+    return '🤖 **Em đã ghi nhận câu hỏi:** *"$query"*\n\n'
+        'Hiện tại lớp đang đạt tỷ lệ chuyên cần **${report.overallAttendanceRate.toStringAsFixed(1)}%**. '
+        'Slot ${report.worstSlot.slot} và ${report.worstDay.dayName} là các mốc thời gian vắng cao điểm nhất, '
+        'có **${report.failedStudents.length} sinh viên** đã cấm thi và **${report.warningStudents.length} bạn** cận cấm thi.\n\n'
+        '💡 *Gợi ý:* Thầy/Cô có thể hỏi các câu hỏi như: *"Thứ mấy vắng nhiều?"*, *"Slot mấy vắng nhiều?"*, *"Danh sách cấm thi"*, *"Tra cứu sinh viên [Tên/MSSV]"*, hoặc *"Lời khuyên cải thiện chuyên cần"*.\n'
+        '✨ *Mẹo:* Nhập Google Gemini API Key tại tab **Cài Đặt** để kích hoạt trí tuệ nhân tạo Gemini 1.5 Flash trò chuyện tự do!';
   }
 
   /// Gửi câu hỏi kèm context dữ liệu thực tế tới Google Gemini LLM API (AI Thật)
@@ -245,7 +371,7 @@ class AiAnalyticsService {
   }) async {
     final cleanKey = apiKey.trim();
     if (cleanKey.isEmpty) {
-      return answerAiQuestion(prompt, report);
+      return answerAiQuestion(prompt, report, students: students);
     }
 
     try {
@@ -253,7 +379,7 @@ class AiAnalyticsService {
         final isFail = s.absentRate >= 20.0;
         final isWarn = s.absentRate >= 15.0 && s.absentRate < 20.0;
         final status = isFail ? 'CẤM THI (>=20%)' : (isWarn ? 'CẢNH BÁO (>=15%)' : 'ĐỦ ĐIỀU KIỆN');
-        return '- MSSV: ${s.member}, Họ tên: ${s.fullName}, Vắng: ${s.absentSlots}/${s.totalSlots} (${s.absentRate.toStringAsFixed(1)}%) -> $status';
+        return '- MSSV: ${s.member}, Họ tên: ${s.fullName} (Code: ${s.code}), Vắng: ${s.absentSlots}/${s.totalSlots} (${s.absentRate.toStringAsFixed(1)}%) -> $status';
       }).join('\n');
 
       final contextText = '''
@@ -268,6 +394,17 @@ Danh sách sinh viên:
 $studentSummary
 ''';
 
+      final systemInstruction = '''
+Bạn là trợ lý AI chuyên môn cao cấp của hệ thống Quản lý Điểm danh FAP tại Đại học FPT.
+Bạn đang trò chuyện và hỗ trợ trực tiếp giảng viên.
+Quy tắc trả lời:
+1. Nếu giảng viên chào hỏi (xin chào, hello...), hãy chào lại một cách lịch sự, thân thiện, xưng "em" gọi "Thầy/Cô", tóm tắt 1 câu hiện trạng chuyên cần của lớp và hỏi xem Thầy/Cô cần hỗ trợ phân tích điều gì.
+2. Nếu giảng viên hỏi bạn là ai, hãy giới thiệu bạn là Trợ lý AI FAP Attendance Assistant hỗ trợ điểm danh & phân tích chuyên cần ĐH FPT.
+3. Khi trả lời về dữ liệu điểm danh, luôn dùng số liệu thực tế được cung cấp dưới đây, tuyệt đối không bịa số liệu.
+4. Khi tư vấn giải pháp, hãy đưa ra các lời khuyên sư phạm thực tế, đúng quy chế đào tạo ĐH FPT (vắng >= 20% tổng số buổi sẽ bị cấm thi / fail attendance).
+5. Trình bày đẹp mắt, tự nhiên bằng định dạng Markdown (in đậm, bullet points).
+''';
+
       final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$cleanKey');
       final response = await http.post(
         url,
@@ -277,7 +414,7 @@ $studentSummary
             {
               'parts': [
                 {
-                  'text': 'Bạn là trợ lý AI phân tích chuyên cần FAP tại Đại học FPT. Dưới đây là dữ liệu điểm danh thực tế được trích xuất trực tiếp từ hệ thống:\n\n$contextText\n\nDựa vào dữ liệu thực tế trên, hãy trả lời câu hỏi sau của giảng viên một cách tự nhiên, chính xác, súc tích, dẫn chứng số liệu cụ thể:\n"$prompt"'
+                  'text': '$systemInstruction\n\nDỮ LIỆU ĐIỂM DANH THỰC TẾ:\n$contextText\n\nCÂU HỎI CỦA GIẢNG VIÊN:\n"$prompt"'
                 }
               ]
             }
@@ -291,10 +428,26 @@ $studentSummary
         if (text != null && text.toString().trim().isNotEmpty) {
           return text.toString().trim();
         }
+      } else {
+        // Parse error message from Gemini API
+        String errMsg = 'Lỗi kết nối';
+        try {
+          final errData = jsonDecode(response.body);
+          errMsg = errData['error']?['message'] ?? 'Mã lỗi: ${response.statusCode}';
+        } catch (_) {
+          errMsg = 'Mã phản hồi: ${response.statusCode}';
+        }
+        final localResp = answerAiQuestion(prompt, report, students: students);
+        return '⚠️ **Lỗi gọi Google Gemini API (${response.statusCode}):** $errMsg\n\n'
+            '💡 *Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:*\n\n$localResp';
       }
-    } catch (_) {}
+    } catch (e) {
+      final localResp = answerAiQuestion(prompt, report, students: students);
+      return '⚠️ **Lỗi kết nối mạng tới Gemini:** $e\n\n'
+          '💡 *Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:*\n\n$localResp';
+    }
 
-    return answerAiQuestion(prompt, report);
+    return answerAiQuestion(prompt, report, students: students);
   }
 
   static String _generateNaturalLanguageSummary({

@@ -249,21 +249,66 @@ function setupEventListeners() {
     showToast('📋 Đã sao chép mã Google Apps Script!');
   });
 
-  // Save Gemini API Key
+  // Save & Test Gemini API Key
   const btnSaveKey = document.getElementById('btnSaveGeminiKey');
   if (btnSaveKey) {
     btnSaveKey.addEventListener('click', async () => {
       const key = document.getElementById('inputGeminiApiKey').value.trim();
-      geminiApiKey = key;
-      await chrome.storage.local.set({ geminiApiKey: key });
       const resBox = document.getElementById('geminiKeyResultBox');
+
+      if (!key) {
+        geminiApiKey = '';
+        await chrome.storage.local.set({ geminiApiKey: '' });
+        if (resBox) {
+          resBox.className = 'result-alert info';
+          resBox.innerText = 'ℹ️ Đã xóa Gemini API Key. Đang sử dụng bộ máy phân tích dữ liệu Google Sheet Thật.';
+          resBox.classList.remove('hidden');
+        }
+        updateAiEngineBadge();
+        showToast('ℹ️ Đã chuyển về phân tích nội bộ');
+        return;
+      }
+
       if (resBox) {
-        resBox.className = 'result-alert success';
-        resBox.innerText = key ? '✅ Đã lưu Google Gemini API Key! AI Thật 100% đã được kích hoạt.' : 'ℹ️ Đã xóa Gemini API Key. Đang dùng bộ máy phân tích dữ liệu Google Sheet Thật.';
+        resBox.className = 'result-alert info';
+        resBox.innerText = '🔄 Đang kiểm tra kết nối Google Gemini API...';
         resBox.classList.remove('hidden');
       }
-      updateAiEngineBadge();
-      showToast('💾 Đã lưu cấu hình AI!');
+
+      try {
+        const testRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: 'Ping test' }] }] })
+        });
+
+        if (testRes.ok) {
+          geminiApiKey = key;
+          await chrome.storage.local.set({ geminiApiKey: key });
+          if (resBox) {
+            resBox.className = 'result-alert success';
+            resBox.innerText = '✅ Google Gemini API Key CHÍNH XÁC 100%! Đã kích hoạt mô hình Gemini 1.5 Flash AI thực tế. Bạn có thể trò chuyện tự nhiên!';
+            resBox.classList.remove('hidden');
+          }
+          updateAiEngineBadge();
+          showToast('✅ Đã kích hoạt Google Gemini AI!');
+        } else {
+          const errData = await testRes.json().catch(() => ({}));
+          const errMsg = errData.error?.message || testRes.statusText;
+          if (resBox) {
+            resBox.className = 'result-alert error';
+            resBox.innerText = `❌ Key không hợp lệ (Lỗi ${testRes.status}): ${errMsg}. Vui lòng lấy lại key tại aistudio.google.com!`;
+            resBox.classList.remove('hidden');
+          }
+          showToast('❌ Gemini API Key không hợp lệ!');
+        }
+      } catch (err) {
+        if (resBox) {
+          resBox.className = 'result-alert error';
+          resBox.innerText = `❌ Lỗi kết nối mạng: ${err.message}.`;
+          resBox.classList.remove('hidden');
+        }
+      }
     });
   }
 }
@@ -655,27 +700,199 @@ async function updateAiInsights() {
   }
 }
 
-// AI Question answering logic - Real Gemini API or Dynamic Data Engine
+// AI Question answering logic - Real Gemini API or Smart Local NLP Engine
+function getSmartLocalAnswer(q, query) {
+  const cls = document.getElementById('selectClass')?.value || 'SE1801';
+  const failed = computedStats.failedStudents || [];
+  const warning = computedStats.warningStudents || [];
+
+  // 1. Chào hỏi thân thiện & tự nhiên
+  if (/^(xin\s+)?chào|\b(hello|hi|hey|alo)\b|\bchúc\b|good\s+(morning|afternoon|evening)|bạn\s+ơi|bot\s+ơi/i.test(q)) {
+    return `👋 **Xin chào Thầy/Cô!** Em là **FAP Attendance Assistant** - Trợ lý AI hỗ trợ quản lý điểm danh và phân tích chuyên cần sinh viên FPTU.
+
+📊 **Tình hình nhanh lớp ${cls}:**
+• Tỷ lệ chuyên cần chung: **${computedStats.overallRate}%**
+• Slot vắng nhiều nhất: **Slot ${computedStats.worstSlot.slot}** (${computedStats.worstSlot.rate}% vắng)
+• Thứ vắng nhiều nhất: **${computedStats.worstDay.name}** (${computedStats.worstDay.rate}% vắng)
+• Sinh viên cấm thi (≥20%): **${failed.length} SV** | Nguy cơ (15-20%): **${warning.length} SV**
+
+💡 *Thầy/Cô có thể hỏi em về: danh sách SV vắng, slot/thứ vắng nhiều nhất, tra cứu theo tên/MSSV hoặc đề xuất giải pháp cải thiện chuyên cần!*`;
+  }
+
+  // 2. Hỏi danh tính (bạn là ai, ai tạo ra bạn)
+  if (/bạn\s+là\s+ai|who\s+are\s+you|bạn\s+tên\s+gì|ai\s+tạo|giới\s+thiệu\s+bạn/i.test(q)) {
+    return `🤖 **Em là FAP AI Assistant!**
+Trợ lý AI được tích hợp trực tiếp trong hệ thống Quản lý Điểm danh FAP & Extension dành riêng cho giảng viên Đại học FPT.
+
+Em có thể giúp Thầy/Cô:
+1. Tự động rà soát sinh viên cấm thi (vắng ≥ 20%) và cận cấm thi (15% - 20%).
+2. Khai phá các khung giờ có xu hướng sinh viên vắng nhiều (Slot học & Thứ trong tuần).
+3. Tra cứu nhanh hồ sơ đi học của bất kỳ sinh viên nào.
+4. Đưa ra các khuyến nghị sư phạm giúp lớp học duy trì nề nếp chuyên cần cao nhất.`;
+  }
+
+  // 3. Cảm ơn & Lịch sự
+  if (/cảm\s+ơn|thank|tks|tạm\s+biệt|bye|ok\b|tốt\s+lắm|hay\s+quá|good\s+job/i.test(q)) {
+    return `😊 **Dạ không có gì ạ! Rất hân hạnh được đồng hành cùng Thầy/Cô!**
+Chúc Thầy/Cô có những tiết giảng thật hiệu quả và tràn đầy năng lượng. Khi nào cần tra cứu số liệu chuyên cần, Thầy/Cô cứ nhắn em nhé!`;
+  }
+
+  // 4. Hướng dẫn sử dụng
+  if (/hướng\s+dẫn|giúp|help|chức\s+năng|cách\s+dùng|làm\s+được\s+gì/i.test(q)) {
+    return `🛠️ **Gợi ý các câu hỏi Thầy/Cô có thể đặt cho Trợ lý AI:**
+• *"Slot mấy sinh viên nghỉ nhiều?"*
+• *"Thứ mấy sinh viên hay vắng?"*
+• *"Danh sách sinh viên bị cấm thi"* hoặc *"Thằng nào fail attendance?"*
+• *"Tra cứu sinh viên [Mã số hoặc Tên]"* (Ví dụ: *SE180001* hoặc *An*)
+• *"Ai đi học đầy đủ 100%?"*
+• *"Tư vấn giải pháp cải thiện chuyên cần"*
+• *Hoặc nhập Google Gemini API Key tại tab **Cài Đặt** để trò chuyện ngôn ngữ tự nhiên không giới hạn!*`;
+  }
+
+  // 5. Tra cứu sinh viên cụ thể theo Mã SV / Tên / Code / Họ
+  for (const s of currentStudents) {
+    const mem = (s.member || s.rollNumber || '').toLowerCase();
+    const code = (s.code || '').toLowerCase();
+    const full = (s.fullName || '').toLowerCase();
+
+    const matchMem = mem && q.includes(mem);
+    const matchCode = code && code.length >= 2 && q.includes(code);
+    const matchFull = full && full.length >= 3 && q.includes(full);
+
+    if (matchMem || matchCode || matchFull) {
+      const tot = s.totalSlots || 30;
+      const abs = s.absentCount != null ? s.absentCount : (s.absentSlots != null ? s.absentSlots : 0);
+      const pct = Math.round((abs / tot) * 100);
+      const isBanned = pct >= 20;
+      const isWarn = pct >= 15 && pct < 20;
+      const maxAllowed = Math.floor(tot * 0.2);
+      const remain = maxAllowed - abs;
+
+      const badge = isBanned
+        ? '⛔ **CẤM THI (Fail Attendance - vắng ≥ 20%)**'
+        : (isWarn ? '⚠️ **CẢNH BÁO NGUY CƠ (Vắng 15% - 20%)**' : '✅ **AN TOÀN (Đi học đầy đủ / Chuyên cần tốt)**');
+
+      const advice = isBanned
+        ? `Đã vượt quá hạn mức cho phép (${maxAllowed} buổi) -> Không đủ điều kiện dự thi Final Exam.`
+        : (remain <= 1
+            ? `Chỉ còn được phép vắng tối đa **${remain} buổi nữa** trước khi bị cấm thi!`
+            : `Còn được phép vắng tối đa **${remain} buổi**.`);
+
+      return `👤 **Hồ sơ chuyên cần sinh viên:**
+• **Họ và tên:** ${s.fullName}
+• **MSSV:** ${s.member || s.rollNumber} (Code: ${s.code || '-'})
+• **Email:** ${s.email || '-'}
+• **Số buổi vắng:** ${abs}/${tot} buổi (**${pct}%**)
+• **Trạng thái:** ${badge}
+• **Ghi chú học vụ:** ${advice}`;
+    }
+  }
+
+  // 6. Sinh viên đi học đầy đủ 100% / Chăm chỉ
+  if (/chăm|đầy\s+đủ|100%|không\s+vắng|chuyên\s+cần\s+tốt/i.test(q)) {
+    const goodList = currentStudents.filter(s => {
+      const abs = s.absentCount != null ? s.absentCount : (s.absentSlots != null ? s.absentSlots : 0);
+      return abs === 0;
+    });
+
+    if (goodList.length > 0) {
+      const topStr = goodList.slice(0, 8).map(s => `• **${s.member || s.rollNumber} - ${s.fullName}** (Vắng 0 buổi - 100%)`).join('\n');
+      return `🌟 **Sinh viên đi học đầy đủ 100% (${goodList.length} bạn):**\n${topStr}${goodList.length > 8 ? `\n• ... và ${goodList.length - 8} sinh viên khác.` : ''}\n\n👏 Rất đáng tuyên dương trước lớp!`;
+    }
+    return `🌟 Lớp hiện có nhiều bạn đang duy trì nề nếp chuyên cần tốt!`;
+  }
+
+  // 7. Phân tích Slot học
+  if (q.includes('slot') || q.includes('tiết') || /\bca\b/i.test(q) || q.includes('giờ')) {
+    return `⏰ **Phân tích theo Slot học (Số liệu thực tế):**
+• **Slot ${computedStats.worstSlot.slot} (${computedStats.worstSlot.time})** là slot có tỷ lệ sinh viên vắng cao nhất: **${computedStats.worstSlot.absentCount} lượt vắng (${computedStats.worstSlot.rate}%)**.
+• *Phân tích AI:* Đây là khung giờ sinh viên hay gặp trở ngại về thức dậy sớm hoặc kẹt xe giờ cao điểm.
+💡 *Khuyến nghị:* Giảng viên nên chốt sĩ số điểm danh ngay trong 15 phút đầu slot.`;
+  }
+
+  // 8. Phân tích Ngày / Thứ trong tuần
+  if (q.includes('thứ') || q.includes('ngày') || q.includes('day') || q.includes('tuần')) {
+    return `📅 **Phân tích theo Ngày trong tuần (Số liệu thực tế):**
+• **${computedStats.worstDay.name}** là ngày có số sinh viên nghỉ học nhiều nhất trong tuần: **${computedStats.worstDay.absentCount} lượt vắng (${computedStats.worstDay.rate}%)**.
+• *Nhận xét AI:* Sau những ngày nghỉ cuối tuần, sinh viên thường có xu hướng chậm lại hoặc vướng lịch gia đình.
+💡 *Khuyến nghị:* Thầy cô nên gửi thông báo lịch học vào tối Chủ Nhật để sinh viên chủ động.`;
+  }
+
+  // 9. Danh sách Cấm thi / Nguy cơ (Dùng regex chuẩn, tránh trigger nhầm khi có chữ 'ai')
+  if (/fail|cấm\s+thi|thằng\s+nào|ai\s+(vắng|nghỉ|bị|fail)|danh\s+sách\s+vắng|nguy\s+cơ|cảnh\s+báo|bị\s+cấm|rớt/i.test(q)) {
+    if (failed.length === 0 && warning.length === 0) {
+      return `🎉 **Tin vui:** Hiện tại lớp không có sinh viên nào vượt ngưỡng 20% vắng để bị cấm thi hoặc chạm mức cảnh báo!`;
+    }
+
+    let out = '';
+    if (failed.length > 0) {
+      const listStr = failed.map((s, idx) => {
+        return `${idx + 1}. **${s.member || s.rollNumber} - ${s.fullName}**: Vắng ${s.absentCount}/${s.totalSlots || 30} buổi (**${s.absentRatePct}%**) ⛔ **CẤM THI**`;
+      }).join('\n');
+      out += `🚨 **Danh sách sinh viên CẤM THI (vắng ≥ 20%):**\n${listStr}\n\n`;
+    }
+
+    if (warning.length > 0) {
+      const warnStr = warning.map((s, idx) => {
+        return `• **${s.member || s.rollNumber} - ${s.fullName}**: Vắng ${s.absentCount}/${s.totalSlots || 30} buổi (${s.absentRatePct}%) - Còn 0-1 buổi vắng!`;
+      }).join('\n');
+      out += `⚠️ **Sinh viên cận kề cấm thi (15% - 20%):**\n${warnStr}\n\n`;
+    }
+
+    out += `📢 *Đề xuất:* Giảng viên lập biên bản báo phòng Khảo thí / CTSV và gửi thông báo nhắc nhở các bạn sắp vượt ngưỡng.`;
+    return out;
+  }
+
+  // 10. Tư vấn giải pháp / Lời khuyên
+  if (/giải\s+pháp|lời\s+khuyên|tư\s+vấn|khuyến\s+nghị|làm\s+sao|cải\s+thiện|biện\s+pháp|đề\s+xuất/i.test(q)) {
+    return `💡 **Đề xuất & Giải pháp nâng cao chuyên cần cho lớp ${cls}:**
+1. **Tập trung vào ${computedStats.worstDay.name} & Slot ${computedStats.worstSlot.slot}:** Đây là khung giờ có tỷ lệ vắng cao nhất (**${computedStats.worstSlot.rate}%**). Giảng viên nên tổ chức mini-quiz hoặc điểm danh ngẫu nhiên đầu giờ (15 phút đầu).
+2. **Xử lý nhóm nguy cơ:** Lớp hiện có **${warning.length} sinh viên cận cấm thi (15-20%)** và **${failed.length} sinh viên cấm thi (≥20%)**. Cần gửi email nhắc nhở trước khi quá muộn.
+3. **Tương tác linh hoạt:** Khuyến khích sinh viên báo trước nếu có lý do chính đáng để kịp thời hỗ trợ và điều chỉnh bài tập.`;
+  }
+
+  // 11. Báo cáo tổng quan
+  if (/tổng\s+quan|tình\s+hình|báo\s+cáo|tỷ\s+lệ|chuyên\s+cần|overview/i.test(q)) {
+    return `📊 **Báo cáo tổng quan chuyên cần lớp ${cls}:**
+• Tỷ lệ chuyên cần toàn lớp: **${computedStats.overallRate}%**
+• Slot vắng nhiều nhất: **Slot ${computedStats.worstSlot.slot}** (${computedStats.worstSlot.time}) với **${computedStats.worstSlot.rate}%**
+• Ngày vắng nhiều nhất: **${computedStats.worstDay.name}** (${computedStats.worstDay.rate}%)
+• Số sinh viên cấm thi (≥20%): **${failed.length} SV**
+• Số sinh viên cảnh báo (15-20%): **${warning.length} SV**
+• *Khuyến nghị:* Điểm danh trong 15 phút đầu slot; gửi cảnh báo cho sinh viên vắng từ buổi thứ 4.`;
+  }
+
+  // Default Fallback: Lịch sự, tự nhiên, hướng dẫn rõ ràng
+  return `🤖 **Em đã ghi nhận câu hỏi:** *"${query}"*
+
+Hiện tại lớp **${cls}** đang đạt tỷ lệ chuyên cần **${computedStats.overallRate}%**. Slot ${computedStats.worstSlot.slot} và ${computedStats.worstDay.name} là các mốc thời gian vắng cao điểm nhất, có **${failed.length} SV cấm thi** và **${warning.length} SV cảnh báo**.
+
+💡 *Gợi ý:* Thầy/Cô có thể hỏi: *"Slot mấy vắng nhiều?"*, *"Thứ mấy vắng nhiều?"*, *"Danh sách cấm thi"*, *"Tra cứu SV [Tên/MSSV]"*, hoặc *"Lời khuyên cải thiện chuyên cần"*.
+✨ *Mẹo:* Thêm **Google Gemini API Key** (miễn phí) tại tab **⚙️ Cài Đặt** để kích hoạt AI tạo sinh trò chuyện thông minh như ChatGPT!`;
+}
+
 async function handleAiQuery(query) {
   const resBox = document.getElementById('aiChatResponse');
   if (!resBox) return;
 
-  const q = query.toLowerCase();
+  const q = query.toLowerCase().trim();
+  const cls = document.getElementById('selectClass')?.value || 'SE1801';
+  const localAnswer = getSmartLocalAnswer(q, query);
 
   // If Gemini API Key is configured, call Google Gemini 1.5 Flash LLM!
   if (geminiApiKey && geminiApiKey.trim().length > 10) {
-    resBox.innerHTML = '✨ <i>Google Gemini 1.5 Flash đang suy luận và phân tích dữ liệu thực tế...</i>';
+    resBox.innerHTML = '✨ <i>Google Gemini 1.5 Flash đang phân tích và suy luận...</i>';
     try {
       const studentSummary = currentStudents.map(s => {
         const total = s.totalSlots || 30;
         const abs = s.absentCount != null ? s.absentCount : 0;
         const pct = Math.round((abs / total) * 100);
         const st = pct >= 20 ? 'CẤM THI' : (pct >= 15 ? 'CẢNH BÁO' : 'BÌNH THƯỜNG');
-        return `- MSSV: ${s.member || s.rollNumber}, Tên: ${s.fullName}, Vắng: ${abs}/${total} (${pct}%) -> ${st}`;
+        return `- MSSV: ${s.member || s.rollNumber}, Tên: ${s.fullName} (Code: ${s.code || '-'}), Vắng: ${abs}/${total} (${pct}%) -> ${st}`;
       }).join('\n');
 
       const contextData = `
-Dữ liệu điểm danh thực tế lớp ${document.getElementById('selectClass')?.value || 'SE1801'}:
+Dữ liệu điểm danh thực tế lớp ${cls}:
 - Chuyên cần toàn lớp: ${computedStats.overallRate}%
 - Slot vắng nhiều nhất: Slot ${computedStats.worstSlot.slot} (${computedStats.worstSlot.time}) với ${computedStats.worstSlot.absentCount} lượt vắng (${computedStats.worstSlot.rate}%)
 - Thứ vắng nhiều nhất: ${computedStats.worstDay.name} với ${computedStats.worstDay.absentCount} lượt vắng (${computedStats.worstDay.rate}%)
@@ -686,13 +903,22 @@ Danh sách sinh viên:
 ${studentSummary}
 `;
 
+      const systemInstruction = `Bạn là Trợ lý AI Quản lý Điểm danh FAP tại Đại học FPT. 
+Bạn đang trò chuyện trực tiếp với giảng viên. 
+Quy tắc trả lời:
+1. Nếu giảng viên chào hỏi (xin chào, hello, hi...), hãy chào lại một cách tự nhiên, lịch sự, xưng "em" gọi "Thầy/Cô", tóm tắt 1 câu ngắn về tình hình lớp và hỏi xem Thầy/Cô cần hỗ trợ gì.
+2. Nếu hỏi bạn là ai, hãy giới thiệu bạn là Trợ lý AI FAP Attendance Assistant hỗ trợ điểm danh & phân tích chuyên cần ĐH FPT.
+3. Khi trả lời về dữ liệu điểm danh, luôn dùng chính xác số liệu thực tế được cung cấp bên dưới, tuyệt đối không bịa số liệu.
+4. Khi tư vấn giải pháp, hãy đưa ra các đề xuất sư phạm thực tế, đúng quy chế đào tạo ĐH FPT (vắng >= 20% tổng số buổi sẽ bị cấm thi / fail attendance).
+5. Trình bày đẹp mắt, dễ đọc với định dạng Markdown (in đậm, bullet points).`;
+
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey.trim()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
             parts: [{
-              text: `Bạn là trợ lý AI chuyên gia phân tích chuyên cần FAP tại Đại học FPT. Dưới đây là dữ liệu điểm danh thực tế được trích xuất từ hệ thống:\n${contextData}\n\nDựa trên dữ liệu thực tế trên, hãy trả lời câu hỏi của giảng viên một cách tự nhiên, sắc bén, có dẫn chứng số liệu cụ thể:\n"${query}"`
+              text: `${systemInstruction}\n\nDỮ LIỆU ĐIỂM DANH THỰC TẾ:\n${contextData}\n\nCÂU HỎI CỦA GIẢNG VIÊN:\n"${query}"`
             }]
           }]
         })
@@ -705,53 +931,22 @@ ${studentSummary}
           resBox.innerHTML = geminiText.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
           return;
         }
+      } else {
+        const errJson = await response.json().catch(() => ({}));
+        const errMsg = errJson.error?.message || response.statusText;
+        resBox.innerHTML = `⚠️ <b>Lỗi gọi Google Gemini API (${response.status}):</b> ${errMsg}<br><br><small style="color:#64748B;">💡 <i>Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:</i></small><br><br>` +
+          localAnswer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+        return;
       }
     } catch (e) {
-      console.warn('Gemini API call failed, falling back to local dynamic engine:', e);
+      resBox.innerHTML = `⚠️ <b>Lỗi kết nối mạng tới Gemini:</b> ${e.message}<br><br><small style="color:#64748B;">💡 <i>Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:</i></small><br><br>` +
+        localAnswer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+      return;
     }
   }
 
-  // Dynamic computation engine (100% real numbers, zero static mock text)
-  let answer = '';
-  const failed = computedStats.failedStudents;
-  const warning = computedStats.warningStudents;
-
-  if (q.includes('slot') || q.includes('tiết') || q.includes('ca')) {
-    answer = `⏰ **Phân tích theo Slot học (Số liệu thực tế):**
-• **Slot ${computedStats.worstSlot.slot} (${computedStats.worstSlot.time})** là slot có tỷ lệ sinh viên vắng cao nhất: **${computedStats.worstSlot.absentCount} lượt vắng (${computedStats.worstSlot.rate}%)**.
-• *Phân tích AI:* Đây là khung giờ sinh viên hay gặp trở ngại về thức dậy sớm hoặc kẹt xe giờ cao điểm.
-💡 *Khuyến nghị:* Giảng viên nên chốt sĩ số điểm danh ngay trong 15 phút đầu slot.`;
-  } else if (q.includes('thứ') || q.includes('ngày') || q.includes('day')) {
-    answer = `📅 **Phân tích theo Ngày trong tuần (Số liệu thực tế):**
-• **${computedStats.worstDay.name}** là ngày có số sinh viên nghỉ học nhiều nhất trong tuần: **${computedStats.worstDay.absentCount} lượt vắng (${computedStats.worstDay.rate}%)**.
-• *Nhận xét AI:* Sau những ngày nghỉ cuối tuần, sinh viên thường có xu hướng chậm lại hoặc vướng lịch gia đình.
-💡 *Khuyến nghị:* Thầy cô nên gửi thông báo lịch học vào tối Chủ Nhật để sinh viên chủ động.`;
-  } else if (q.includes('fail') || q.includes('cấm thi') || q.includes('nghỉ') || q.includes('vắng') || q.includes('thằng nào') || q.includes('ai')) {
-    if (failed.length === 0) {
-      answer = `🎉 **Tin vui:** Hiện tại lớp không có sinh viên nào vượt ngưỡng 20% vắng để bị cấm thi!`;
-    } else {
-      const listStr = failed.map((s, idx) => {
-        return `${idx + 1}. **${s.member || s.rollNumber} - ${s.fullName}**: Vắng ${s.absentCount}/${s.totalSlots} buổi (**${s.absentRatePct}%**) ⛔ **CẤM THI**`;
-      }).join('\n');
-
-      const warnStr = warning.length > 0
-        ? `\n\n⚠️ **Sinh viên cận kề cấm thi (15% - 20%):**\n` + warning.map((s, idx) => {
-            return `• **${s.member || s.rollNumber} - ${s.fullName}**: Vắng ${s.absentCount}/${s.totalSlots} buổi (${s.absentRatePct}%) - Còn 0 buổi nữa!`;
-          }).join('\n')
-        : '';
-
-      answer = `🚨 **Danh sách sinh viên CẤM THI / FAIL ATTENDANCE (>= 20%):**\n${listStr}${warnStr}\n\n📢 *Đề xuất:* Giảng viên lập biên bản báo phòng Khảo thí / CTSV và gửi thông báo nhắc nhở các bạn sắp vượt ngưỡng.`;
-    }
-  } else {
-    answer = `💡 **Tổng quan & Đề xuất AI:**
-• **Slot vắng nhiều nhất:** Slot ${computedStats.worstSlot.slot} (${computedStats.worstSlot.rate}%)
-• **Ngày vắng nhiều nhất:** ${computedStats.worstDay.name} (${computedStats.worstDay.rate}%)
-• **Số SV cấm thi:** ${failed.length} sinh viên
-• **Số SV cảnh báo:** ${warning.length} sinh viên
-• *Khuyến nghị:* Điểm danh ngay trong 15 phút đầu slot; thông báo qua email sinh viên khi vắng từ buổi thứ 4.`;
-  }
-
-  resBox.innerHTML = answer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+  // If Gemini API is not configured, render the smart local NLP engine output directly!
+  resBox.innerHTML = localAnswer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
 }
 
 // Show Smooth Toast Notification
