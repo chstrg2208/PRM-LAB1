@@ -2,19 +2,9 @@
  * =====================================================================
  *  FAP ATTENDANCE ASSISTANT - GOOGLE APPS SCRIPT BACKEND DATABASE
  *  Dự án: Lab 1 Desktop Application - Môn PRM - Trường Đại học FPT
+ *  Hỗ trợ cấu trúc cột: MEMBER, CODE, SURNAME, MIDDLE NAME, GIVEN NAME
+ *  Tích hợp AI Analytics: Phân tích Slot nghỉ, Thứ nghỉ, Fail attendance
  * =====================================================================
- * 
- * HƯỚNG DẪN TRIỂN KHAI NHANH TRONG 1 PHÚT:
- * 1. Mở Google Sheets mới tại: https://sheet.new
- * 2. Trên menu chọn: Tiện ích mở rộng (Extensions) > Apps Script
- * 3. Xóa code mặc định, dán toàn bộ file này vào và bấm Ctrl + S để lưu
- * 4. Bấm nút "Triển khai" (Deploy) ở góc trên bên phải > Chọn "Tùy chọn triển khai mới" (New deployment)
- * 5. Chọn loại: "Ứng dụng web" (Web app)
- *    - Mô tả: "PRM FAP Attendance DB"
- *    - Thực thi dưới dạng (Execute as): "Tôi" (Me)
- *    - Ai có quyền truy cập (Who has access): "Bất kỳ ai" (Anyone)  <-- BẮT BUỘC để Desktop App gọi được API
- * 6. Bấm "Triển khai" (Deploy) > Cấp quyền truy cập Google Account
- * 7. Sao chép "URL ứng dụng web" (Web app URL) và dán vào mục Cài đặt trong PRM Desktop App!
  */
 
 // Xử lý yêu cầu HTTP GET
@@ -22,7 +12,7 @@ function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : 'test';
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // Test kết nối
+  // 1. Test kết nối
   if (action === 'test') {
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success',
@@ -32,12 +22,12 @@ function doGet(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  // Lấy danh sách sinh viên theo lớp
+  // 2. Lấy danh sách sinh viên theo lớp (Cấu trúc: MEMBER, CODE, SURNAME, MIDDLE NAME, GIVEN NAME)
   if (action === 'getStudents') {
     var className = e.parameter.className || 'SE1801';
     var sheet = ss.getSheetByName(className);
     
-    // Nếu chưa có sheet cho lớp này, tự tạo mẫu
+    // Nếu chưa có sheet cho lớp này, tự động khởi tạo sheet chuẩn
     if (!sheet) {
       sheet = _createSampleClassSheet(ss, className);
     }
@@ -45,16 +35,39 @@ function doGet(e) {
     var data = sheet.getDataRange().getValues();
     var students = [];
 
+    // Bỏ qua dòng tiêu đề (index 0)
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
       if (row[0] && row[0].toString().trim() !== '') {
+        var member = row[0].toString().trim();
+        var code = row[1] ? row[1].toString().trim() : '';
+        var surname = row[2] ? row[2].toString().trim() : '';
+        var middleName = row[3] ? row[3].toString().trim() : '';
+        var givenName = row[4] ? row[4].toString().trim() : '';
+        
+        // Tạo fullName tự động từ các trường họ tên
+        var nameParts = [code, surname, middleName, givenName].filter(function(p) { return p && p.length > 0; });
+        var fullName = nameParts.join(' ');
+        if (!fullName || fullName.trim() === '') {
+          fullName = 'Sinh viên ' + member;
+        }
+
+        var totalSlots = row[5] ? parseInt(row[5]) : 20;
+        var absentSlots = row[6] ? parseInt(row[6]) : 0;
+        var email = row[7] ? row[7].toString().trim() : (member.toLowerCase() + '@fpt.edu.vn');
+
         students.push({
-          rollNumber: row[0].toString().trim(),
-          fullName: row[1] ? row[1].toString().trim() : '',
-          email: row[2] ? row[2].toString().trim() : '',
+          member: member,
+          rollNumber: member,
+          code: code,
+          surname: surname,
+          middleName: middleName,
+          givenName: givenName,
+          fullName: fullName,
+          email: email,
           className: className,
-          totalSlots: row[3] ? parseInt(row[3]) : 20,
-          absentSlots: row[4] ? parseInt(row[4]) : 0
+          totalSlots: totalSlots,
+          absentSlots: absentSlots
         });
       }
     }
@@ -67,7 +80,7 @@ function doGet(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  // Lấy lịch sử điểm danh theo buổi
+  // 3. Lấy dữ liệu điểm danh theo lớp, ngày, slot
   if (action === 'getAttendance') {
     var cName = e.parameter.className || 'SE1801';
     var date = e.parameter.date || '';
@@ -80,10 +93,10 @@ function doGet(e) {
       var logData = logSheet.getDataRange().getValues();
       for (var j = 1; j < logData.length; j++) {
         var r = logData[j];
-        // Cột: [0] Timestamp, [1] Lớp, [2] Ngày, [3] Slot, [4] RollNumber, [5] Status, [6] Note
         if (r[1] === cName && r[2] === date && parseInt(r[3]) === slot) {
           records.push({
             rollNumber: r[4],
+            member: r[4],
             className: cName,
             date: date,
             slot: slot,
@@ -97,6 +110,38 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success',
       data: records
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 4. API phân tích chuyên sâu cho AI (AI Analytics Data)
+  if (action === 'getAnalyticsData') {
+    var targetClass = e.parameter.className || 'SE1801';
+    var logSheet = ss.getSheetByName('Attendance_Logs');
+    var logs = [];
+
+    if (logSheet) {
+      var allLogs = logSheet.getDataRange().getValues();
+      for (var m = 1; m < allLogs.length; m++) {
+        var l = allLogs[m];
+        if (!targetClass || l[1] === targetClass) {
+          logs.push({
+            timestamp: l[0],
+            className: l[1],
+            date: l[2],
+            slot: parseInt(l[3]),
+            rollNumber: l[4],
+            status: l[5],
+            note: l[6] || ''
+          });
+        }
+      }
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success',
+      className: targetClass,
+      totalRecords: logs.length,
+      logs: logs
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -114,7 +159,7 @@ function doPost(e) {
     var action = body.action;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // 1. Lưu điểm danh
+    // 1. Lưu điểm danh vào bảng Attendance_Logs
     if (action === 'saveAttendance') {
       var className = body.className || 'SE1801';
       var date = body.date;
@@ -124,7 +169,7 @@ function doPost(e) {
       var logSheet = ss.getSheetByName('Attendance_Logs');
       if (!logSheet) {
         logSheet = ss.insertSheet('Attendance_Logs');
-        logSheet.appendRow(['Thời gian ghi nhận', 'Lớp', 'Ngày học', 'Slot', 'Mã Sinh Viên', 'Trạng thái', 'Ghi chú']);
+        logSheet.appendRow(['Thời gian ghi nhận', 'Lớp', 'Ngày học', 'Slot', 'Mã Sinh Viên (MEMBER)', 'Trạng thái', 'Ghi chú']);
         var headerRange = logSheet.getRange(1, 1, 1, 7);
         headerRange.setBackground('#F36F21');
         headerRange.setFontColor('#FFFFFF');
@@ -140,7 +185,7 @@ function doPost(e) {
           className,
           date,
           slot,
-          rec.rollNumber,
+          rec.rollNumber || rec.member,
           rec.status,
           rec.note || ''
         ]);
@@ -150,13 +195,16 @@ function doPost(e) {
         logSheet.getRange(logSheet.getLastRow() + 1, 1, newRows.length, 7).setValues(newRows);
       }
 
+      // Cập nhật số buổi vắng vào sheet lớp
+      _updateStudentAbsentCount(ss, className, records);
+
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Đã lưu thành công ' + records.length + ' bản ghi điểm danh vào Google Sheet!'
+        message: 'Đã lưu ' + records.length + ' bản ghi điểm danh vào Google Sheet!'
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 2. Đồng bộ danh sách sinh viên
+    // 2. Đồng bộ danh sách sinh viên theo 4-5 trường: MEMBER, CODE, SURNAME, MIDDLE NAME, GIVEN NAME
     if (action === 'syncStudents') {
       var cls = body.className || 'SE1801';
       var students = body.students || [];
@@ -164,9 +212,12 @@ function doPost(e) {
       var stdSheet = ss.getSheetByName(cls) || ss.insertSheet(cls);
       stdSheet.clear();
 
-      stdSheet.appendRow(['Mã SV', 'Họ và tên', 'Email', 'Tổng Slot', 'Vắng']);
-      var hRange = stdSheet.getRange(1, 1, 1, 5);
-      hRange.setBackground('#2563EB');
+      // Tiêu đề cột chuẩn hóa theo ảnh yêu cầu
+      var headers = ['MEMBER', 'CODE', 'SURNAME', 'MIDDLE NAME', 'GIVEN NAME', 'TOTAL SLOTS', 'ABSENT', 'EMAIL'];
+      stdSheet.appendRow(headers);
+      
+      var hRange = stdSheet.getRange(1, 1, 1, headers.length);
+      hRange.setBackground('#6366F1'); // Màu xanh tím hiện đại
       hRange.setFontColor('#FFFFFF');
       hRange.setFontWeight('bold');
 
@@ -174,21 +225,24 @@ function doPost(e) {
       for (var k = 0; k < students.length; k++) {
         var st = students[k];
         sRows.push([
-          st.rollNumber,
-          st.fullName,
-          st.email,
+          st.member || st.rollNumber,
+          st.code || '',
+          st.surname || '',
+          st.middleName || '',
+          st.givenName || '',
           st.totalSlots || 20,
-          st.absentSlots || 0
+          st.absentSlots || 0,
+          st.email || ''
         ]);
       }
 
       if (sRows.length > 0) {
-        stdSheet.getRange(2, 1, sRows.length, 5).setValues(sRows);
+        stdSheet.getRange(2, 1, sRows.length, headers.length).setValues(sRows);
       }
 
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Đã cập nhật ' + students.length + ' sinh viên cho lớp ' + cls
+        message: 'Đã cập nhật ' + students.length + ' sinh viên cho lớp ' + cls + ' theo cấu trúc chuẩn!'
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -205,26 +259,53 @@ function doPost(e) {
   }
 }
 
-// Hàm khởi tạo sheet sinh viên mẫu
+// Cập nhật số buổi vắng vào sheet lớp
+function _updateStudentAbsentCount(ss, className, records) {
+  try {
+    var sheet = ss.getSheetByName(className);
+    if (!sheet) return;
+
+    var data = sheet.getDataRange().getValues();
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      if (r.status === 'absent') {
+        var roll = (r.rollNumber || r.member || '').toUpperCase();
+        for (var row = 1; row < data.length; row++) {
+          if (data[row][0] && data[row][0].toString().toUpperCase() === roll) {
+            var currentAbsent = parseInt(data[row][6]) || 0;
+            sheet.getRange(row + 1, 7).setValue(currentAbsent + 1);
+            break;
+          }
+        }
+      }
+    }
+  } catch (_) {}
+}
+
+// Tự tạo sheet mẫu cho lớp với cấu trúc theo đúng ảnh
 function _createSampleClassSheet(ss, className) {
   var sheet = ss.insertSheet(className);
-  sheet.appendRow(['Mã SV', 'Họ và tên', 'Email', 'Tổng Slot', 'Vắng']);
-  var hRange = sheet.getRange(1, 1, 1, 5);
-  hRange.setBackground('#2563EB');
+  var headers = ['MEMBER', 'CODE', 'SURNAME', 'MIDDLE NAME', 'GIVEN NAME', 'TOTAL SLOTS', 'ABSENT', 'EMAIL'];
+  sheet.appendRow(headers);
+
+  var hRange = sheet.getRange(1, 1, 1, headers.length);
+  hRange.setBackground('#6366F1');
   hRange.setFontColor('#FFFFFF');
   hRange.setFontWeight('bold');
 
+  // Dữ liệu mẫu thực tế, bao gồm CE190585 Lâm Quốc Minh từ ảnh yêu cầu
   var sampleData = [
-    ['SE170123', 'Nguyễn Văn An', 'annvse170123@fpt.edu.vn', 20, 1],
-    ['SE170456', 'Trần Thị Bình', 'binhttse170456@fpt.edu.vn', 20, 0],
-    ['SE170789', 'Lê Hoàng Cường', 'cuonglhse170789@fpt.edu.vn', 20, 3],
-    ['SE171012', 'Phạm Minh Đức', 'ducpmse171012@fpt.edu.vn', 20, 4],
-    ['SE171345', 'Vũ Hải Đăng', 'dangvhse171345@fpt.edu.vn', 20, 2],
-    ['HE160234', 'Đỗ Thùy Linh', 'linhdthe160234@fpt.edu.vn', 20, 0],
-    ['HE160567', 'Ngô Quốc Nam', 'namnqhe160567@fpt.edu.vn', 20, 1],
-    ['IA160890', 'Hoàng Mai Phương', 'phuonghmia160890@fpt.edu.vn', 20, 5]
+    ['CE190585', 'Lâm', 'Quốc', 'Minh', '', 20, 1, 'minhlqce190585@fpt.edu.vn'],
+    ['SE170123', 'Nguyễn', 'Văn', 'An', '', 20, 2, 'annvse170123@fpt.edu.vn'],
+    ['SE170456', 'Trần', 'Thị', 'Bình', '', 20, 0, 'binhttse170456@fpt.edu.vn'],
+    ['SE170789', 'Lê', 'Hoàng', 'Cường', '', 20, 3, 'cuonglhse170789@fpt.edu.vn'],
+    ['SE171012', 'Phạm', 'Minh', 'Đức', '', 20, 5, 'ducpmse171012@fpt.edu.vn'], // 5/20 = 25% -> FAIL ATTENDANCE (CẤM THI)
+    ['SE171345', 'Vũ', 'Hải', 'Đăng', '', 20, 4, 'dangvhse171345@fpt.edu.vn'], // 4/20 = 20% -> FAIL ATTENDANCE (CẤM THI)
+    ['HE160234', 'Đỗ', 'Thùy', 'Linh', '', 20, 0, 'linhdthe160234@fpt.edu.vn'],
+    ['HE160567', 'Ngô', 'Quốc', 'Nam', '', 20, 1, 'namnqhe160567@fpt.edu.vn'],
+    ['IA160890', 'Hoàng', 'Mai', 'Phương', '', 20, 6, 'phuonghmia160890@fpt.edu.vn'] // 6/20 = 30% -> FAIL ATTENDANCE
   ];
 
-  sheet.getRange(2, 1, sampleData.length, 5).setValues(sampleData);
+  sheet.getRange(2, 1, sampleData.length, headers.length).setValues(sampleData);
   return sheet;
 }

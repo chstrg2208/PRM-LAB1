@@ -7,6 +7,7 @@ import 'dashboard_view.dart';
 import 'attendance_view.dart';
 import 'students_view.dart';
 import 'reports_view.dart';
+import 'ai_insights_view.dart';
 import 'settings_view.dart';
 
 class MainDesktopScreen extends StatefulWidget {
@@ -139,7 +140,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
           backgroundColor: Colors.orange,
         ),
       );
-      setState(() => _selectedIndex = 4);
+      setState(() => _selectedIndex = 5);
       return;
     }
 
@@ -219,7 +220,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                         currentDate: _currentDate,
                         isSheetConnected: _isSheetConnected,
                         onGoToAttendance: () => setState(() => _selectedIndex = 1),
-                        onGoToSettings: () => setState(() => _selectedIndex = 4),
+                        onGoToSettings: () => setState(() => _selectedIndex = 5),
                       ),
                       AttendanceView(
                         students: _students,
@@ -279,6 +280,11 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                         students: _students,
                         currentClass: _currentClass,
                         googleSheetUrl: _sheetUrl,
+                      ),
+                      AiInsightsView(
+                        students: _students,
+                        records: _records,
+                        currentClass: _currentClass,
                       ),
                       SettingsView(
                         initialSheetUrl: _sheetUrl,
@@ -360,7 +366,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
           _buildNavItem(1, 'Điểm danh', Icons.checklist_rtl_outlined),
           _buildNavItem(2, 'Danh sách lớp', Icons.group_outlined),
           _buildNavItem(3, 'Báo cáo chuyên cần', Icons.analytics_outlined),
-          _buildNavItem(4, 'Cài đặt kết nối DB', Icons.settings_outlined),
+          _buildNavItem(4, 'Trợ lý AI Phân tích', Icons.auto_awesome_outlined),
+          _buildNavItem(5, 'Cài đặt kết nối DB', Icons.settings_outlined),
 
           const Spacer(),
 
@@ -501,6 +508,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
       case 3:
         return 'Báo cáo Chuyên cần Cả kỳ';
       case 4:
+        return 'Trợ lý AI Phân tích Chuyên cần';
+      case 5:
         return 'Cài đặt Kết nối Google Sheet DB';
       default:
         return '';

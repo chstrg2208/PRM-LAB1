@@ -4,6 +4,7 @@ import 'package:birdle/main.dart';
 import 'package:birdle/models/student.dart';
 import 'package:birdle/models/attendance_record.dart';
 import 'package:birdle/services/fap_service.dart';
+import 'package:birdle/services/ai_analytics_service.dart';
 
 void main() {
   group('Student Model & Chuyên cần Tests', () {
@@ -36,6 +37,26 @@ void main() {
       expect(s.isWarning, true);
       expect(s.isBanned, false);
     });
+
+    test('Supports 4-field schema (Member, Code, Surname, Middle Name)', () {
+      final s = Student(
+        member: 'CE190585',
+        code: 'Lâm',
+        surname: 'Quốc',
+        middleName: 'Minh',
+        className: 'SE1801',
+        totalSlots: 30,
+        absentSlots: 7,
+      );
+
+      expect(s.member, 'CE190585');
+      expect(s.rollNumber, 'CE190585');
+      expect(s.code, 'Lâm');
+      expect(s.surname, 'Quốc');
+      expect(s.middleName, 'Minh');
+      expect(s.fullName, 'Lâm Quốc Minh');
+      expect(s.isBanned, true); // 7/30 = 23.33% >= 20%
+    });
   });
 
   group('FapService Parsing Tests', () {
@@ -67,6 +88,61 @@ void main() {
       final script = FapService.generateFapFillScript(records);
       expect(script.contains('SE170123'), true);
       expect(script.contains('Present'), true);
+    });
+  });
+
+  group('AiAnalyticsService Tests', () {
+    test('Analyzes absent stats, worst slot, worst day and failing students', () {
+      final students = [
+        Student(
+          member: 'CE190585',
+          code: 'Lâm',
+          surname: 'Quốc',
+          middleName: 'Minh',
+          className: 'SE1801',
+          totalSlots: 30,
+          absentSlots: 7, // 23.33% >= 20% -> failed
+        ),
+        Student(
+          member: 'SE170123',
+          code: 'Nguyễn',
+          surname: 'Văn',
+          middleName: 'An',
+          className: 'SE1801',
+          totalSlots: 30,
+          absentSlots: 1, // 3.33% -> normal
+        ),
+      ];
+
+      final records = [
+        AttendanceRecord(
+          rollNumber: 'CE190585',
+          className: 'SE1801',
+          date: '2026-09-14',
+          slot: 1,
+          status: AttendanceStatus.absent,
+        ),
+      ];
+
+      final report = AiAnalyticsService.analyzeAttendance(
+        students: students,
+        currentRecords: records,
+      );
+
+      expect(report.failedStudents.length, 1);
+      expect(report.failedStudents.first.member, 'CE190585');
+      expect(report.worstSlot, isNotNull);
+      expect(report.worstDay, isNotNull);
+
+      // Test Q&A responses
+      final qSlot = AiAnalyticsService.answerAiQuestion('Slot mấy sinh viên nghỉ nhiều?', report);
+      expect(qSlot.contains('Slot'), true);
+
+      final qDay = AiAnalyticsService.answerAiQuestion('Thứ mấy sinh viên nghỉ nhiều?', report);
+      expect(qDay.contains('Thứ') || qDay.contains('ngày'), true);
+
+      final qFail = AiAnalyticsService.answerAiQuestion('Thằng nào fail attendance?', report);
+      expect(qFail.contains('CE190585') || qFail.contains('Lâm Quốc Minh'), true);
     });
   });
 

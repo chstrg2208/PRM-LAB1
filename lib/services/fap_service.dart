@@ -31,11 +31,30 @@ class FapService {
 
         final email = '${name.split(' ').last.toLowerCase()}${rollNumber.toLowerCase()}@fpt.edu.vn';
 
-        if (!students.any((s) => s.rollNumber == rollNumber)) {
+        final nameWords = name.split(' ').where((w) => w.isNotEmpty).toList();
+        String code = '';
+        String surname = '';
+        String middleName = '';
+
+        if (nameWords.length >= 3) {
+          code = nameWords[0];
+          surname = nameWords[1];
+          middleName = nameWords.sublist(2).join(' ');
+        } else if (nameWords.length == 2) {
+          code = nameWords[0];
+          surname = nameWords[1];
+        } else if (nameWords.length == 1) {
+          code = nameWords[0];
+        }
+
+        if (!students.any((s) => s.member == rollNumber)) {
           students.add(
             Student(
-              rollNumber: rollNumber,
-              fullName: name,
+              member: rollNumber,
+              code: code,
+              surname: surname,
+              middleName: middleName,
+              customFullName: name,
               email: email,
               className: className,
               totalSlots: 20,

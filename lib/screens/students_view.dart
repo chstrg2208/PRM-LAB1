@@ -28,47 +28,75 @@ class _StudentsViewState extends State<StudentsView> {
   String _search = '';
 
   void _showAddStudentDialog() {
-    final rollCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
+    final memberCtrl = TextEditingController();
+    final codeCtrl = TextEditingController();
+    final surnameCtrl = TextEditingController();
+    final middleNameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Thêm sinh viên mới'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: rollCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Mã số sinh viên (RollNumber)',
-                hintText: 'Ví dụ: SE170999',
+        title: const Text('Thêm sinh viên mới (4-5 trường chuẩn)'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: memberCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'MEMBER (Mã SV)',
+                  hintText: 'Ví dụ: CE190585 hoặc SE170123',
+                ),
+                onChanged: (val) {
+                  if (val.isNotEmpty && emailCtrl.text.isEmpty) {
+                    emailCtrl.text = '${val.toLowerCase()}@fpt.edu.vn';
+                  }
+                },
               ),
-              onChanged: (val) {
-                if (val.isNotEmpty && emailCtrl.text.isEmpty) {
-                  emailCtrl.text = '${val.toLowerCase()}@fpt.edu.vn';
-                }
-              },
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Họ và tên',
-                hintText: 'Ví dụ: Hoàng Văn Nam',
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: codeCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'CODE (Họ)',
+                        hintText: 'Ví dụ: Lâm',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: surnameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'SURNAME (Đệm)',
+                        hintText: 'Ví dụ: Quốc',
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: emailCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Email FPT',
-                hintText: 'Ví dụ: namhvse170999@fpt.edu.vn',
+              const SizedBox(height: 10),
+              TextField(
+                controller: middleNameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'MIDDLE NAME / GIVEN NAME (Tên)',
+                  hintText: 'Ví dụ: Minh',
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 10),
+              TextField(
+                controller: emailCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Email FPT',
+                  hintText: 'Ví dụ: minhlqce190585@fpt.edu.vn',
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -81,15 +109,20 @@ class _StudentsViewState extends State<StudentsView> {
               foregroundColor: Colors.white,
             ),
             onPressed: () {
-              final roll = rollCtrl.text.trim().toUpperCase();
-              final name = nameCtrl.text.trim();
-              if (roll.isNotEmpty && name.isNotEmpty) {
+              final member = memberCtrl.text.trim().toUpperCase();
+              final code = codeCtrl.text.trim();
+              final surname = surnameCtrl.text.trim();
+              final middleName = middleNameCtrl.text.trim();
+
+              if (member.isNotEmpty) {
                 final newStudents = List<Student>.from(widget.students);
                 newStudents.add(
                   Student(
-                    rollNumber: roll,
-                    fullName: name,
-                    email: emailCtrl.text.trim(),
+                    member: member,
+                    code: code,
+                    surname: surname,
+                    middleName: middleName,
+                    email: emailCtrl.text.trim().isNotEmpty ? emailCtrl.text.trim() : '${member.toLowerCase()}@fpt.edu.vn',
                     className: widget.currentClass,
                     totalSlots: 20,
                     absentSlots: 0,

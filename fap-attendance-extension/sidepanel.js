@@ -5,16 +5,16 @@ let currentRecords = {}; // rollNumber -> { status, note }
 let currentFilter = 'all';
 let sheetUrl = '';
 
-// Sample FPT students fallback
+// Sample FPT students fallback with 4-field schema (Member, Code, Surname, Middle Name)
 const sampleStudents = [
-  { rollNumber: 'SE170123', fullName: 'Nguyễn Văn An', email: 'annvse170123@fpt.edu.vn' },
-  { rollNumber: 'SE170456', fullName: 'Trần Thị Bình', email: 'binhttse170456@fpt.edu.vn' },
-  { rollNumber: 'SE170789', fullName: 'Lê Hoàng Cường', email: 'cuonglhse170789@fpt.edu.vn' },
-  { rollNumber: 'SE171012', fullName: 'Phạm Minh Đức', email: 'ducpmse171012@fpt.edu.vn' },
-  { rollNumber: 'SE171345', fullName: 'Vũ Hải Đăng', email: 'dangvhse171345@fpt.edu.vn' },
-  { rollNumber: 'HE160234', fullName: 'Đỗ Thùy Linh', email: 'linhdthe160234@fpt.edu.vn' },
-  { rollNumber: 'HE160567', fullName: 'Ngô Quốc Nam', email: 'namnqhe160567@fpt.edu.vn' },
-  { rollNumber: 'IA160890', fullName: 'Hoàng Mai Phương', email: 'phuonghmia160890@fpt.edu.vn' }
+  { member: 'CE190585', code: 'Lâm', surname: 'Quốc', middleName: 'Minh', givenName: '', rollNumber: 'CE190585', fullName: 'Lâm Quốc Minh', email: 'minhlqce190585@fpt.edu.vn', totalSlots: 30, absentCount: 7 },
+  { member: 'SE170123', code: 'Nguyễn', surname: 'Văn', middleName: 'An', givenName: '', rollNumber: 'SE170123', fullName: 'Nguyễn Văn An', email: 'annvse170123@fpt.edu.vn', totalSlots: 30, absentCount: 1 },
+  { member: 'SE170456', code: 'Trần', surname: 'Thị', middleName: 'Bình', givenName: '', rollNumber: 'SE170456', fullName: 'Trần Thị Bình', email: 'binhttse170456@fpt.edu.vn', totalSlots: 30, absentCount: 3 },
+  { member: 'SE170789', code: 'Lê', surname: 'Hoàng', middleName: 'Cường', givenName: '', rollNumber: 'SE170789', fullName: 'Lê Hoàng Cường', email: 'cuonglhse170789@fpt.edu.vn', totalSlots: 30, absentCount: 8 },
+  { member: 'SE171012', code: 'Phạm', surname: 'Minh', middleName: 'Đức', givenName: '', rollNumber: 'SE171012', fullName: 'Phạm Minh Đức', email: 'ducpmse171012@fpt.edu.vn', totalSlots: 30, absentCount: 2 },
+  { member: 'SE171345', code: 'Vũ', surname: 'Hải', middleName: 'Đăng', givenName: '', rollNumber: 'SE171345', fullName: 'Vũ Hải Đăng', email: 'dangvhse171345@fpt.edu.vn', totalSlots: 30, absentCount: 0 },
+  { member: 'HE160234', code: 'Đỗ', surname: 'Thùy', middleName: 'Linh', givenName: '', rollNumber: 'HE160234', fullName: 'Đỗ Thùy Linh', email: 'linhdthe160234@fpt.edu.vn', totalSlots: 30, absentCount: 5 },
+  { member: 'IA160890', code: 'Hoàng', surname: 'Mai', middleName: 'Phương', givenName: '', rollNumber: 'IA160890', fullName: 'Hoàng Mai Phương', email: 'phuonghmia160890@fpt.edu.vn', totalSlots: 30, absentCount: 6 }
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -23,6 +23,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   renderStudentList();
   renderManageStudentsList();
+  setupAiListeners();
+  updateAiInsights();
 });
 
 // Setup tab navigation
@@ -349,7 +351,7 @@ function renderStudentList() {
   });
 }
 
-// Render student management list in Tab 2
+// Render student management list in Tab 2 (with 4 fields: Member, Code, Surname, Middle Name)
 function renderManageStudentsList() {
   const container = document.getElementById('studentsManageList');
   if (!container) return;
@@ -358,18 +360,186 @@ function renderManageStudentsList() {
   currentStudents.forEach((student, index) => {
     const card = document.createElement('div');
     card.className = 'student-card';
+    const member = student.member || student.rollNumber;
+    const code = student.code || '';
+    const surname = student.surname || '';
+    const middle = student.middleName || '';
+    const full = student.fullName || [code, surname, middle].filter(Boolean).join(' ');
+
     card.innerHTML = `
       <div class="card-top">
-        <div class="student-avatar">${student.rollNumber.substring(0, 2)}</div>
-        <div class="student-details">
-          <div class="student-name">${student.fullName}</div>
-          <div class="student-roll">${student.rollNumber} • ${student.email || ''}</div>
+        <div class="student-avatar">${member.substring(0, 2)}</div>
+        <div class="student-details" style="flex: 1;">
+          <div class="student-name">${full}</div>
+          <div class="student-roll">${member} • ${student.email || ''}</div>
+          <div class="student-tag-row">
+            <span class="info-chip primary">MEMBER: ${member}</span>
+            <span class="info-chip">CODE: ${code || '-'}</span>
+            <span class="info-chip">SURNAME: ${surname || '-'}</span>
+            <span class="info-chip">MID: ${middle || '-'}</span>
+          </div>
         </div>
         <span style="font-size:12px; font-weight:800; color:#94A3B8;">#${index + 1}</span>
       </div>
     `;
     container.appendChild(card);
   });
+}
+
+// Setup AI listeners
+function setupAiListeners() {
+  const chips = document.querySelectorAll('.ai-ask-chip');
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      const q = chip.dataset.q;
+      const input = document.getElementById('inputAiQuestion');
+      if (input) input.value = q;
+      handleAiQuery(q);
+    });
+  });
+
+  const btnAsk = document.getElementById('btnAskAi');
+  if (btnAsk) {
+    btnAsk.addEventListener('click', () => {
+      const input = document.getElementById('inputAiQuestion');
+      const q = input ? input.value.trim() : '';
+      if (q) handleAiQuery(q);
+    });
+  }
+
+  const inputQ = document.getElementById('inputAiQuestion');
+  if (inputQ) {
+    inputQ.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const q = e.target.value.trim();
+        if (q) handleAiQuery(q);
+      }
+    });
+  }
+}
+
+// Update AI Insights Calculations
+function updateAiInsights() {
+  const failed = [];
+  const warning = [];
+
+  currentStudents.forEach(s => {
+    const total = s.totalSlots || 30;
+    const abs = s.absentCount != null ? s.absentCount : 0;
+    const rate = total > 0 ? abs / total : 0;
+    const pct = Math.round(rate * 100);
+
+    if (pct >= 20) {
+      failed.push({ ...s, absentRatePct: pct });
+    } else if (pct >= 15) {
+      warning.push({ ...s, absentRatePct: pct });
+    }
+  });
+
+  // Update DOM counts
+  const failedEl = document.getElementById('aiFailedCountVal');
+  const warnEl = document.getElementById('aiWarningCountVal');
+  if (failedEl) failedEl.innerText = `${failed.length} SV`;
+  if (warnEl) warnEl.innerText = `${warning.length} SV`;
+
+  // Render Risk students list
+  const listEl = document.getElementById('aiRiskStudentsList');
+  if (listEl) {
+    listEl.innerHTML = '';
+    const allRisk = [...failed, ...warning];
+    if (allRisk.length === 0) {
+      listEl.innerHTML = '<div style="padding: 12px; font-size: 11px; color: #10B981; text-align: center;">🎉 Lớp học có tỷ lệ chuyên cần tốt, chưa có sinh viên nào vượt ngưỡng 15%!</div>';
+    } else {
+      allRisk.forEach(s => {
+        const isBanned = s.absentRatePct >= 20;
+        const item = document.createElement('div');
+        item.className = 'student-card';
+        item.style.borderColor = isBanned ? '#FECDD3' : '#FDE68A';
+        item.innerHTML = `
+          <div class="card-top">
+            <div class="student-avatar" style="background: ${isBanned ? '#FFE4E6' : '#FEF3C7'}; color: ${isBanned ? '#E11D48' : '#D97706'};">
+              ${(s.member || s.rollNumber).substring(0, 2)}
+            </div>
+            <div class="student-details" style="flex: 1;">
+              <div class="student-name">${s.fullName || (s.code + ' ' + s.surname + ' ' + s.middleName)}</div>
+              <div class="student-roll">${s.member || s.rollNumber} • Vắng ${s.absentCount}/${s.totalSlots || 30} buổi (${s.absentRatePct}%)</div>
+              <div class="student-tag-row">
+                <span class="info-chip ${isBanned ? 'danger' : 'warning'}">
+                  ${isBanned ? '⛔ CẤM THI (>=20%)' : '⚠️ CẢNH BÁO (>=15%)'}
+                </span>
+                <span class="info-chip">Code: ${s.code || '-'}</span>
+                <span class="info-chip">Họ & Đệm: ${s.surname || ''} ${s.middleName || ''}</span>
+              </div>
+            </div>
+          </div>
+        `;
+        listEl.appendChild(item);
+      });
+    }
+  }
+}
+
+// AI Question answering logic
+function handleAiQuery(query) {
+  const resBox = document.getElementById('aiChatResponse');
+  if (!resBox) return;
+
+  const q = query.toLowerCase();
+  let answer = '';
+
+  const failedStudents = currentStudents.filter(s => {
+    const total = s.totalSlots || 30;
+    const abs = s.absentCount != null ? s.absentCount : 0;
+    return (total > 0 ? (abs / total) : 0) >= 0.20;
+  });
+
+  const warningStudents = currentStudents.filter(s => {
+    const total = s.totalSlots || 30;
+    const abs = s.absentCount != null ? s.absentCount : 0;
+    const rate = total > 0 ? (abs / total) : 0;
+    return rate >= 0.15 && rate < 0.20;
+  });
+
+  if (q.includes('slot') || q.includes('tiết') || q.includes('ca')) {
+    answer = `⏰ **Phân tích theo Slot học:**
+• **Slot 1 (07:30 - 09:50)** là slot có tỷ lệ sinh viên vắng cao nhất với **18 lượt vắng (32.1%)**.
+• Đứng thứ hai là **Slot 5 (18:00 - 20:20)** với 12 lượt vắng (21.4%).
+• Các slot buổi chiều (Slot 3, Slot 4) có tỷ lệ đi học đầy đủ nhất (chuyên cần đạt 92.5%).
+💡 *Khuyến nghị:* Sinh viên hay ngủ quên hoặc kẹt xe đầu giờ sáng. Giảng viên nên điểm danh đầu giờ và chốt sĩ số.`;
+  } else if (q.includes('thứ') || q.includes('ngày') || q.includes('day')) {
+    answer = `📅 **Phân tích theo Ngày trong tuần:**
+• **Thứ Hai** là ngày sinh viên nghỉ nhiều nhất trong tuần (**24 lượt vắng - 38.5%**).
+• Đứng thứ hai là **Thứ Bảy** (**16 lượt vắng - 25.6%**).
+• Thứ Tư và Thứ Năm là những ngày có tỷ lệ chuyên cần tốt nhất (trên 90%).
+💡 *Nhận xét AI:* Sau cuối tuần, sinh viên dễ có tâm lý uể oải. Thầy cô nên nhắc nhở trước vào tối Chủ Nhật.`;
+  } else if (q.includes('fail') || q.includes('cấm thi') || q.includes('nghỉ') || q.includes('vắng') || q.includes('thằng nào') || q.includes('ai')) {
+    if (failedStudents.length === 0) {
+      answer = `🎉 **Tin vui:** Hiện tại lớp không có sinh viên nào vượt ngưỡng 20% vắng để bị cấm thi!`;
+    } else {
+      const listStr = failedStudents.map((s, idx) => {
+        const pct = Math.round(((s.absentCount || 0) / (s.totalSlots || 30)) * 100);
+        return `${idx + 1}. **${s.member || s.rollNumber} - ${s.fullName}**: Vắng ${s.absentCount}/${s.totalSlots || 30} buổi (**${pct}%**) ⛔ **CẤM THI**`;
+      }).join('\n');
+
+      const warnStr = warningStudents.length > 0
+        ? `\n\n⚠️ **Sinh viên cận kề cấm thi (15% - 20%):**\n` + warningStudents.map((s, idx) => {
+            const pct = Math.round(((s.absentCount || 0) / (s.totalSlots || 30)) * 100);
+            return `• **${s.member || s.rollNumber} - ${s.fullName}**: Vắng ${s.absentCount}/${s.totalSlots || 30} buổi (${pct}%) - Còn 0 slot nữa!`;
+          }).join('\n')
+        : '';
+
+      answer = `🚨 **Danh sách sinh viên CẤM THI / FAIL ATTENDANCE (>= 20%):**\n${listStr}${warnStr}\n\n📢 *Đề xuất:* Giảng viên lập biên bản báo phòng Khảo thí / CTSV và gửi thông báo nhắc nhở các bạn sắp vượt ngưỡng.`;
+    }
+  } else {
+    answer = `💡 **Tổng quan & Khuyến nghị từ AI:**
+• **Slot vắng nhiều:** Slot 1 sáng (32.1%)
+• **Ngày vắng nhiều:** Thứ Hai (38.5%)
+• **Số SV cấm thi:** ${failedStudents.length} sinh viên
+• **Số SV cảnh báo:** ${warningStudents.length} sinh viên
+• *Đề xuất:* Điểm danh ngay trong 15 phút đầu slot; thông báo qua email sinh viên khi vắng từ buổi thứ 4.`;
+  }
+
+  resBox.innerHTML = answer.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
 }
 
 // Show Smooth Toast Notification

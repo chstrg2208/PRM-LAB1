@@ -189,72 +189,117 @@ class GoogleSheetService {
     }
   }
 
-  /// Danh sách mẫu chuẩn sinh viên FPT nếu chưa cấu hình Google Sheet
+  /// Lấy toàn bộ lịch sử điểm danh để phục vụ AI phân tích
+  static Future<List<Map<String, dynamic>>> fetchAnalyticsLogs(String webAppUrl, String className) async {
+    if (webAppUrl.trim().isEmpty) return [];
+
+    try {
+      final uri = Uri.parse('$webAppUrl?action=getAnalyticsData&className=$className');
+      final response = await http.get(uri).timeout(const Duration(seconds: 12));
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['status'] == 'success' && decoded['logs'] != null) {
+          return List<Map<String, dynamic>>.from(decoded['logs']);
+        }
+      }
+    } catch (_) {}
+
+    return [];
+  }
+
+  /// Danh sách mẫu chuẩn sinh viên FPT (Bao gồm CE190585 Lâm Quốc Minh từ ảnh yêu cầu)
   static List<Student> _getDefaultSampleStudents(String className) {
     return [
       Student(
-        rollNumber: 'SE170123',
-        fullName: 'Nguyễn Văn An',
-        email: 'annvse170123@fpt.edu.vn',
+        member: 'CE190585',
+        code: 'Lâm',
+        surname: 'Quốc',
+        middleName: 'Minh',
+        email: 'minhlqce190585@fpt.edu.vn',
         className: className,
         totalSlots: 20,
         absentSlots: 1,
       ),
       Student(
-        rollNumber: 'SE170456',
-        fullName: 'Trần Thị Bình',
+        member: 'SE170123',
+        code: 'Nguyễn',
+        surname: 'Văn',
+        middleName: 'An',
+        email: 'annvse170123@fpt.edu.vn',
+        className: className,
+        totalSlots: 20,
+        absentSlots: 2,
+      ),
+      Student(
+        member: 'SE170456',
+        code: 'Trần',
+        surname: 'Thị',
+        middleName: 'Bình',
         email: 'binhttse170456@fpt.edu.vn',
         className: className,
         totalSlots: 20,
         absentSlots: 0,
       ),
       Student(
-        rollNumber: 'SE170789',
-        fullName: 'Lê Hoàng Cường',
+        member: 'SE170789',
+        code: 'Lê',
+        surname: 'Hoàng',
+        middleName: 'Cường',
         email: 'cuonglhse170789@fpt.edu.vn',
         className: className,
         totalSlots: 20,
         absentSlots: 3,
       ),
       Student(
-        rollNumber: 'SE171012',
-        fullName: 'Phạm Minh Đức',
+        member: 'SE171012',
+        code: 'Phạm',
+        surname: 'Minh',
+        middleName: 'Đức',
         email: 'ducpmse171012@fpt.edu.vn',
         className: className,
         totalSlots: 20,
-        absentSlots: 4, // 20% -> Banned warning
+        absentSlots: 5, // 25% -> FAIL ATTENDANCE (CẤM THI)
       ),
       Student(
-        rollNumber: 'SE171345',
-        fullName: 'Vũ Hải Đăng',
+        member: 'SE171345',
+        code: 'Vũ',
+        surname: 'Hải',
+        middleName: 'Đăng',
         email: 'dangvhse171345@fpt.edu.vn',
         className: className,
         totalSlots: 20,
-        absentSlots: 2,
+        absentSlots: 4, // 20% -> FAIL ATTENDANCE (CẤM THI)
       ),
       Student(
-        rollNumber: 'HE160234',
-        fullName: 'Đỗ Thùy Linh',
+        member: 'HE160234',
+        code: 'Đỗ',
+        surname: 'Thùy',
+        middleName: 'Linh',
         email: 'linhdthe160234@fpt.edu.vn',
         className: className,
         totalSlots: 20,
         absentSlots: 0,
       ),
       Student(
-        rollNumber: 'HE160567',
-        fullName: 'Ngô Quốc Nam',
+        member: 'HE160567',
+        code: 'Ngô',
+        surname: 'Quốc',
+        middleName: 'Nam',
         email: 'namnqhe160567@fpt.edu.vn',
         className: className,
         totalSlots: 20,
         absentSlots: 1,
       ),
       Student(
-        rollNumber: 'IA160890',
-        fullName: 'Hoàng Mai Phương',
+        member: 'IA160890',
+        code: 'Hoàng',
+        surname: 'Mai',
+        middleName: 'Phương',
         email: 'phuonghmia160890@fpt.edu.vn',
         className: className,
         totalSlots: 20,
-        absentSlots: 5, // >20% Banned!
+        absentSlots: 6, // 30% -> FAIL ATTENDANCE
       ),
     ];
   }

@@ -51,6 +51,12 @@
       </svg>
       Sinh viên
     </button>
+    <button class="nav-pill" data-tab="tab-ai-insights">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path>
+      </svg>
+      Phân tích AI
+    </button>
     <button class="nav-pill" data-tab="tab-settings">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"></circle>
@@ -171,7 +177,76 @@
       </div>
     </section>
 
-    <!-- TAB 3: SETTINGS -->
+    <!-- TAB 3: AI INSIGHTS VIEW -->
+    <section id="tab-ai-insights" class="tab-view">
+      <div class="ai-banner">
+        <div class="ai-banner-title">
+          <span>🤖 Trợ lý AI Phân tích Chuyên cần</span>
+        </div>
+        <p class="ai-banner-sub">Hệ thống AI tự động tổng hợp phân tích điểm danh, cảnh báo sinh viên vắng nhiều và nguy cơ cấm thi.</p>
+      </div>
+
+      <!-- Quick Metrics Grid -->
+      <div class="ai-metric-grid">
+        <div class="ai-metric-card alert-card">
+          <span class="ai-metric-label">Slot vắng nhiều nhất</span>
+          <span id="aiWorstSlotVal" class="ai-metric-value">Slot 1</span>
+          <span id="aiWorstSlotRate" class="ai-metric-note">18 lượt vắng (32%)</span>
+        </div>
+        <div class="ai-metric-card alert-card">
+          <span class="ai-metric-label">Thứ vắng nhiều nhất</span>
+          <span id="aiWorstDayVal" class="ai-metric-value">Thứ 2</span>
+          <span id="aiWorstDayRate" class="ai-metric-note">24 lượt vắng (38%)</span>
+        </div>
+      </div>
+
+      <div class="ai-metric-grid">
+        <div class="ai-metric-card alert-card">
+          <span class="ai-metric-label">Cấm thi (&ge;20%)</span>
+          <span id="aiFailedCountVal" class="ai-metric-value" style="color: #F43F5E;">0 SV</span>
+          <span class="ai-metric-note">Vắng vượt mức cho phép</span>
+        </div>
+        <div class="ai-metric-card">
+          <span class="ai-metric-label">Cảnh báo (15-20%)</span>
+          <span id="aiWarningCountVal" class="ai-metric-value" style="color: #F59E0B;">0 SV</span>
+          <span class="ai-metric-note">Nguy cơ cấm thi cận kề</span>
+        </div>
+      </div>
+
+      <!-- Ask AI & Interactive Prompts -->
+      <div class="glass-card mt-3">
+        <h2 class="head-title">Hỏi đáp với AI</h2>
+        <p class="head-sub">Bấm chọn câu hỏi mẫu hoặc gõ thắc mắc cần phân tích:</p>
+        
+        <div class="ai-chips-list mt-3">
+          <button class="ai-ask-chip" data-q="Slot mấy sv nghỉ nhiều?">⏰ Slot mấy sv nghỉ nhiều?</button>
+          <button class="ai-ask-chip" data-q="Thứ mấy nghỉ nhiều?">📅 Thứ mấy nghỉ nhiều?</button>
+          <button class="ai-ask-chip" data-q="Thằng nào fail attendance?">🚨 Thằng nào fail attendance?</button>
+          <button class="ai-ask-chip" data-q="Tư vấn giải pháp cải thiện chuyên cần">💡 Lời khuyên & Đề xuất</button>
+        </div>
+
+        <div style="display: flex; gap: 6px; margin-top: 8px;">
+          <input type="text" id="inputAiQuestion" class="text-input" placeholder="Hỏi AI (VD: ai sắp bị cấm thi?)..." style="flex: 1; padding: 7px 10px; font-size: 11px;">
+          <button id="btnAskAi" class="btn-gradient-sm">Hỏi AI</button>
+        </div>
+
+        <div id="aiChatResponse" class="ai-chat-response">
+👋 Chào thầy cô! Tôi là Trợ lý AI Phân tích Chuyên cần. Thầy cô có thể bấm các câu hỏi nhanh phía trên hoặc hỏi tôi về slot vắng nhiều, ngày vắng nhiều, danh sách SV cấm thi!
+        </div>
+      </div>
+
+      <!-- List of At-Risk Students -->
+      <div class="glass-card mt-3">
+        <div class="card-head">
+          <h2 class="head-title">Danh sách SV Nguy cơ & Cấm thi</h2>
+        </div>
+        <div id="aiRiskStudentsList" class="student-deck" style="max-height: 250px;">
+          <!-- Injected via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: SETTINGS -->
     <section id="tab-settings" class="tab-view">
       <div class="glass-card">
         <h2 class="head-title">Google Apps Script Web App</h2>
