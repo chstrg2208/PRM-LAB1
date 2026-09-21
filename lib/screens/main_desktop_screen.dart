@@ -3,11 +3,15 @@ import '../models/student.dart';
 import '../models/attendance_record.dart';
 import '../services/storage_service.dart';
 import '../services/google_sheet_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/status_badge.dart';
+import '../widgets/birdle_components.dart';
 import 'dashboard_view.dart';
 import 'attendance_view.dart';
 import 'students_view.dart';
 import 'reports_view.dart';
 import 'ai_insights_view.dart';
+import 'fap_sync_view.dart';
 import 'settings_view.dart';
 
 class MainDesktopScreen extends StatefulWidget {
@@ -136,11 +140,11 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     if (_sheetUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('⚠️ Vui lòng cài đặt URL Google Apps Script trong mục Cài đặt trước!'),
-          backgroundColor: Colors.orange,
+          content: Text('⚠️ Vui lòng cấu hình URL Google Apps Script Web App trong Cài đặt trước!'),
+          backgroundColor: BirdleColors.warning,
         ),
       );
-      setState(() => _selectedIndex = 5);
+      setState(() => _selectedIndex = 6);
       return;
     }
 
@@ -159,7 +163,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(result['message'] ?? ''),
-          backgroundColor: result['success'] ? const Color(0xFF10B981) : Colors.redAccent,
+          backgroundColor: result['success'] ? BirdleColors.brand : BirdleColors.danger,
         ),
       );
     }
@@ -170,7 +174,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('⚠️ Vui lòng cấu hình URL Google Sheet trong mục Cài đặt!'),
-          backgroundColor: Colors.orange,
+          backgroundColor: BirdleColors.warning,
         ),
       );
       return;
@@ -188,7 +192,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(res['message'] ?? ''),
-          backgroundColor: res['success'] ? const Color(0xFF10B981) : Colors.redAccent,
+          backgroundColor: res['success'] ? BirdleColors.brand : BirdleColors.danger,
         ),
       );
     }
@@ -197,21 +201,22 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: BirdleColors.appBackground,
       body: Row(
         children: [
-          // Sidebar / Left Navigation Rail
+          // Sidebar (Section 9.1 design.md)
           _buildSidebar(),
 
-          // Main Screen Content
+          // Main Content
           Expanded(
             child: Column(
               children: [
-                _buildTopAppBar(),
+                _buildTopHeader(),
                 Expanded(
                   child: IndexedStack(
                     index: _selectedIndex,
                     children: [
+                      // 0: Dashboard
                       DashboardView(
                         students: _students,
                         records: _records,
@@ -220,8 +225,10 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                         currentDate: _currentDate,
                         isSheetConnected: _isSheetConnected,
                         onGoToAttendance: () => setState(() => _selectedIndex = 1),
-                        onGoToSettings: () => setState(() => _selectedIndex = 5),
+                        onGoToFapSync: () => setState(() => _selectedIndex = 5),
+                        onGoToSettings: () => setState(() => _selectedIndex = 6),
                       ),
+                      // 1: Attendance
                       AttendanceView(
                         students: _students,
                         records: _records,
@@ -248,6 +255,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                         onMarkAllAbsent: _markAllAbsent,
                         onSaveToSheet: _saveToGoogleSheet,
                         onReloadFromSheet: _loadStudentsAndAttendance,
+                        onGoToFapSync: () => setState(() => _selectedIndex = 5),
                         onImportStudents: (newStudents) {
                           setState(() {
                             _students = newStudents;
@@ -263,6 +271,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                           });
                         },
                       ),
+                      // 2: Students
                       StudentsView(
                         students: _students,
                         currentClass: _currentClass,
@@ -275,17 +284,44 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                           _loadStudentsAndAttendance();
                         },
                         onSyncToSheet: _syncStudentsToSheet,
+                        onGoToImport: () => setState(() => _selectedIndex = 5),
                       ),
+                      // 3: Reports
                       ReportsView(
                         students: _students,
                         currentClass: _currentClass,
                         googleSheetUrl: _sheetUrl,
                       ),
+                      // 4: AI Insights
                       AiInsightsView(
                         students: _students,
                         records: _records,
                         currentClass: _currentClass,
+                        onConfigureByok: () => setState(() => _selectedIndex = 6),
                       ),
+                      // 5: FAP Sync & Import Center
+                      FapSyncView(
+                        students: _students,
+                        records: _records,
+                        currentClass: _currentClass,
+                        currentSlot: _currentSlot,
+                        onImportStudents: (newStudents) {
+                          setState(() {
+                            _students = newStudents;
+                            _records = newStudents.map((s) {
+                              return AttendanceRecord(
+                                rollNumber: s.rollNumber,
+                                className: _currentClass,
+                                date: _currentDate.toIso8601String(),
+                                slot: _currentSlot,
+                                status: AttendanceStatus.present,
+                              );
+                            }).toList();
+                          });
+                        },
+                        onSaveToSheet: _saveToGoogleSheet,
+                      ),
+                      // 6: Settings
                       SettingsView(
                         initialSheetUrl: _sheetUrl,
                         onSaveSheetUrl: (url) {
@@ -309,47 +345,61 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
 
   Widget _buildSidebar() {
     return Container(
-      width: 250,
+      width: 236,
       decoration: const BoxDecoration(
-        color: Color(0xFF0F172A),
-        border: Border(right: BorderSide(color: Color(0xFF1E293B), width: 1)),
+        color: BirdleColors.surface,
+        border: Border(right: BorderSide(color: BirdleColors.border, width: 1)),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Logo & Title
+          // Header Logo & App Identity
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF36F21),
-                    borderRadius: BorderRadius.circular(10),
+                    color: BirdleColors.brand,
+                    borderRadius: BirdleRadius.smBorder,
                   ),
-                  child: const Icon(Icons.school, color: Colors.white, size: 22),
+                  alignment: Alignment.center,
+                  child: const Text(
+                    'B',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: BirdleTypography.fontFamily,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'FAP Assistant',
+                        'BIRDLE',
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.white,
+                          fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          fontSize: 16,
+                          letterSpacing: 1.1,
+                          color: BirdleColors.textPrimary,
+                          fontFamily: BirdleTypography.fontFamily,
                         ),
                       ),
                       Text(
-                        'PRM Lab 1 Desktop',
+                        'Attendance Workspace',
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Color(0xFF94A3B8),
                           fontSize: 11,
+                          color: BirdleColors.textSecondary,
+                          fontFamily: BirdleTypography.fontFamily,
                         ),
                       ),
                     ],
@@ -358,51 +408,48 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
               ],
             ),
           ),
-          const Divider(color: Color(0xFF1E293B), height: 1),
+          const Divider(height: 1),
           const SizedBox(height: 12),
 
-          // Nav Items
-          _buildNavItem(0, 'Dashboard', Icons.dashboard_outlined),
-          _buildNavItem(1, 'Điểm danh', Icons.checklist_rtl_outlined),
-          _buildNavItem(2, 'Danh sách lớp', Icons.group_outlined),
-          _buildNavItem(3, 'Báo cáo chuyên cần', Icons.analytics_outlined),
-          _buildNavItem(4, 'Trợ lý AI Phân tích', Icons.auto_awesome_outlined),
-          _buildNavItem(5, 'Cài đặt kết nối DB', Icons.settings_outlined),
+          // Nav Sections (Section 9.1 design.md)
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              children: [
+                _buildSectionHeader('OVERVIEW'),
+                _buildNavItem(0, 'Dashboard', Icons.space_dashboard_outlined),
 
-          const Spacer(),
+                const SizedBox(height: 16),
+                _buildSectionHeader('ATTENDANCE'),
+                _buildNavItem(1, 'Attendance', Icons.fact_check_outlined),
+                _buildNavItem(2, 'Students', Icons.people_outline),
+                _buildNavItem(3, 'Reports', Icons.insert_chart_outlined),
 
-          // System Info Card at bottom of sidebar
-          Container(
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 16),
+                _buildSectionHeader('INTELLIGENCE'),
+                _buildNavItem(4, 'AI Insights', Icons.insights_outlined),
+
+                const SizedBox(height: 16),
+                _buildSectionHeader('INTEGRATION'),
+                _buildNavItem(5, 'FAP Sync', Icons.sync),
+
+                const SizedBox(height: 16),
+                _buildSectionHeader('SYSTEM'),
+                _buildNavItem(6, 'Settings', Icons.settings_outlined),
+              ],
             ),
+          ),
+
+          // Bottom Connection Status (Section 9.1 design.md)
+          const Divider(height: 1),
+          Container(
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
-                  children: [
-                    Icon(Icons.cloud_done, size: 14, color: Color(0xFF10B981)),
-                    SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Google Sheet DB',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _isSheetConnected ? 'Trực tuyến (Connected)' : 'Chưa kết nối Web App',
-                  style: TextStyle(
-                    color: _isSheetConnected ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
-                    fontSize: 11,
-                  ),
-                ),
+                _buildConnectionRow('Google Sheets', _isSheetConnected ? 'Connected' : 'Not configured', _isSheetConnected),
+                const SizedBox(height: 8),
+                _buildConnectionRow('FAP Portal', 'Ready', true),
               ],
             ),
           ),
@@ -411,33 +458,51 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     );
   }
 
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, top: 4, bottom: 6),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: BirdleColors.textMuted,
+          letterSpacing: 0.8,
+          fontFamily: BirdleTypography.fontFamily,
+        ),
+      ),
+    );
+  }
+
   Widget _buildNavItem(int index, String title, IconData icon) {
     final isSelected = _selectedIndex == index;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: 1.5),
       child: InkWell(
         onTap: () => setState(() => _selectedIndex = index),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BirdleRadius.smBorder,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8.5),
           decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFFF36F21) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
+            color: isSelected ? BirdleColors.brandLight : Colors.transparent,
+            borderRadius: BirdleRadius.smBorder,
           ),
           child: Row(
             children: [
-              Icon(icon, color: isSelected ? Colors.white : const Color(0xFF94A3B8), size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  title,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : const Color(0xFFCBD5E1),
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    fontSize: 13,
-                  ),
+              Icon(
+                icon,
+                color: isSelected ? BirdleColors.brand : BirdleColors.textSecondary,
+                size: 18,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: TextStyle(
+                  color: isSelected ? BirdleColors.brand : BirdleColors.textPrimary,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  fontSize: 13,
+                  fontFamily: BirdleTypography.fontFamily,
                 ),
               ),
             ],
@@ -447,48 +512,86 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     );
   }
 
-  Widget _buildTopAppBar() {
+  Widget _buildConnectionRow(String title, String status, bool isConnected) {
+    return Row(
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            color: isConnected ? BirdleColors.brand : BirdleColors.warning,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: BirdleColors.textPrimary),
+          ),
+        ),
+        Text(
+          status,
+          style: TextStyle(
+            fontSize: 11,
+            color: isConnected ? BirdleColors.brand : BirdleColors.textMuted,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTopHeader() {
     return Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      height: 62,
+      padding: const EdgeInsets.symmetric(horizontal: 32),
       decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+        color: BirdleColors.surface,
+        border: Border(bottom: BorderSide(color: BirdleColors.border, width: 1)),
       ),
       child: Row(
         children: [
+          // Title / Breadcrumb
           Text(
             _getScreenTitle(),
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+            style: const TextStyle(
+              fontSize: 15.5,
+              fontWeight: FontWeight.w600,
+              color: BirdleColors.textPrimary,
+              fontFamily: BirdleTypography.fontFamily,
+            ),
           ),
           const Spacer(),
 
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              side: const BorderSide(color: Color(0xFFE2E8F0)),
-            ),
-            icon: const Icon(Icons.open_in_browser, size: 16, color: Color(0xFFF36F21)),
-            label: const Text('Mở FAP', style: TextStyle(fontSize: 12, color: Colors.black87)),
+          // Status Badges
+          ConnectionStatusChip(
+            label: _isSheetConnected ? 'Sheets: Connected' : 'Sheets: Unlinked',
+            isConnected: _isSheetConnected,
+          ),
+          const SizedBox(width: 8),
+          const ConnectionStatusChip(label: 'FAP: Ready', isConnected: true),
+          const SizedBox(width: 14),
+
+          // Quick Links
+          BirdleSecondaryButton(
+            icon: Icons.open_in_browser,
+            label: 'FAP',
+            height: 32,
             onPressed: () => StorageService.openBrowser('https://fap.fpt.edu.vn'),
           ),
-          const SizedBox(width: 10),
-
           if (_sheetUrl.isNotEmpty) ...[
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                side: const BorderSide(color: Color(0xFFE2E8F0)),
-              ),
-              icon: const Icon(Icons.table_chart, size: 16, color: Color(0xFF059669)),
-              label: const Text('Google Sheet', style: TextStyle(fontSize: 12, color: Colors.black87)),
+            const SizedBox(width: 8),
+            BirdleSecondaryButton(
+              icon: Icons.table_chart_outlined,
+              label: 'Sheet',
+              height: 32,
+              iconColor: BirdleColors.brand,
               onPressed: () => StorageService.openBrowser(_sheetUrl),
             ),
-            const SizedBox(width: 10),
           ],
-
+          const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 20, color: Colors.grey),
+            icon: const Icon(Icons.refresh, size: 18, color: BirdleColors.textSecondary),
             tooltip: 'Làm mới dữ liệu',
             onPressed: _loadStudentsAndAttendance,
           ),
@@ -500,19 +603,21 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
   String _getScreenTitle() {
     switch (_selectedIndex) {
       case 0:
-        return 'Bảng điều khiển Tổng quan (Dashboard)';
+        return 'Overview / Dashboard';
       case 1:
-        return 'Điểm danh Sinh viên (Take Attendance)';
+        return 'Attendance / Workspace';
       case 2:
-        return 'Quản lý Danh sách lớp & Sinh viên';
+        return 'Attendance / Students';
       case 3:
-        return 'Báo cáo Chuyên cần Cả kỳ';
+        return 'Attendance / Reports';
       case 4:
-        return 'Trợ lý AI Phân tích Chuyên cần';
+        return 'Intelligence / AI Insights';
       case 5:
-        return 'Cài đặt Kết nối Google Sheet DB';
+        return 'Integration / FAP Sync & Import';
+      case 6:
+        return 'System / Settings';
       default:
-        return '';
+        return 'Birdle';
     }
   }
 }

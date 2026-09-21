@@ -1,52 +1,72 @@
 import 'package:flutter/material.dart';
 import '../models/attendance_record.dart';
+import '../theme/app_theme.dart';
 
+/// Pill status badge for student attendance status (Present, Absent, Late, Pending)
 class AttendanceStatusBadge extends StatelessWidget {
   final AttendanceStatus status;
+  final bool compact;
 
-  const AttendanceStatusBadge({super.key, required this.status});
+  const AttendanceStatusBadge({
+    super.key,
+    required this.status,
+    this.compact = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     Color bg;
     Color fg;
-    IconData icon;
+    Color border;
+    String label;
 
     switch (status) {
       case AttendanceStatus.present:
-        bg = const Color(0xFFD1FAE5);
-        fg = const Color(0xFF065F46);
-        icon = Icons.check_circle;
+        bg = BirdleColors.successLight;
+        fg = BirdleColors.success;
+        border = BirdleColors.success.withValues(alpha: 0.2);
+        label = 'Có mặt';
         break;
       case AttendanceStatus.absent:
-        bg = const Color(0xFFFEE2E2);
-        fg = const Color(0xFF991B1B);
-        icon = Icons.cancel;
+        bg = BirdleColors.dangerLight;
+        fg = BirdleColors.danger;
+        border = BirdleColors.danger.withValues(alpha: 0.2);
+        label = 'Vắng';
         break;
       case AttendanceStatus.late:
-        bg = const Color(0xFFFEF3C7);
-        fg = const Color(0xFF92400E);
-        icon = Icons.access_time_filled;
+        bg = BirdleColors.warningLight;
+        fg = BirdleColors.warning;
+        border = BirdleColors.warning.withValues(alpha: 0.25);
+        label = 'Muộn';
         break;
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 10,
+        vertical: compact ? 2.5 : 4,
+      ),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BirdleRadius.pillBorder,
+        border: Border.all(color: border, width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: fg),
-          const SizedBox(width: 4),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
           Text(
-            status.label,
+            label,
             style: TextStyle(
               color: fg,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              fontSize: compact ? 11.5 : 12,
+              fontFamily: BirdleTypography.fontFamily,
             ),
           ),
         ],
@@ -55,45 +75,117 @@ class AttendanceStatusBadge extends StatelessWidget {
   }
 }
 
+/// Pill status badge for absence rates and FPT regulation thresholds
 class AbsentRateBadge extends StatelessWidget {
   final double rate;
+  final bool showPercent;
 
-  const AbsentRateBadge({super.key, required this.rate});
+  const AbsentRateBadge({
+    super.key,
+    required this.rate,
+    this.showPercent = true,
+  });
 
   @override
   Widget build(BuildContext context) {
     Color bg;
     Color fg;
+    Color border;
     String text;
 
     if (rate >= 20.0) {
-      bg = const Color(0xFFFEE2E2);
-      fg = const Color(0xFFB91C1C);
-      text = 'CẤM THI (${rate.toStringAsFixed(0)}%)';
+      bg = BirdleColors.dangerLight;
+      fg = BirdleColors.danger;
+      border = BirdleColors.danger.withValues(alpha: 0.25);
+      text = 'CẤM THI';
     } else if (rate >= 15.0) {
-      bg = const Color(0xFFFEF3C7);
-      fg = const Color(0xFFB45309);
-      text = 'CẢNH BÁO (${rate.toStringAsFixed(0)}%)';
+      bg = BirdleColors.warningLight;
+      fg = BirdleColors.warning;
+      border = BirdleColors.warning.withValues(alpha: 0.3);
+      text = 'CẢNH BÁO';
     } else {
-      bg = const Color(0xFFE0F2FE);
-      fg = const Color(0xFF0369A1);
-      text = 'An toàn (${rate.toStringAsFixed(0)}%)';
+      bg = BirdleColors.successLight;
+      fg = BirdleColors.success;
+      border = BirdleColors.success.withValues(alpha: 0.2);
+      text = 'ĐỦ ĐIỀU KIỆN';
     }
+
+    final displayText = showPercent ? '$text (${rate.toStringAsFixed(0)}%)' : text;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: fg.withAlpha(80), width: 1),
+        borderRadius: BirdleRadius.pillBorder,
+        border: Border.all(color: border, width: 1),
       ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: fg,
-          fontWeight: FontWeight.bold,
-          fontSize: 11,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            displayText,
+            style: TextStyle(
+              color: fg,
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+              fontFamily: BirdleTypography.fontFamily,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Connection status pill for header or sidebar
+class ConnectionStatusChip extends StatelessWidget {
+  final String label;
+  final bool isConnected;
+
+  const ConnectionStatusChip({
+    super.key,
+    required this.label,
+    required this.isConnected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = isConnected ? BirdleColors.brand : BirdleColors.textMuted;
+    final bg = isConnected ? BirdleColors.brandLight : BirdleColors.surfaceSecondary;
+    final border = isConnected ? BirdleColors.brand.withValues(alpha: 0.2) : BirdleColors.border;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BirdleRadius.pillBorder,
+        border: Border.all(color: border, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: fg,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w500,
+              fontFamily: BirdleTypography.fontFamily,
+            ),
+          ),
+        ],
       ),
     );
   }

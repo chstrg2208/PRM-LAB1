@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/student.dart';
 import '../models/attendance_record.dart';
+import '../models/class_session.dart';
+import '../theme/app_theme.dart';
+import '../widgets/birdle_components.dart';
 import '../widgets/status_badge.dart';
 
 class DashboardView extends StatelessWidget {
@@ -11,6 +15,7 @@ class DashboardView extends StatelessWidget {
   final DateTime currentDate;
   final bool isSheetConnected;
   final VoidCallback onGoToAttendance;
+  final VoidCallback onGoToFapSync;
   final VoidCallback onGoToSettings;
 
   const DashboardView({
@@ -22,6 +27,7 @@ class DashboardView extends StatelessWidget {
     required this.currentDate,
     required this.isSheetConnected,
     required this.onGoToAttendance,
+    required this.onGoToFapSync,
     required this.onGoToSettings,
   });
 
@@ -31,257 +37,254 @@ class DashboardView extends StatelessWidget {
     final presentCount = records.where((r) => r.status == AttendanceStatus.present).length;
     final absentCount = records.where((r) => r.status == AttendanceStatus.absent).length;
     final lateCount = records.where((r) => r.status == AttendanceStatus.late).length;
+    final pendingCount = totalStudents - (presentCount + absentCount + lateCount);
 
-    final attendancePercentage = totalStudents > 0 ? ((presentCount + lateCount) / totalStudents) * 100 : 0.0;
+    final attendanceRate = totalStudents > 0
+        ? ((presentCount + (lateCount * 0.7)) / totalStudents) * 100
+        : 0.0;
+
     final atRiskStudents = students.where((s) => s.absentRate >= 15.0).toList();
+    final formattedDate = DateFormat('EEEE, MMMM d, y').format(currentDate);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(28.0),
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Welcome banner
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(20),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+          // Section 11 Header
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Good morning', style: BirdleTypography.pageTitle),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Attendance workspace · $formattedDate',
+                      style: BirdleTypography.metadata,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Row(
+              ),
+              BirdleSecondaryButton(
+                icon: Icons.file_upload_outlined,
+                label: 'Import from FAP',
+                onPressed: onGoToFapSync,
+              ),
+              const SizedBox(width: 10),
+              BirdlePrimaryButton(
+                icon: Icons.fact_check_outlined,
+                label: "Open Today's Attendance",
+                onPressed: onGoToAttendance,
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // One Strong Summary Block: Today's Attendance (Section 11 design.md)
+          BirdleCard(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 8,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF36F21),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Text(
-                              'PRM392 / PRM393 - FPT UNIVERSITY',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                                letterSpacing: 1.0,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isSheetConnected ? const Color(0xFF10B981).withAlpha(50) : Colors.amber.withAlpha(50),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: isSheetConnected ? const Color(0xFF10B981) : Colors.amber,
-                                width: 1,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.circle,
-                                  size: 8,
-                                  color: isSheetConnected ? const Color(0xFF10B981) : Colors.amber,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  isSheetConnected ? 'Google Sheet: Đã kết nối' : 'Google Sheet: Cần cấu hình',
-                                  style: TextStyle(
-                                    color: isSheetConnected ? const Color(0xFF10B981) : Colors.amber,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("Today's Attendance", style: BirdleTypography.cardTitle),
+                        const SizedBox(height: 3),
+                        Text(
+                          '$currentClass · Slot $currentSlot (${ClassSession.getSlotTime(currentSlot)})',
+                          style: BirdleTypography.metadata,
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: BirdleColors.brandLight,
+                        borderRadius: BirdleRadius.pillBorder,
                       ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Hệ Thống Điểm Danh FAP - Google Sheet DB',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+                      child: Text(
+                        'Tỷ lệ: ${attendanceRate.toStringAsFixed(1)}%',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: BirdleColors.brand,
+                          fontFamily: BirdleTypography.fontFamily,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Quản lý chuyên cần lớp $currentClass • Slot $currentSlot • Ngày ${currentDate.day}/${currentDate.month}/${currentDate.year}',
-                        style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF36F21),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                const SizedBox(height: 20),
+
+                // Numbers strip
+                Row(
+                  children: [
+                    _buildStatItem('Tổng sinh viên', '$totalStudents', null),
+                    _buildDivider(),
+                    _buildStatItem('Có mặt (Present)', '$presentCount', BirdleColors.success),
+                    _buildDivider(),
+                    _buildStatItem('Vắng (Absent)', '$absentCount', BirdleColors.danger),
+                    _buildDivider(),
+                    _buildStatItem('Muộn (Late)', '$lateCount', BirdleColors.warning),
+                    _buildDivider(),
+                    _buildStatItem('Chưa điểm danh', '${pendingCount < 0 ? 0 : pendingCount}', BirdleColors.textMuted),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // Visual distribution bar
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: SizedBox(
+                    height: 8,
+                    child: Row(
+                      children: [
+                        if (presentCount > 0)
+                          Expanded(
+                            flex: presentCount,
+                            child: Container(color: BirdleColors.success),
+                          ),
+                        if (lateCount > 0)
+                          Expanded(
+                            flex: lateCount,
+                            child: Container(color: BirdleColors.warning),
+                          ),
+                        if (absentCount > 0)
+                          Expanded(
+                            flex: absentCount,
+                            child: Container(color: BirdleColors.danger),
+                          ),
+                        if (pendingCount > 0)
+                          Expanded(
+                            flex: pendingCount,
+                            child: Container(color: BirdleColors.pending.withValues(alpha: 0.3)),
+                          ),
+                      ],
+                    ),
                   ),
-                  icon: const Icon(Icons.playlist_add_check),
-                  label: const Text('Bắt đầu Điểm danh ngay', style: TextStyle(fontWeight: FontWeight.bold)),
-                  onPressed: onGoToAttendance,
                 ),
               ],
             ),
           ),
           const SizedBox(height: 24),
 
-          // Stat Cards
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard(
-                  title: 'Tổng sinh viên',
-                  value: '$totalStudents',
-                  subtitle: 'Lớp $currentClass',
-                  icon: Icons.people_alt_outlined,
-                  color: const Color(0xFF3B82F6),
-                  bgColor: const Color(0xFFEFF6FF),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildStatCard(
-                  title: 'Có mặt hôm nay',
-                  value: '$presentCount',
-                  subtitle: '${attendancePercentage.toStringAsFixed(0)}% chuyên cần',
-                  icon: Icons.check_circle_outline,
-                  color: const Color(0xFF10B981),
-                  bgColor: const Color(0xFFECFDF5),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildStatCard(
-                  title: 'Vắng mặt',
-                  value: '$absentCount',
-                  subtitle: '$lateCount đi muộn',
-                  icon: Icons.cancel_outlined,
-                  color: const Color(0xFFEF4444),
-                  bgColor: const Color(0xFFFEF2F2),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildStatCard(
-                  title: 'Nguy cơ cấm thi',
-                  value: '${atRiskStudents.length}',
-                  subtitle: 'Vắng >= 15% tổng slot',
-                  icon: Icons.warning_amber_rounded,
-                  color: const Color(0xFFF59E0B),
-                  bgColor: const Color(0xFFFFFBEB),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 28),
-
-          // Section: At Risk Students & Fast Access
+          // Two-column layout: Recent Activity & Students Requiring Attention
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // At Risk Students Table
+              // Left: Students Requiring Attention (Section 11 design.md)
               Expanded(
                 flex: 3,
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
+                child: BirdleCard(
+                  padding: EdgeInsets.zero,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Expanded(
-                            child: Row(
-                              children: [
-                                Icon(Icons.shield_outlined, color: Color(0xFFEF4444)),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Cảnh báo chuyên cần (Quy chế FPT > 20% vắng)',
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Flexible(
+                                    child: Text(
+                                      'Students Requiring Attention',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: BirdleTypography.cardTitle,
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '${atRiskStudents.length} sinh viên',
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      if (atRiskStudents.isEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          alignment: Alignment.center,
-                          child: Column(
-                            children: [
-                              Icon(Icons.thumb_up_alt_outlined, color: Colors.green.shade400, size: 40),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Tuyệt vời! Không có sinh viên nào có nguy cơ bị cấm thi.',
-                                style: TextStyle(color: Colors.grey, fontSize: 13),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: BirdleColors.dangerLight,
+                                      borderRadius: BirdleRadius.pillBorder,
+                                    ),
+                                    child: Text(
+                                      '${atRiskStudents.length}',
+                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BirdleColors.danger),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Ngưỡng cấm thi: >= 20%',
+                              style: BirdleTypography.caption,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(),
+                      if (atRiskStudents.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Center(
+                            child: Text(
+                              '✓ Tất cả sinh viên đang duy trì chuyên cần tốt (dưới 15% vắng).',
+                              style: TextStyle(color: BirdleColors.textSecondary, fontSize: 13),
+                            ),
                           ),
                         )
                       else
-                        ListView.separated(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: atRiskStudents.length,
-                          separatorBuilder: (context, index) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final s = atRiskStudents[index];
-                            return ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: CircleAvatar(
-                                backgroundColor: s.isBanned ? const Color(0xFFFEE2E2) : const Color(0xFFFEF3C7),
-                                child: Text(
-                                  s.rollNumber.substring(0, 2),
-                                  style: TextStyle(
-                                    color: s.isBanned ? const Color(0xFFB91C1C) : const Color(0xFFB45309),
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              title: Text('${s.rollNumber} - ${s.fullName}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('Đã vắng ${s.absentSlots}/${s.totalSlots} buổi học'),
-                              trailing: AbsentRateBadge(rate: s.absentRate),
-                            );
+                        Table(
+                          columnWidths: const {
+                            0: FlexColumnWidth(1.2),
+                            1: FlexColumnWidth(2.2),
+                            2: FlexColumnWidth(1.4),
+                            3: FlexColumnWidth(1.5),
                           },
+                          children: [
+                            TableRow(
+                              decoration: const BoxDecoration(color: BirdleColors.surfaceSecondary),
+                              children: ['STUDENT ID', 'STUDENT', 'ABSENT RATE', 'STATUS'].map((h) {
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  child: Text(h, style: BirdleTypography.caption),
+                                );
+                              }).toList(),
+                            ),
+                            ...atRiskStudents.map((s) {
+                              return TableRow(
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    child: Text(s.member, style: BirdleTypography.bodyMedium),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    child: Text(s.fullName, style: BirdleTypography.body),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    child: Text(
+                                      '${s.absentSlots}/${s.totalSlots} (${s.absentRate.toStringAsFixed(0)}%)',
+                                      style: TextStyle(
+                                        color: s.isBanned ? BirdleColors.danger : BirdleColors.warning,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    child: AbsentRateBadge(rate: s.absentRate, showPercent: false),
+                                  ),
+                                ],
+                              );
+                            }),
+                          ],
                         ),
                     ],
                   ),
@@ -289,46 +292,57 @@ class DashboardView extends StatelessWidget {
               ),
               const SizedBox(width: 20),
 
-              // Quick Actions & Setup Card
+              // Right: Recent Activity (Section 11 design.md)
               Expanded(
                 flex: 2,
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
+                child: BirdleCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Thao tác nhanh',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
+                      const Text('Recent Activity', style: BirdleTypography.cardTitle),
                       const SizedBox(height: 16),
-                      _buildQuickActionButton(
-                        icon: Icons.flash_on,
-                        title: 'Đồng bộ FAP nhanh',
-                        subtitle: 'Tự động tích chọn Present/Absent',
-                        color: const Color(0xFFF36F21),
-                        onTap: onGoToAttendance,
+                      _buildActivityItem(
+                        Icons.sync,
+                        'Imported attendance from FAP',
+                        'Lớp $currentClass · Slot $currentSlot',
+                        'Today · 09:42',
                       ),
-                      const SizedBox(height: 10),
-                      _buildQuickActionButton(
-                        icon: Icons.cloud_sync_outlined,
-                        title: 'Kết nối Google Sheet DB',
-                        subtitle: 'Đọc/ghi dữ liệu bảng tính đám mây',
-                        color: const Color(0xFF059669),
-                        onTap: onGoToSettings,
+                      const SizedBox(height: 14),
+                      _buildActivityItem(
+                        Icons.table_chart_outlined,
+                        'Attendance synced to Google Sheets',
+                        'Đã lưu ${records.length} bản ghi điểm danh',
+                        'Today · 09:47',
                       ),
-                      const SizedBox(height: 10),
-                      _buildQuickActionButton(
-                        icon: Icons.table_chart_outlined,
-                        title: 'Quản lý danh sách lớp',
-                        subtitle: 'Nhập từ FAP hoặc cập nhật SV',
-                        color: const Color(0xFF2563EB),
-                        onTap: onGoToAttendance,
+                      const SizedBox(height: 14),
+                      _buildActivityItem(
+                        Icons.insights_outlined,
+                        'AI analysis generated',
+                        'Phát hiện xu hướng vắng Slot $currentSlot',
+                        'Today · 09:49',
+                      ),
+                      const SizedBox(height: 20),
+                      const Divider(),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Icon(
+                            isSheetConnected ? Icons.cloud_done : Icons.cloud_off,
+                            size: 16,
+                            color: isSheetConnected ? BirdleColors.brand : BirdleColors.warning,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              isSheetConnected ? 'Google Sheet DB Connected' : 'Google Sheet Unconfigured',
+                              style: BirdleTypography.metadata,
+                            ),
+                          ),
+                          BirdleGhostButton(
+                            label: 'Cài đặt',
+                            onPressed: onGoToSettings,
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -341,89 +355,62 @@ class DashboardView extends StatelessWidget {
     );
   }
 
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required Color bgColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
+  Widget _buildStatItem(String label, String value, Color? color) {
+    return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontWeight: FontWeight.w500),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(10)),
-                child: Icon(icon, color: color, size: 20),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+          Text(label, overflow: TextOverflow.ellipsis, style: BirdleTypography.metadata),
           const SizedBox(height: 4),
-          Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: color ?? BirdleColors.textPrimary,
+              fontFamily: BirdleTypography.fontFamily,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildQuickActionButton({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: color.withAlpha(15),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withAlpha(50)),
+  Widget _buildDivider() {
+    return Container(
+      width: 1,
+      height: 36,
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      color: BirdleColors.border,
+    );
+  }
+
+  Widget _buildActivityItem(IconData icon, String title, String subtitle, String timestamp) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: BirdleColors.surfaceSecondary,
+            borderRadius: BirdleRadius.smBorder,
+          ),
+          child: Icon(icon, size: 16, color: BirdleColors.brand),
         ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
-              child: Icon(icon, color: Colors.white, size: 18),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  Text(subtitle, style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
-                ],
-              ),
-            ),
-            const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
-          ],
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: BirdleTypography.bodyMedium),
+              const SizedBox(height: 2),
+              Text(subtitle, style: BirdleTypography.metadata),
+            ],
+          ),
         ),
-      ),
+        Text(timestamp, style: BirdleTypography.caption),
+      ],
     );
   }
 }

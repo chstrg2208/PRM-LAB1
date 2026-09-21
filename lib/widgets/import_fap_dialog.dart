@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/student.dart';
 import '../services/fap_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/birdle_components.dart';
 
 class ImportFapDialog extends StatefulWidget {
   final String currentClass;
@@ -41,7 +43,7 @@ class _ImportFapDialogState extends State<ImportFapDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BirdleRadius.mdBorder),
       child: Container(
         width: 650,
         padding: const EdgeInsets.all(24),
@@ -52,12 +54,13 @@ class _ImportFapDialogState extends State<ImportFapDialog> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(10),
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(12),
+                    color: BirdleColors.surfaceSecondary,
+                    borderRadius: BirdleRadius.smBorder,
                   ),
-                  child: const Icon(Icons.file_download_outlined, color: Color(0xFF2563EB), size: 28),
+                  child: const Icon(Icons.file_download_outlined, color: BirdleColors.brand, size: 22),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -66,18 +69,18 @@ class _ImportFapDialogState extends State<ImportFapDialog> {
                     children: [
                       Text(
                         'Nhập danh sách từ FAP (Lớp ${widget.currentClass})',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: BirdleTypography.cardTitle,
                       ),
                       const SizedBox(height: 2),
-                      Text(
+                      const Text(
                         'Dán mã nguồn HTML trang FAP hoặc danh sách sinh viên có Mã SV (SE..., HE...)',
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                        style: BirdleTypography.metadata,
                       ),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(Icons.close, size: 18),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -86,12 +89,10 @@ class _ImportFapDialogState extends State<ImportFapDialog> {
             TextField(
               controller: _textController,
               maxLines: 7,
-              decoration: InputDecoration(
+              style: const TextStyle(fontSize: 12.5, fontFamily: 'Consolas, monospace'),
+              decoration: const InputDecoration(
                 hintText: 'Dán nội dung bảng FAP vào đây...\nVí dụ:\n1  SE170123  Nguyễn Văn An\n2  SE170456  Trần Thị Bình\n...',
-                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                filled: true,
-                fillColor: Colors.grey.shade50,
+                contentPadding: EdgeInsets.all(12),
               ),
               onChanged: (_) {
                 if (_hasParsed) {
@@ -105,13 +106,9 @@ class _ImportFapDialogState extends State<ImportFapDialog> {
             const SizedBox(height: 12),
             Row(
               children: [
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    foregroundColor: Colors.white,
-                  ),
-                  icon: const Icon(Icons.search),
-                  label: const Text('Phân tích dữ liệu'),
+                BirdleSecondaryButton(
+                  icon: Icons.search,
+                  label: 'Phân tích dữ liệu',
                   onPressed: _parse,
                 ),
                 const SizedBox(width: 12),
@@ -119,8 +116,9 @@ class _ImportFapDialogState extends State<ImportFapDialog> {
                   Text(
                     'Tìm thấy: ${_parsedStudents.length} sinh viên',
                     style: TextStyle(
-                      color: _parsedStudents.isNotEmpty ? Colors.green.shade700 : Colors.red.shade700,
-                      fontWeight: FontWeight.bold,
+                      color: _parsedStudents.isNotEmpty ? BirdleColors.success : BirdleColors.danger,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
                     ),
                   ),
               ],
@@ -130,8 +128,8 @@ class _ImportFapDialogState extends State<ImportFapDialog> {
               Container(
                 height: 120,
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: BirdleColors.border),
+                  borderRadius: BirdleRadius.smBorder,
                 ),
                 child: ListView.separated(
                   itemCount: _parsedStudents.length,
@@ -141,15 +139,15 @@ class _ImportFapDialogState extends State<ImportFapDialog> {
                     return ListTile(
                       dense: true,
                       leading: CircleAvatar(
-                        radius: 14,
-                        backgroundColor: const Color(0xFFFFF2E8),
+                        radius: 13,
+                        backgroundColor: BirdleColors.surfaceSecondary,
                         child: Text(
-                          s.rollNumber.substring(0, 2),
-                          style: const TextStyle(fontSize: 10, color: Color(0xFFF36F21), fontWeight: FontWeight.bold),
+                          s.rollNumber.length >= 2 ? s.rollNumber.substring(0, 2) : 'SV',
+                          style: const TextStyle(fontSize: 10, color: BirdleColors.textPrimary, fontWeight: FontWeight.bold),
                         ),
                       ),
-                      title: Text('${s.rollNumber} - ${s.fullName}'),
-                      subtitle: Text(s.email),
+                      title: Text('${s.rollNumber} - ${s.fullName}', style: BirdleTypography.bodyMedium),
+                      subtitle: Text(s.email, style: BirdleTypography.caption),
                     );
                   },
                 ),
@@ -159,19 +157,14 @@ class _ImportFapDialogState extends State<ImportFapDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(
+                BirdleGhostButton(
+                  label: 'Hủy',
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Hủy'),
                 ),
                 const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF36F21),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  ),
-                  icon: const Icon(Icons.check),
-                  label: Text('Nhập ${_parsedStudents.length} sinh viên'),
+                BirdlePrimaryButton(
+                  icon: Icons.check,
+                  label: 'Nhập ${_parsedStudents.length} sinh viên',
                   onPressed: _parsedStudents.isEmpty
                       ? null
                       : () {

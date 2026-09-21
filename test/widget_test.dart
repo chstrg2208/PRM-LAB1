@@ -160,7 +160,7 @@ void main() {
   });
 
   group('App Widget Smoke Test', () {
-    testWidgets('Renders FAP Desktop App title', (WidgetTester tester) async {
+    testWidgets('Renders Birdle Desktop App title', (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -168,7 +168,7 @@ void main() {
 
       await tester.pumpWidget(const FapAttendanceDesktopApp());
       await tester.pump();
-      expect(find.text('FAP Assistant'), findsOneWidget);
+      expect(find.text('BIRDLE'), findsOneWidget);
     });
   });
 }

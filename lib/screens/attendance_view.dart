@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import '../models/student.dart';
 import '../models/attendance_record.dart';
 import '../models/class_session.dart';
+import '../theme/app_theme.dart';
+import '../widgets/birdle_components.dart';
 import '../widgets/status_badge.dart';
 import '../widgets/fap_sync_dialog.dart';
 import '../widgets/import_fap_dialog.dart';
@@ -23,6 +25,7 @@ class AttendanceView extends StatefulWidget {
   final VoidCallback onMarkAllAbsent;
   final VoidCallback onSaveToSheet;
   final VoidCallback onReloadFromSheet;
+  final VoidCallback onGoToFapSync;
   final Function(List<Student>) onImportStudents;
 
   const AttendanceView({
@@ -42,6 +45,7 @@ class AttendanceView extends StatefulWidget {
     required this.onMarkAllAbsent,
     required this.onSaveToSheet,
     required this.onReloadFromSheet,
+    required this.onGoToFapSync,
     required this.onImportStudents,
   });
 
@@ -52,6 +56,7 @@ class AttendanceView extends StatefulWidget {
 class _AttendanceViewState extends State<AttendanceView> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _statusFilter = 'ALL'; // ALL, PRESENT, ABSENT, LATE
 
   @override
   void dispose() {
@@ -61,243 +66,211 @@ class _AttendanceViewState extends State<AttendanceView> {
 
   @override
   Widget build(BuildContext context) {
+    // Filter students
     final filteredStudents = widget.students.where((s) {
-      if (_searchQuery.isEmpty) return true;
-      final q = _searchQuery.toLowerCase();
-      return s.rollNumber.toLowerCase().contains(q) || s.fullName.toLowerCase().contains(q);
+      if (_searchQuery.isNotEmpty) {
+        final q = _searchQuery.toLowerCase();
+        final matchSearch = s.rollNumber.toLowerCase().contains(q) || s.fullName.toLowerCase().contains(q);
+        if (!matchSearch) return false;
+      }
+
+      if (_statusFilter != 'ALL') {
+        final rec = widget.records.where((r) => r.rollNumber == s.rollNumber).firstOrNull;
+        if (_statusFilter == 'PRESENT' && rec?.status != AttendanceStatus.present) return false;
+        if (_statusFilter == 'ABSENT' && rec?.status != AttendanceStatus.absent) return false;
+        if (_statusFilter == 'LATE' && rec?.status != AttendanceStatus.late) return false;
+      }
+
+      return true;
     }).toList();
 
     final presentCount = widget.records.where((r) => r.status == AttendanceStatus.present).length;
     final absentCount = widget.records.where((r) => r.status == AttendanceStatus.absent).length;
     final lateCount = widget.records.where((r) => r.status == AttendanceStatus.late).length;
+    final pendingCount = widget.students.length - (presentCount + absentCount + lateCount);
+
+    final dateStr = DateFormat('MMMM d, y').format(widget.currentDate);
 
     return Padding(
-      padding: const EdgeInsets.all(28.0),
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Filter & Control Bar
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Row(
-              children: [
-                // Class Selector
-                const Icon(Icons.school_outlined, color: Color(0xFFF36F21)),
-                const SizedBox(width: 8),
-                DropdownButton<String>(
-                  value: widget.currentClass,
-                  underline: const SizedBox(),
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 14),
-                  items: ['SE1801', 'SE1802', 'SE1803', 'IA1801', 'PRM392-Lab']
-                      .map((c) => DropdownMenuItem(value: c, child: Text('Lớp $c')))
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) widget.onClassChanged(val);
-                  },
-                ),
-                const SizedBox(width: 24),
-
-                // Date Picker
-                const Icon(Icons.calendar_today_outlined, color: Colors.blueAccent, size: 20),
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: widget.currentDate,
-                      firstDate: DateTime(2025),
-                      lastDate: DateTime(2028),
-                    );
-                    if (picked != null) widget.onDateChanged(picked);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      DateFormat('dd/MM/yyyy').format(widget.currentDate),
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 24),
-
-                // Slot Selector
-                const Icon(Icons.access_time, color: Colors.teal, size: 20),
-                const SizedBox(width: 8),
-                DropdownButton<int>(
-                  value: widget.currentSlot,
-                  underline: const SizedBox(),
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 14),
-                  items: List.generate(6, (i) => i + 1)
-                      .map(
-                        (slot) => DropdownMenuItem(
-                          value: slot,
-                          child: Text('Slot $slot (${ClassSession.getSlotTime(slot)})'),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) widget.onSlotChanged(val);
-                  },
-                ),
-
-                const Spacer(),
-
-                // Action Buttons Toolbar
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.file_download_outlined, size: 18),
-                  label: const Text('Nhập từ FAP'),
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => ImportFapDialog(
-                        currentClass: widget.currentClass,
-                        onImport: widget.onImportStudents,
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(width: 10),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.cloud_download_outlined, size: 18),
-                  label: const Text('Tải từ Sheet'),
-                  onPressed: widget.onReloadFromSheet,
-                ),
-                const SizedBox(width: 10),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF059669),
-                    foregroundColor: Colors.white,
-                  ),
-                  icon: const Icon(Icons.save_outlined, size: 18),
-                  label: const Text('Lưu vào Google Sheet'),
-                  onPressed: widget.onSaveToSheet,
-                ),
-                const SizedBox(width: 10),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF36F21),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                  icon: const Icon(Icons.bolt, size: 20),
-                  label: const Text('Đồng bộ lên FAP', style: TextStyle(fontWeight: FontWeight.bold)),
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => FapSyncDialog(
-                        records: widget.records,
-                        className: widget.currentClass,
-                        slot: widget.currentSlot,
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 18),
-
-          // Quick Summary & Batch Actions Bar
+          // Section 12 Header
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Row(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Sĩ số: ${widget.students.length}   |   ', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    Text('Có mặt: $presentCount  ', style: const TextStyle(color: Color(0xFF059669), fontWeight: FontWeight.bold)),
-                    Text('Vắng: $absentCount  ', style: const TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold)),
-                    Text('Muộn: $lateCount', style: const TextStyle(color: Color(0xFFD97706), fontWeight: FontWeight.bold)),
+                    const Text('Attendance', style: BirdleTypography.pageTitle),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${widget.currentClass} · Slot ${widget.currentSlot} (${ClassSession.getSlotTime(widget.currentSlot)}) · $dateStr',
+                      style: BirdleTypography.metadata,
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(width: 14),
-
-              TextButton.icon(
-                icon: const Icon(Icons.done_all, color: Color(0xFF059669), size: 18),
-                label: const Text('Tất cả có mặt', style: TextStyle(color: Color(0xFF059669), fontWeight: FontWeight.bold)),
-                onPressed: widget.onMarkAllPresent,
+              // Session Selectors
+              _buildSessionPickers(),
+              const SizedBox(width: 16),
+              // Action Buttons (Section 12 design.md)
+              BirdleSecondaryButton(
+                icon: Icons.file_upload_outlined,
+                label: 'Import from FAP',
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => ImportFapDialog(
+                      currentClass: widget.currentClass,
+                      onImport: widget.onImportStudents,
+                    ),
+                  );
+                },
               ),
-              TextButton.icon(
-                icon: const Icon(Icons.close, color: Color(0xFFDC2626), size: 18),
-                label: const Text('Tất cả vắng', style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold)),
-                onPressed: widget.onMarkAllAbsent,
+              const SizedBox(width: 8),
+              BirdleSecondaryButton(
+                icon: Icons.save_outlined,
+                label: 'Save to Sheet',
+                onPressed: widget.onSaveToSheet,
               ),
-
-              const Spacer(),
-
-              // Search box
-              SizedBox(
-                width: 260,
-                height: 40,
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search, size: 18),
-                    hintText: 'Tìm theo MSSV hoặc Tên...',
-                    hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
-                    contentPadding: EdgeInsets.zero,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    filled: true,
-                    fillColor: Colors.white,
-                  ),
-                  onChanged: (val) {
-                    setState(() {
-                      _searchQuery = val.trim();
-                    });
-                  },
-                ),
+              const SizedBox(width: 8),
+              BirdlePrimaryButton(
+                icon: Icons.bolt,
+                label: 'Sync to FAP',
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => FapSyncDialog(
+                      records: widget.records,
+                      className: widget.currentClass,
+                      slot: widget.currentSlot,
+                    ),
+                  );
+                },
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
 
-          // Main Attendance Table
+          // Summary & Filter Bar
+          BirdleCard(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                // Quick Summary
+                Text('${widget.students.length} Students', style: BirdleTypography.bodyMedium),
+                _buildDotSeparator(),
+                _buildSummaryBadge('$presentCount Present', BirdleColors.success, () => setState(() => _statusFilter = 'PRESENT')),
+                const SizedBox(width: 8),
+                _buildSummaryBadge('$absentCount Absent', BirdleColors.danger, () => setState(() => _statusFilter = 'ABSENT')),
+                const SizedBox(width: 8),
+                _buildSummaryBadge('$lateCount Late', BirdleColors.warning, () => setState(() => _statusFilter = 'LATE')),
+                if (pendingCount > 0) ...[
+                  const SizedBox(width: 8),
+                  _buildSummaryBadge('$pendingCount Pending', BirdleColors.pending, () => setState(() => _statusFilter = 'ALL')),
+                ],
+
+                const Spacer(),
+
+                // Batch Actions (Section 12 design.md)
+                BirdleGhostButton(
+                  icon: Icons.done_all,
+                  label: 'Mark All Present',
+                  color: BirdleColors.brand,
+                  onPressed: widget.onMarkAllPresent,
+                ),
+                const SizedBox(width: 4),
+                BirdleGhostButton(
+                  icon: Icons.remove_circle_outline,
+                  label: 'Mark All Absent',
+                  color: BirdleColors.danger,
+                  onPressed: widget.onMarkAllAbsent,
+                ),
+                const SizedBox(width: 12),
+
+                // Search field
+                BirdleSearchField(
+                  controller: _searchController,
+                  hintText: 'Search students...',
+                  onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                ),
+                if (_statusFilter != 'ALL') ...[
+                  const SizedBox(width: 8),
+                  BirdleGhostButton(
+                    icon: Icons.filter_alt_off,
+                    label: 'Clear filter',
+                    onPressed: () => setState(() => _statusFilter = 'ALL'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Main Data Table (Section 12 dominant component)
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
+            child: BirdleCard(
+              padding: EdgeInsets.zero,
               child: widget.isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: ListView.separated(
-                        itemCount: filteredStudents.length,
-                        separatorBuilder: (context, index) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final student = filteredStudents[index];
-                          final record = widget.records.firstWhere(
-                            (r) => r.rollNumber == student.rollNumber,
-                            orElse: () => AttendanceRecord(
-                              rollNumber: student.rollNumber,
-                              className: widget.currentClass,
-                              date: widget.currentDate.toIso8601String(),
-                              slot: widget.currentSlot,
-                              status: AttendanceStatus.present,
+                  ? const Center(child: CircularProgressIndicator(color: BirdleColors.brand, strokeWidth: 2))
+                  : filteredStudents.isEmpty
+                      ? const BirdleEmptyState(
+                          icon: Icons.search_off,
+                          title: 'Không tìm thấy sinh viên',
+                          description: 'Không có sinh viên nào khớp với điều kiện tìm kiếm hoặc bộ lọc hiện tại.',
+                        )
+                      : Column(
+                          children: [
+                            // Table Header Row
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                              decoration: const BoxDecoration(
+                                color: BirdleColors.surfaceSecondary,
+                                borderRadius: BorderRadius.only(
+                                  topLeft: Radius.circular(12),
+                                  topRight: Radius.circular(12),
+                                ),
+                                border: Border(bottom: BorderSide(color: BirdleColors.border)),
+                              ),
+                              child: Row(
+                                children: [
+                                  SizedBox(width: 44, child: Text('#', style: BirdleTypography.caption)),
+                                  SizedBox(width: 120, child: Text('STUDENT ID', style: BirdleTypography.caption)),
+                                  Expanded(flex: 3, child: Text('STUDENT NAME', style: BirdleTypography.caption)),
+                                  SizedBox(width: 220, child: Text('STATUS (PRESENT / ABSENT / LATE)', style: BirdleTypography.caption)),
+                                  Expanded(flex: 2, child: Text('NOTE', style: BirdleTypography.caption)),
+                                  SizedBox(width: 130, child: Text('ATTENDANCE RATE', style: BirdleTypography.caption)),
+                                ],
+                              ),
                             ),
-                          );
 
-                          return _buildStudentRow(student, record, index + 1);
-                        },
-                      ),
-                    ),
+                            // Table Rows
+                            Expanded(
+                              child: ListView.separated(
+                                itemCount: filteredStudents.length,
+                                separatorBuilder: (context, index) => const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final student = filteredStudents[index];
+                                  final record = widget.records.firstWhere(
+                                    (r) => r.rollNumber == student.rollNumber,
+                                    orElse: () => AttendanceRecord(
+                                      rollNumber: student.rollNumber,
+                                      className: widget.currentClass,
+                                      date: widget.currentDate.toIso8601String(),
+                                      slot: widget.currentSlot,
+                                      status: AttendanceStatus.present,
+                                    ),
+                                  );
+
+                                  return _buildStudentTableRow(index + 1, student, record);
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
             ),
           ),
         ],
@@ -305,91 +278,73 @@ class _AttendanceViewState extends State<AttendanceView> {
     );
   }
 
-  Widget _buildStudentRow(Student student, AttendanceRecord record, int stt) {
+  Widget _buildStudentTableRow(int index, Student student, AttendanceRecord record) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      color: record.status == AttendanceStatus.absent ? const Color(0xFFFEF2F2).withAlpha(80) : Colors.transparent,
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      color: Colors.white,
       child: Row(
         children: [
-          // STT
+          // Index
           SizedBox(
-            width: 32,
-            child: Text(
-              '$stt',
-              style: TextStyle(color: Colors.grey.shade500, fontWeight: FontWeight.bold),
-            ),
+            width: 44,
+            child: Text('$index', style: BirdleTypography.metadata),
           ),
 
-          // Avatar
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: const Color(0xFFFFF2E8),
+          // Student ID (Roll Number)
+          SizedBox(
+            width: 120,
             child: Text(
-              student.rollNumber.substring(0, 2),
+              student.rollNumber,
               style: const TextStyle(
-                color: Color(0xFFF36F21),
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: BirdleColors.textPrimary,
+                fontFamily: BirdleTypography.fontFamily,
               ),
             ),
           ),
-          const SizedBox(width: 14),
 
-          // Info (RollNumber + Name)
+          // Student Name & Code
           Expanded(
             flex: 3,
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      student.rollNumber,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
-                    ),
-                    const SizedBox(width: 8),
-                    AbsentRateBadge(rate: student.absentRate),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  student.fullName,
-                  style: const TextStyle(fontSize: 13, color: Colors.black87),
-                ),
+                Text(student.fullName, style: BirdleTypography.bodyMedium),
+                if (student.email.isNotEmpty)
+                  Text(student.email, style: const TextStyle(fontSize: 11, color: BirdleColors.textMuted)),
               ],
             ),
           ),
 
-          // 3-State Toggle Buttons (Có mặt / Vắng / Muộn)
-          Expanded(
-            flex: 3,
+          // Status Controls (Segmented / Inline Pills per Section 12)
+          SizedBox(
+            width: 220,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildStatusOption(
+                _buildStatusPill(
                   label: 'Có mặt',
-                  icon: Icons.check,
                   isSelected: record.status == AttendanceStatus.present,
-                  activeColor: const Color(0xFF059669),
-                  activeBg: const Color(0xFFD1FAE5),
+                  selectedBg: BirdleColors.successLight,
+                  selectedFg: BirdleColors.success,
                   onTap: () => widget.onStatusChanged(student.rollNumber, AttendanceStatus.present),
                 ),
-                const SizedBox(width: 8),
-                _buildStatusOption(
+                const SizedBox(width: 4),
+                _buildStatusPill(
                   label: 'Vắng',
-                  icon: Icons.close,
                   isSelected: record.status == AttendanceStatus.absent,
-                  activeColor: const Color(0xFFDC2626),
-                  activeBg: const Color(0xFFFEE2E2),
+                  selectedBg: BirdleColors.dangerLight,
+                  selectedFg: BirdleColors.danger,
                   onTap: () => widget.onStatusChanged(student.rollNumber, AttendanceStatus.absent),
                 ),
-                const SizedBox(width: 8),
-                _buildStatusOption(
+                const SizedBox(width: 4),
+                _buildStatusPill(
                   label: 'Muộn',
-                  icon: Icons.access_time,
                   isSelected: record.status == AttendanceStatus.late,
-                  activeColor: const Color(0xFFD97706),
-                  activeBg: const Color(0xFFFEF3C7),
+                  selectedBg: BirdleColors.warningLight,
+                  selectedFg: BirdleColors.warning,
                   onTap: () => widget.onStatusChanged(student.rollNumber, AttendanceStatus.late),
                 ),
               ],
@@ -399,21 +354,34 @@ class _AttendanceViewState extends State<AttendanceView> {
           // Note Field
           Expanded(
             flex: 2,
-            child: SizedBox(
-              height: 36,
-              child: TextFormField(
-                initialValue: record.note,
-                style: const TextStyle(fontSize: 12),
-                decoration: InputDecoration(
-                  hintText: 'Ghi chú...',
-                  hintStyle: TextStyle(fontSize: 11, color: Colors.grey.shade400),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-                  filled: true,
-                  fillColor: Colors.grey.shade50,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: SizedBox(
+                height: 30,
+                child: TextField(
+                  controller: TextEditingController(text: record.note)..selection = TextSelection.collapsed(offset: record.note.length),
+                  style: const TextStyle(fontSize: 12, color: BirdleColors.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Add note...',
+                    hintStyle: const TextStyle(fontSize: 11.5, color: BirdleColors.textMuted),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                    border: OutlineInputBorder(borderRadius: BirdleRadius.smBorder, borderSide: BorderSide.none),
+                    filled: true,
+                    fillColor: BirdleColors.surfaceSecondary,
+                  ),
+                  onChanged: (val) => widget.onNoteChanged(student.rollNumber, val),
                 ),
-                onChanged: (val) => widget.onNoteChanged(student.rollNumber, val),
               ),
+            ),
+          ),
+
+          // Attendance Rate & Badge
+          SizedBox(
+            width: 130,
+            child: Row(
+              children: [
+                AbsentRateBadge(rate: student.absentRate, showPercent: true),
+              ],
             ),
           ),
         ],
@@ -421,43 +389,138 @@ class _AttendanceViewState extends State<AttendanceView> {
     );
   }
 
-  Widget _buildStatusOption({
+  Widget _buildStatusPill({
     required String label,
-    required IconData icon,
     required bool isSelected,
-    required Color activeColor,
-    required Color activeBg,
+    required Color selectedBg,
+    required Color selectedFg,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      borderRadius: BirdleRadius.smBorder,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: isSelected ? activeBg : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(8),
+          color: isSelected ? selectedBg : Colors.transparent,
+          borderRadius: BirdleRadius.smBorder,
           border: Border.all(
-            color: isSelected ? activeColor : Colors.transparent,
-            width: 1.5,
+            color: isSelected ? selectedFg.withValues(alpha: 0.3) : BirdleColors.border,
+            width: 1,
           ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: isSelected ? activeColor : Colors.grey),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? activeColor : Colors.grey.shade700,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                fontSize: 12,
-              ),
-            ),
-          ],
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+            color: isSelected ? selectedFg : BirdleColors.textSecondary,
+            fontFamily: BirdleTypography.fontFamily,
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSessionPickers() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: BirdleColors.surface,
+        borderRadius: BirdleRadius.smBorder,
+        border: Border.all(color: BirdleColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Class Dropdown
+          DropdownButton<String>(
+            value: widget.currentClass,
+            underline: const SizedBox(),
+            isDense: true,
+            style: const TextStyle(fontWeight: FontWeight.w600, color: BirdleColors.textPrimary, fontSize: 13),
+            items: ['SE1801', 'SE1802', 'SE1803', 'IA1801', 'PRM392-Lab']
+                .map((c) => DropdownMenuItem(value: c, child: Text('Lớp $c')))
+                .toList(),
+            onChanged: (val) {
+              if (val != null) widget.onClassChanged(val);
+            },
+          ),
+          Container(width: 1, height: 16, color: BirdleColors.border, margin: const EdgeInsets.symmetric(horizontal: 8)),
+
+          // Slot Dropdown
+          DropdownButton<int>(
+            value: widget.currentSlot,
+            underline: const SizedBox(),
+            isDense: true,
+            style: const TextStyle(fontWeight: FontWeight.w600, color: BirdleColors.textPrimary, fontSize: 13),
+            items: List.generate(6, (i) => i + 1)
+                .map((s) => DropdownMenuItem(value: s, child: Text('Slot $s')))
+                .toList(),
+            onChanged: (val) {
+              if (val != null) widget.onSlotChanged(val);
+            },
+          ),
+          Container(width: 1, height: 16, color: BirdleColors.border, margin: const EdgeInsets.symmetric(horizontal: 8)),
+
+          // Date Picker Clickable
+          InkWell(
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: widget.currentDate,
+                firstDate: DateTime(2025),
+                lastDate: DateTime(2028),
+              );
+              if (picked != null) widget.onDateChanged(picked);
+            },
+            child: Row(
+              children: [
+                const Icon(Icons.calendar_today_outlined, size: 14, color: BirdleColors.textSecondary),
+                const SizedBox(width: 6),
+                Text(
+                  DateFormat('dd/MM/yyyy').format(widget.currentDate),
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: BirdleColors.textPrimary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryBadge(String label, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BirdleRadius.pillBorder,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BirdleRadius.pillBorder,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: color,
+            fontFamily: BirdleTypography.fontFamily,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDotSeparator() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10),
+      width: 4,
+      height: 4,
+      decoration: const BoxDecoration(
+        color: BirdleColors.border,
+        shape: BoxShape.circle,
       ),
     );
   }
