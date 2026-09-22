@@ -21,8 +21,8 @@ class ReportsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = students.length;
     final banned = students.where((s) => s.isBanned).toList();
-    final warning = students.where((s) => s.isWarning).toList();
-    final safe = students.where((s) => !s.isBanned && !s.isWarning).toList();
+    final warning = students.where((s) => s.isWarning || s.isAtThreshold).toList();
+    final safe = students.where((s) => !s.isBanned && !s.isWarning && !s.isAtThreshold).toList();
 
     final totalSlots = students.fold<int>(0, (sum, s) => sum + s.totalSlots);
     final absentSlots = students.fold<int>(0, (sum, s) => sum + s.absentSlots);
@@ -42,7 +42,7 @@ class ReportsView extends StatelessWidget {
                   const Text('Attendance Reports', style: BirdleTypography.pageTitle),
                   const SizedBox(height: 4),
                   Text(
-                    'Báo cáo chuyên cần học kỳ · Lớp $currentClass · Quy chế FPT vắng >= 20% cấm thi',
+                    'Báo cáo chuyên cần học kỳ · Lớp $currentClass · Quy chế FPT vắng > 20% cấm thi',
                     style: BirdleTypography.metadata,
                   ),
                 ],
@@ -81,7 +81,7 @@ class ReportsView extends StatelessWidget {
               const SizedBox(width: 14),
               _buildReportMetricCard('Cảnh báo nguy cơ (15-20%)', '${warning.length}', 'Cần nhắc nhở gấp', BirdleColors.warning),
               const SizedBox(width: 14),
-              _buildReportMetricCard('CẤM THI (>= 20%)', '${banned.length}', 'Không đủ điều kiện thi', BirdleColors.danger),
+              _buildReportMetricCard('CẤM THI (> 20%)', '${banned.length}', 'Không đủ điều kiện thi', BirdleColors.danger),
             ],
           ),
           const SizedBox(height: 24),
@@ -125,7 +125,7 @@ class ReportsView extends StatelessWidget {
                     const SizedBox(width: 24),
                     _buildLegendDot(BirdleColors.warning, 'Cảnh báo nguy cơ (15-20% vắng): ${warning.length} SV'),
                     const SizedBox(width: 24),
-                    _buildLegendDot(BirdleColors.danger, 'Cấm thi (>=20% vắng): ${banned.length} SV'),
+                    _buildLegendDot(BirdleColors.danger, 'Cấm thi (>20% vắng): ${banned.length} SV'),
                   ],
                 ),
               ],

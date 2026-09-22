@@ -93,11 +93,16 @@ class AbsentRateBadge extends StatelessWidget {
     Color border;
     String text;
 
-    if (rate >= 20.0) {
+    if (rate > 20.0001) {
       bg = BirdleColors.dangerLight;
       fg = BirdleColors.danger;
       border = BirdleColors.danger.withValues(alpha: 0.25);
       text = 'CẤM THI';
+    } else if (rate >= 19.9999) {
+      bg = BirdleColors.warningLight;
+      fg = BirdleColors.warning;
+      border = BirdleColors.warning.withValues(alpha: 0.3);
+      text = 'CHẠM NGƯỠNG';
     } else if (rate >= 15.0) {
       bg = BirdleColors.warningLight;
       fg = BirdleColors.warning;

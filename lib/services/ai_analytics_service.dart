@@ -48,7 +48,7 @@ class AiAttendanceReport {
   final DayStat worstDay;
   final List<SlotStat> slotStats;
   final List<DayStat> dayStats;
-  final List<Student> failedStudents; // Fail attendance (>= 20%)
+  final List<Student> failedStudents; // Fail attendance (> 20%)
   final List<Student> warningStudents; // Nguy cơ (15% - 20%)
   final double overallAttendanceRate;
   final String aiSummary;
@@ -208,9 +208,9 @@ class AiAnalyticsService {
     });
     final worstDay = sortedDays.first;
 
-    // Lọc sinh viên Fail Attendance (>= 20%) và Warning (15% - 20%)
+    // Lọc sinh viên Fail Attendance (> 20%) và Warning (15% - 20% hoặc chạm ngưỡng)
     final failedStudents = students.where((s) => s.isBanned).toList();
-    final warningStudents = students.where((s) => s.isWarning).toList();
+    final warningStudents = students.where((s) => s.isWarning || s.isAtThreshold).toList();
 
     // Tỷ lệ chuyên cần chung từ sinh viên
     int totalAbsences = students.fold(0, (sum, s) => sum + s.absentSlots);
@@ -288,7 +288,7 @@ class AiAnalyticsService {
           '• Tỷ lệ chuyên cần chung: **${report.overallAttendanceRate.toStringAsFixed(1)}%**\n'
           '• Slot vắng cao nhất: **Slot ${report.worstSlot.slot}** (${report.worstSlot.absentRate.toStringAsFixed(1)}% vắng)\n'
           '• Thứ vắng nhiều nhất: **${report.worstDay.dayName}** (${report.worstDay.absentRate.toStringAsFixed(1)}% vắng)\n'
-          '• Tình trạng cấm thi (≥20%): **${report.failedStudents.length} sinh viên** | Nguy cơ (15-20%): **${report.warningStudents.length} sinh viên**\n\n'
+          '• Tình trạng cấm thi (>20%): **${report.failedStudents.length} sinh viên** | Nguy cơ (15-20%): **${report.warningStudents.length} sinh viên**\n\n'
           '💡 Thầy/Cô có thể hỏi em về danh sách sinh viên vắng, phân tích theo slot/thứ, tra cứu theo tên/MSSV hoặc đề xuất giải pháp cải thiện!';
     }
 
@@ -297,7 +297,7 @@ class AiAnalyticsService {
       return '🤖 **Em là FAP AI Assistant!**\n'
           'Trợ lý trí tuệ nhân tạo chuyên sâu về quản lý điểm danh và phân tích học vụ tại Đại học FPT.\n\n'
           'Em có khả năng:\n'
-          '1. Quét và phát hiện các trường hợp có nguy cơ Fail Attendance (vắng ≥ 20%).\n'
+          '1. Quét và phát hiện các trường hợp có nguy cơ Fail Attendance (vắng > 20%).\n'
           '2. Phân tích xu hướng vắng theo Slot học và Thứ trong tuần.\n'
           '3. Tra cứu nhanh hồ sơ chuyên cần của từng sinh viên.\n'
           '4. Đưa ra khuyến nghị thực tế giúp giảng viên quản lý lớp học hiệu quả hơn.';
@@ -329,20 +329,25 @@ class AiAnalyticsService {
         if ((roll.isNotEmpty && q.contains(roll)) ||
             (code.isNotEmpty && q.contains(code)) ||
             (name.isNotEmpty && q.contains(name))) {
-          final isFail = s.absentRate >= 20.0;
-          final isWarn = s.absentRate >= 15.0 && s.absentRate < 20.0;
+          final isFail = s.isBanned;
+          final isWarn = s.isWarning;
+          final isThreshold = s.isAtThreshold;
           final status = isFail
-              ? '⛔ **CẤM THI (Fail Attendance - vắng ≥ 20%)**'
-              : (isWarn
-                  ? '⚠️ **CẢNH BÁO NGUY CƠ (Vắng 15% - 20%)**'
-                  : '✅ **AN TOÀN (Đi học đầy đủ / Chuyên cần tốt)**');
-          final maxAllowed = (s.totalSlots * 0.2).floor();
-          final remaining = maxAllowed - s.absentSlots;
+              ? '⛔ **CẤM THI (Fail Attendance - vắng > 20%)**'
+              : (isThreshold
+                  ? '⚠️ **CHẠM NGƯỠNG (Hết số buổi vắng được phép - 20%)**'
+                  : (isWarn
+                      ? '⚠️ **CẢNH BÁO NGUY CƠ (Vắng 15% - 20%)**'
+                      : '✅ **AN TOÀN (Đi học đầy đủ / Chuyên cần tốt)**'));
+          final maxAllowed = s.maxAllowedAbsences;
+          final remaining = s.remainingAllowedAbsences;
           final advice = isFail
               ? 'Sinh viên đã vượt hạn mức vắng cho phép ($maxAllowed buổi) và không đủ điều kiện thi cuối môn.'
-              : (remaining <= 1
-                  ? 'Sinh viên chỉ còn được phép vắng tối đa **$remaining buổi nữa** trước khi bị cấm thi!'
-                  : 'Sinh viên còn được phép vắng tối đa **$remaining buổi**.');
+              : (remaining == 0
+                  ? 'Sinh viên đã dùng hết số buổi vắng được phép; vắng thêm 1 buổi sẽ vượt ngưỡng và bị cấm thi!'
+                  : (remaining == 1
+                      ? 'Sinh viên chỉ còn được phép vắng tối đa **1 buổi nữa** trước khi chạm mốc tối đa!'
+                      : 'Sinh viên còn được phép vắng tối đa **$remaining buổi**.'));
 
           return '👤 **Hồ sơ chuyên cần sinh viên:**\n'
               '• **Họ và tên:** ${s.fullName}\n'
@@ -402,7 +407,7 @@ class AiAnalyticsService {
 
       final buffer = StringBuffer();
       if (report.failedStudents.isNotEmpty) {
-        buffer.writeln('🚫 **Danh sách sinh viên FAIL ATTENDANCE (Cấm thi ≥ 20%):**');
+        buffer.writeln('🚫 **Danh sách sinh viên FAIL ATTENDANCE (Cấm thi > 20%):**');
         buffer.writeln('Hiện có **${report.failedStudents.length} sinh viên** đã vượt ngưỡng vắng 20%:');
         for (final s in report.failedStudents) {
           buffer.writeln('• **${s.member} - ${s.fullName}**: Vắng ${s.absentSlots}/${s.totalSlots} buổi (${s.absentRate.toStringAsFixed(0)}%) - ⛔ **CẤM THI**');
@@ -435,7 +440,7 @@ class AiAnalyticsService {
           '• Tỷ lệ chuyên cần trung bình toàn lớp: **${report.overallAttendanceRate.toStringAsFixed(1)}%**\n'
           '• Slot sinh viên nghỉ nhiều nhất: **Slot ${report.worstSlot.slot}** (${report.worstSlot.slotTime}) với **${report.worstSlot.absentRate.toStringAsFixed(1)}%**\n'
           '• Thứ vắng nhiều nhất trong tuần: **${report.worstDay.dayName}** với **${report.worstDay.absentRate.toStringAsFixed(1)}%**\n'
-          '• Số sinh viên bị cấm thi (≥ 20%): **${report.failedStudents.length} sinh viên**\n'
+          '• Số sinh viên bị cấm thi (> 20%): **${report.failedStudents.length} sinh viên**\n'
           '• Số sinh viên cảnh báo (15-20%): **${report.warningStudents.length} sinh viên**\n\n'
           '${report.aiSummary}';
     }
@@ -523,9 +528,12 @@ class AiAnalyticsService {
 
     try {
       final studentSummary = students.map((s) {
-        final isFail = s.absentRate >= 20.0;
-        final isWarn = s.absentRate >= 15.0 && s.absentRate < 20.0;
-        final status = isFail ? 'CẤM THI (>=20%)' : (isWarn ? 'CẢNH BÁO (>=15%)' : 'ĐỦ ĐIỀU KIỆN');
+        final isFail = s.isBanned;
+        final isThreshold = s.isAtThreshold;
+        final isWarn = s.isWarning;
+        final status = isFail
+            ? 'CẤM THI (>20%)'
+            : (isThreshold ? 'CHẠM NGƯỠNG (20%)' : (isWarn ? 'CẢNH BÁO (15-20%)' : 'ĐỦ ĐIỀU KIỆN'));
         return '- MSSV: ${s.member}, Họ tên: ${s.fullName} (Code: ${s.code}), Vắng: ${s.absentSlots}/${s.totalSlots} (${s.absentRate.toStringAsFixed(1)}%) -> $status';
       }).join('\n');
 
@@ -539,7 +547,7 @@ Dữ liệu điểm danh thực tế lớp học:
 - Trạng thái dữ liệu lịch sử: ${report.hasHistory ? "Đã nạp từ database Google Sheets" : "Chưa đủ dữ liệu thống kê lịch sử"}
 - Tỷ lệ chuyên cần trung bình toàn lớp: ${report.overallAttendanceRate.toStringAsFixed(1)}%
 $historyStatusText
-- Số sinh viên bị cấm thi (>=20%): ${report.failedStudents.length} sinh viên
+- Số sinh viên bị cấm thi (>20%): ${report.failedStudents.length} sinh viên
 - Số sinh viên cảnh báo (15-20%): ${report.warningStudents.length} sinh viên
 
 Danh sách sinh viên:
@@ -554,7 +562,7 @@ Quy tắc trả lời bắt buộc:
 2. Nếu giảng viên hỏi bạn là ai, hãy giới thiệu bạn là Trợ lý AI FAP Attendance Assistant hỗ trợ điểm danh & phân tích chuyên cần ĐH FPT.
 3. Khi trả lời về dữ liệu điểm danh, TUYỆT ĐỐI chỉ dùng số liệu thực tế được cung cấp trong context. Nghiêm cấm bịa đặt, giả định, hoặc suy diễn thêm bất kỳ số liệu định lượng nào ngoài nguồn dữ liệu.
 4. Nếu context ghi "Chưa đủ dữ liệu thống kê lịch sử", hãy thông báo trung thực rằng chưa có đủ dữ liệu lịch sử để phân tích xu hướng vắng theo buổi/thứ, không tự ý đưa ra phán đoán về slot hay ngày nghỉ.
-5. Khi tư vấn giải pháp, hãy đưa ra các lời khuyên sư phạm thực tế, đúng quy chế đào tạo ĐH FPT (vắng >= 20% tổng số buổi sẽ bị cấm thi / fail attendance).
+5. Khi tư vấn giải pháp, hãy đưa ra các lời khuyên sư phạm thực tế, đúng quy chế đào tạo ĐH FPT (vắng > 20% tổng số buổi sẽ bị cấm thi / fail attendance).
 6. Trình bày đẹp mắt, tự nhiên bằng định dạng Markdown (in đậm, bullet points).
 ''';
 
@@ -635,7 +643,7 @@ Quy tắc trả lời bắt buộc:
     return 'Dựa trên phân tích dữ liệu điểm danh, lớp học hiện đạt tỷ lệ chuyên cần trung bình ${overallRate.toStringAsFixed(1)}%. '
         'Điểm đáng chú ý là sinh viên có xu hướng nghỉ nhiều nhất vào Slot ${worstSlot.slot} (${worstSlot.slotTime}) '
         'với tỷ lệ vắng lên tới ${worstSlot.absentRate.toStringAsFixed(1)}%, và ngày vắng cao điểm là ${worstDay.dayName}. '
-        'Về tình trạng học vụ, hệ thống phát hiện $failedCount sinh viên đã bị Fail Attendance (Cấm thi >= 20%) '
+        'Về tình trạng học vụ, hệ thống phát hiện $failedCount sinh viên đã bị Fail Attendance (Cấm thi > 20%) '
         'và $warningCount sinh viên đang nằm trong danh sách nguy cơ cao cần được nhắc nhở.';
   }
 }

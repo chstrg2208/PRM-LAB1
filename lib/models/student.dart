@@ -66,17 +66,47 @@ class Student {
 
   double get absentRate => totalSlots > 0 ? (absentSlots / totalSlots) * 100 : 0.0;
 
-  // Cảnh báo chuyên cần (15% - 20%)
-  bool get isWarning => absentRate >= 15.0 && absentRate < 20.0;
+  // Cảnh báo chuyên cần (15% - 20% khi còn lượt vắng)
+  bool get isWarning =>
+      totalSlots > 0 &&
+      !isBanned &&
+      (absentSlots * 100 >= totalSlots * 15) &&
+      remainingAllowedAbsences > 0;
 
-  // Fail Attendance - Bị cấm thi theo quy chế FPT (>= 20%)
-  bool get isBanned => absentRate >= 20.0;
+  // Chạm ngưỡng vắng tối đa (đúng 20% hoặc đã hết số buổi được phép vắng nhưng chưa vượt quá 20%)
+  bool get isAtThreshold =>
+      totalSlots > 0 &&
+      !isBanned &&
+      remainingAllowedAbsences == 0 &&
+      absentSlots > 0;
 
-  // Số buổi còn lại được phép vắng trước khi chạm mốc 20% cấm thi
+  // Fail Attendance - Bị cấm thi theo quy chế FPT (> 20%)
+  // Sinh viên được phép vắng đến và bằng 20% tổng số buổi.
+  // Chỉ bị cấm thi khi tỷ lệ vắng LỚN HƠN 20%. Không dùng >= 20%.
+  bool get isBanned => totalSlots > 0 && (absentSlots * 100 > totalSlots * 20);
+
+  // Số buổi tối đa được phép vắng (đến và bằng 20%)
+  int get maxAllowedAbsences => totalSlots > 0 ? totalSlots ~/ 5 : 0;
+
+  // Số buổi còn lại được phép vắng trước khi vượt ngưỡng 20% cấm thi
   int get remainingAllowedAbsences {
-    final maxAllowed = (totalSlots * 0.2).floor();
-    final remaining = maxAllowed - absentSlots;
+    if (totalSlots <= 0) return 0;
+    final remaining = maxAllowedAbsences - absentSlots;
     return remaining < 0 ? 0 : remaining;
+  }
+
+  // Thông điệp trạng thái chuyên cần theo quy chế đào tạo
+  String get absenceStatusMessage {
+    if (totalSlots <= 0) {
+      return 'Chưa có đủ dữ liệu tổng số buổi để xác định ngưỡng vắng.';
+    }
+    if (isBanned) {
+      return 'Đã vượt ngưỡng vắng 20%; sinh viên thuộc diện cấm thi.';
+    }
+    if (remainingAllowedAbsences == 0) {
+      return 'Đã sử dụng hết số buổi vắng được phép; vắng thêm 1 buổi sẽ vượt ngưỡng và bị cấm thi.';
+    }
+    return 'Còn được phép vắng $remainingAllowedAbsences buổi.';
   }
 
   Map<String, dynamic> toJson() {

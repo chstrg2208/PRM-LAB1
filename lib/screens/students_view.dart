@@ -101,7 +101,13 @@ class _StudentsViewState extends State<StudentsView> {
                   const SizedBox(width: 12),
                   _buildMetricBox('Số buổi vắng', '${s.absentSlots}', color: s.absentSlots > 0 ? BirdleColors.danger : BirdleColors.success),
                   const SizedBox(width: 12),
-                  _buildMetricBox('Tỷ lệ vắng', '${s.absentRate.toStringAsFixed(1)}%', color: s.isBanned ? BirdleColors.danger : (s.isWarning ? BirdleColors.warning : BirdleColors.success)),
+                  _buildMetricBox(
+                    'Tỷ lệ vắng',
+                    '${s.absentRate.toStringAsFixed(1)}%',
+                    color: s.isBanned
+                        ? BirdleColors.danger
+                        : ((s.isWarning || s.isAtThreshold) ? BirdleColors.warning : BirdleColors.success),
+                  ),
                 ],
               ),
               const SizedBox(height: 18),
@@ -127,7 +133,14 @@ class _StudentsViewState extends State<StudentsView> {
                     const SizedBox(height: 8),
                     _buildDetailRow('Email FPT', s.email.isNotEmpty ? s.email : '${s.member.toLowerCase()}@fpt.edu.vn'),
                     const SizedBox(height: 8),
-                    _buildDetailRow('Trạng thái đào tạo', s.isBanned ? 'CẤM THI (>=20%)' : (s.isWarning ? 'CẢNH BÁO (15-20%)' : 'ĐỦ ĐIỀU KIỆN')),
+                    _buildDetailRow(
+                      'Trạng thái đào tạo',
+                      s.isBanned
+                          ? 'CẤM THI (>20%)'
+                          : (s.isAtThreshold
+                              ? 'CHẠM NGƯỠNG (20%)'
+                              : (s.isWarning ? 'CẢNH BÁO (15-20%)' : 'ĐỦ ĐIỀU KIỆN')),
+                    ),
                   ],
                 ),
               ),
@@ -148,11 +161,7 @@ class _StudentsViewState extends State<StudentsView> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        s.isBanned
-                            ? 'Sinh viên đã vượt hạn mức vắng cho phép (${(s.totalSlots * 0.2).floor()} buổi) và bị cấm thi theo quy chế FPT.'
-                            : (s.isWarning
-                                ? 'Sinh viên đang tiệm cận mức cấm thi. Chỉ còn tối đa ${s.remainingAllowedAbsences} buổi vắng.'
-                                : 'Tỷ lệ chuyên cần tốt (${(100 - s.absentRate).toStringAsFixed(0)}% tham dự). Tiếp tục duy trì phong độ.'),
+                        s.absenceStatusMessage,
                         style: const TextStyle(fontSize: 12.5, color: BirdleColors.textPrimary, height: 1.35),
                       ),
                     ),

@@ -220,7 +220,7 @@ class DashboardView extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             const Text(
-                              'Ngưỡng cấm thi: >= 20%',
+                              'Ngưỡng cấm thi: > 20%',
                               style: BirdleTypography.caption,
                             ),
                           ],

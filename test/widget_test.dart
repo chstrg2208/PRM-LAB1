@@ -8,7 +8,7 @@ import 'package:birdle/services/ai_analytics_service.dart';
 
 void main() {
   group('Student Model & Chuyên cần Tests', () {
-    test('Calculates absent rate correctly', () {
+    test('Calculates absent rate correctly - 20% is allowed (not banned)', () {
       final s = Student(
         rollNumber: 'SE170123',
         fullName: 'Nguyễn Văn An',
@@ -19,8 +19,9 @@ void main() {
       );
 
       expect(s.absentRate, 20.0);
-      expect(s.isBanned, true);
-      expect(s.isWarning, false);
+      expect(s.isBanned, false);
+      expect(s.isAtThreshold, true);
+      expect(s.remainingAllowedAbsences, 0);
     });
 
     test('Identifies warning threshold (15% - 20%)', () {
