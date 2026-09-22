@@ -5,7 +5,7 @@ import '../models/attendance_record.dart';
 import '../models/class_session.dart';
 import '../theme/app_theme.dart';
 import '../widgets/birdle_components.dart';
-import '../widgets/status_badge.dart';
+import '../widgets/attendance_student_row.dart';
 import '../widgets/fap_sync_dialog.dart';
 import '../widgets/import_fap_dialog.dart';
 
@@ -134,13 +134,17 @@ class _AttendanceViewState extends State<AttendanceView> {
               BirdleSecondaryButton(
                 icon: Icons.save_outlined,
                 label: 'Save to Sheet',
-                onPressed: widget.onSaveToSheet,
+                onPressed: () {
+                  FocusScope.of(context).unfocus();
+                  widget.onSaveToSheet();
+                },
               ),
               const SizedBox(width: 8),
               BirdlePrimaryButton(
                 icon: Icons.bolt,
                 label: 'Sync to FAP',
                 onPressed: () {
+                  FocusScope.of(context).unfocus();
                   showDialog(
                     context: context,
                     builder: (_) => FapSyncDialog(
@@ -180,14 +184,20 @@ class _AttendanceViewState extends State<AttendanceView> {
                   icon: Icons.done_all,
                   label: 'Mark All Present',
                   color: BirdleColors.brand,
-                  onPressed: widget.onMarkAllPresent,
+                  onPressed: () {
+                    FocusScope.of(context).unfocus();
+                    widget.onMarkAllPresent();
+                  },
                 ),
                 const SizedBox(width: 4),
                 BirdleGhostButton(
                   icon: Icons.remove_circle_outline,
                   label: 'Mark All Absent',
                   color: BirdleColors.danger,
-                  onPressed: widget.onMarkAllAbsent,
+                  onPressed: () {
+                    FocusScope.of(context).unfocus();
+                    widget.onMarkAllAbsent();
+                  },
                 ),
                 const SizedBox(width: 12),
 
@@ -265,7 +275,14 @@ class _AttendanceViewState extends State<AttendanceView> {
                                     ),
                                   );
 
-                                  return _buildStudentTableRow(index + 1, student, record);
+                                  return AttendanceStudentRow(
+                                    key: ValueKey('attendance_row_${student.rollNumber}'),
+                                    index: index + 1,
+                                    student: student,
+                                    record: record,
+                                    onStatusChanged: widget.onStatusChanged,
+                                    onNoteChanged: widget.onNoteChanged,
+                                  );
                                 },
                               ),
                             ),
@@ -274,150 +291,6 @@ class _AttendanceViewState extends State<AttendanceView> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildStudentTableRow(int index, Student student, AttendanceRecord record) {
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      color: Colors.white,
-      child: Row(
-        children: [
-          // Index
-          SizedBox(
-            width: 44,
-            child: Text('$index', style: BirdleTypography.metadata),
-          ),
-
-          // Student ID (Roll Number)
-          SizedBox(
-            width: 120,
-            child: Text(
-              student.rollNumber,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: BirdleColors.textPrimary,
-                fontFamily: BirdleTypography.fontFamily,
-              ),
-            ),
-          ),
-
-          // Student Name & Code
-          Expanded(
-            flex: 3,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(student.fullName, style: BirdleTypography.bodyMedium),
-                if (student.email.isNotEmpty)
-                  Text(student.email, style: const TextStyle(fontSize: 11, color: BirdleColors.textMuted)),
-              ],
-            ),
-          ),
-
-          // Status Controls (Segmented / Inline Pills per Section 12)
-          SizedBox(
-            width: 220,
-            child: Row(
-              children: [
-                _buildStatusPill(
-                  label: 'Có mặt',
-                  isSelected: record.status == AttendanceStatus.present,
-                  selectedBg: BirdleColors.successLight,
-                  selectedFg: BirdleColors.success,
-                  onTap: () => widget.onStatusChanged(student.rollNumber, AttendanceStatus.present),
-                ),
-                const SizedBox(width: 4),
-                _buildStatusPill(
-                  label: 'Vắng',
-                  isSelected: record.status == AttendanceStatus.absent,
-                  selectedBg: BirdleColors.dangerLight,
-                  selectedFg: BirdleColors.danger,
-                  onTap: () => widget.onStatusChanged(student.rollNumber, AttendanceStatus.absent),
-                ),
-                const SizedBox(width: 4),
-                _buildStatusPill(
-                  label: 'Muộn',
-                  isSelected: record.status == AttendanceStatus.late,
-                  selectedBg: BirdleColors.warningLight,
-                  selectedFg: BirdleColors.warning,
-                  onTap: () => widget.onStatusChanged(student.rollNumber, AttendanceStatus.late),
-                ),
-              ],
-            ),
-          ),
-
-          // Note Field
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: SizedBox(
-                height: 30,
-                child: TextField(
-                  controller: TextEditingController(text: record.note)..selection = TextSelection.collapsed(offset: record.note.length),
-                  style: const TextStyle(fontSize: 12, color: BirdleColors.textPrimary),
-                  decoration: InputDecoration(
-                    hintText: 'Add note...',
-                    hintStyle: const TextStyle(fontSize: 11.5, color: BirdleColors.textMuted),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                    border: OutlineInputBorder(borderRadius: BirdleRadius.smBorder, borderSide: BorderSide.none),
-                    filled: true,
-                    fillColor: BirdleColors.surfaceSecondary,
-                  ),
-                  onChanged: (val) => widget.onNoteChanged(student.rollNumber, val),
-                ),
-              ),
-            ),
-          ),
-
-          // Attendance Rate & Badge
-          SizedBox(
-            width: 130,
-            child: Row(
-              children: [
-                AbsentRateBadge(rate: student.absentRate, showPercent: true),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusPill({
-    required String label,
-    required bool isSelected,
-    required Color selectedBg,
-    required Color selectedFg,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BirdleRadius.smBorder,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: isSelected ? selectedBg : Colors.transparent,
-          borderRadius: BirdleRadius.smBorder,
-          border: Border.all(
-            color: isSelected ? selectedFg.withValues(alpha: 0.3) : BirdleColors.border,
-            width: 1,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11.5,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-            color: isSelected ? selectedFg : BirdleColors.textSecondary,
-            fontFamily: BirdleTypography.fontFamily,
-          ),
-        ),
       ),
     );
   }
