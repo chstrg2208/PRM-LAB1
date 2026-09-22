@@ -210,6 +210,95 @@ class PlatformHelperIo implements PlatformHelper {
       }
     } catch (_) {}
   }
+
+  /// Xác định thư mục Downloads mặc định trên hệ điều hành
+  static Directory? resolveDefaultDownloadDirectory({
+    Map<String, String>? environment,
+    bool? isWindows,
+  }) {
+    try {
+      final env = environment ?? Platform.environment;
+      final win = isWindows ?? Platform.isWindows;
+
+      if (win) {
+        final userProfile = env['USERPROFILE'];
+        if (userProfile != null && userProfile.trim().isNotEmpty) {
+          final downloadDir = Directory('$userProfile\\Downloads');
+          if (downloadDir.existsSync()) {
+            return downloadDir;
+          }
+        }
+      } else {
+        final home = env['HOME'];
+        if (home != null && home.trim().isNotEmpty) {
+          final downloadDir = Directory('$home/Downloads');
+          if (downloadDir.existsSync()) {
+            return downloadDir;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  @override
+  Future<PlatformFileResult> saveOrDownloadCsvFile({
+    required String fileName,
+    required String csvContent,
+    dynamic targetDirectory,
+  }) async {
+    try {
+      Directory? dir;
+      if (targetDirectory is Directory) {
+        dir = targetDirectory;
+      } else if (targetDirectory == null) {
+        dir = resolveDefaultDownloadDirectory();
+      }
+
+      if (dir == null) {
+        return const PlatformFileResult(
+          success: false,
+          message: 'Không thể xác định thư mục tải xuống (Downloads). Vui lòng chọn đường dẫn thư mục đích hợp lệ.',
+        );
+      }
+
+      if (!dir.existsSync()) {
+        try {
+          dir.createSync(recursive: true);
+        } catch (e) {
+          return PlatformFileResult(
+            success: false,
+            message: 'Không có quyền ghi hoặc không thể tạo thư mục đích: ${dir.path} ($e)',
+          );
+        }
+      }
+
+      final separator = Platform.pathSeparator;
+      var filePath = '${dir.path}$separator$fileName';
+      var targetFile = File(filePath);
+      int counter = 1;
+      final baseName = fileName.endsWith('.csv') ? fileName.substring(0, fileName.length - 4) : fileName;
+      while (targetFile.existsSync()) {
+        filePath = '${dir.path}$separator${baseName}_$counter.csv';
+        targetFile = File(filePath);
+        counter++;
+      }
+
+      await targetFile.writeAsString(csvContent, flush: true);
+      return PlatformFileResult(
+        success: true,
+        filePath: targetFile.absolute.path,
+        message: 'Đã xuất báo cáo CSV chuyên cần thành công!',
+      );
+    } catch (e) {
+      return PlatformFileResult(
+        success: false,
+        message: 'Lỗi trong quá trình ghi file CSV: $e',
+      );
+    }
+  }
+
 }
 
 PlatformHelper getPlatformHelper() => PlatformHelperIo();
+
