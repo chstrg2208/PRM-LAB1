@@ -5,6 +5,13 @@ import '../models/attendance_record.dart';
 import '../services/google_sheet_service.dart';
 import '../services/storage_service.dart';
 import '../services/ai_analytics_service.dart';
+import '../services/csv_export_service.dart';
+
+/// Function type cho phép Dependency Injection khi xuất CSV
+typedef CsvExporter = Future<CsvExportResult> Function({
+  required List<Student> students,
+  required String className,
+});
 
 /// Kết quả của các thao tác đồng bộ / lưu điểm danh
 class OperationResult {
@@ -91,6 +98,7 @@ class DefaultAttendanceApiClient implements AttendanceApiClient {
 /// State Manager quản lý phiên làm việc điểm danh, danh sách sinh viên và logs phân tích
 class AttendanceSessionManager extends ChangeNotifier {
   final AttendanceApiClient apiClient;
+  final CsvExporter _csvExporter;
 
   String _currentClass;
   int _currentSlot;
@@ -100,6 +108,7 @@ class AttendanceSessionManager extends ChangeNotifier {
   bool _isLoading = false;
   String? _dataError;
   bool _isReloadError = false;
+  bool _isExporting = false;
 
   List<Student> _students = [];
   List<AttendanceRecord> _records = [];
@@ -114,11 +123,13 @@ class AttendanceSessionManager extends ChangeNotifier {
 
   AttendanceSessionManager({
     this.apiClient = const DefaultAttendanceApiClient(),
+    CsvExporter? csvExporter,
     String initialClass = 'SE1801',
     int initialSlot = 1,
     DateTime? initialDate,
     String initialSheetUrl = '',
-  })  : _currentClass = initialClass,
+  })  : _csvExporter = csvExporter ?? CsvExportService.exportToFile,
+        _currentClass = initialClass,
         _currentSlot = initialSlot,
         _currentDate = initialDate ?? DateTime.now(),
         _sheetUrl = initialSheetUrl;
@@ -133,6 +144,7 @@ class AttendanceSessionManager extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get dataError => _dataError;
   bool get isReloadError => _isReloadError;
+  bool get isExporting => _isExporting;
 
   List<Student> get students => List.unmodifiable(_students);
   List<AttendanceRecord> get records => List.unmodifiable(_records);
@@ -502,5 +514,42 @@ class AttendanceSessionManager extends ChangeNotifier {
   void updateStudents(List<Student> updated) {
     _students = updated;
     notifyListeners();
+  }
+
+  /// Xuất báo cáo chuyên cần hiện tại ra file CSV
+  Future<CsvExportResult> exportCurrentReportCsv() async {
+    if (_isExporting) {
+      return const CsvExportResult(
+        success: false,
+        message: 'Đang trong quá trình xuất file CSV, vui lòng chờ.',
+      );
+    }
+
+    if (_students.isEmpty) {
+      return const CsvExportResult(
+        success: false,
+        message: 'Chưa có dữ liệu sinh viên để xuất báo cáo.',
+      );
+    }
+
+    _isExporting = true;
+    notifyListeners();
+
+    try {
+      final result = await _csvExporter(
+        students: _students,
+        className: _currentClass,
+      );
+      _isExporting = false;
+      notifyListeners();
+      return result;
+    } catch (e) {
+      _isExporting = false;
+      notifyListeners();
+      return CsvExportResult(
+        success: false,
+        message: 'Lỗi trong quá trình xuất file CSV: $e',
+      );
+    }
   }
 }

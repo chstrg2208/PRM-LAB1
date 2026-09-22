@@ -9,12 +9,16 @@ class ReportsView extends StatelessWidget {
   final List<Student> students;
   final String currentClass;
   final String googleSheetUrl;
+  final VoidCallback? onExportCsv;
+  final bool isExporting;
 
   const ReportsView({
     super.key,
     required this.students,
     required this.currentClass,
     required this.googleSheetUrl,
+    this.onExportCsv,
+    this.isExporting = false,
   });
 
   @override
@@ -50,15 +54,9 @@ class ReportsView extends StatelessWidget {
               const Spacer(),
               BirdleSecondaryButton(
                 icon: Icons.download_outlined,
-                label: 'Export CSV',
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('✓ Đã kết xuất báo cáo CSV chuyên cần của lớp!'),
-                      backgroundColor: BirdleColors.brand,
-                    ),
-                  );
-                },
+                label: isExporting ? 'Đang xuất CSV...' : 'Export CSV',
+                isLoading: isExporting,
+                onPressed: onExportCsv,
               ),
               if (googleSheetUrl.isNotEmpty) ...[
                 const SizedBox(width: 10),
@@ -119,12 +117,12 @@ class ReportsView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-                Row(
+                Wrap(
+                  spacing: 24,
+                  runSpacing: 8,
                   children: [
                     _buildLegendDot(BirdleColors.success, 'Đủ điều kiện (<15% vắng): ${safe.length} SV'),
-                    const SizedBox(width: 24),
                     _buildLegendDot(BirdleColors.warning, 'Cảnh báo nguy cơ (15-20% vắng): ${warning.length} SV'),
-                    const SizedBox(width: 24),
                     _buildLegendDot(BirdleColors.danger, 'Cấm thi (>20% vắng): ${banned.length} SV'),
                   ],
                 ),

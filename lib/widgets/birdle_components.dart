@@ -66,6 +66,7 @@ class BirdleSecondaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Color? iconColor;
   final double? height;
+  final bool isLoading;
 
   const BirdleSecondaryButton({
     super.key,
@@ -74,6 +75,7 @@ class BirdleSecondaryButton extends StatelessWidget {
     this.onPressed,
     this.iconColor,
     this.height = 38,
+    this.isLoading = false,
   });
 
   @override
@@ -84,6 +86,8 @@ class BirdleSecondaryButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           backgroundColor: BirdleColors.surface,
           foregroundColor: BirdleColors.textPrimary,
+          disabledBackgroundColor: BirdleColors.surface,
+          disabledForegroundColor: BirdleColors.textDisabled,
           side: const BorderSide(color: BirdleColors.border, width: 1),
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -94,11 +98,21 @@ class BirdleSecondaryButton extends StatelessWidget {
             fontFamily: BirdleTypography.fontFamily,
           ),
         ),
-        onPressed: onPressed,
+        onPressed: isLoading ? null : onPressed,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (icon != null) ...[
+            if (isLoading) ...[
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: BirdleColors.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 8),
+            ] else if (icon != null) ...[
               Icon(icon, size: 16, color: iconColor ?? BirdleColors.textSecondary),
               const SizedBox(width: 8),
             ],

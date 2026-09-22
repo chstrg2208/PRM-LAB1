@@ -86,6 +86,23 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     }
   }
 
+  Future<void> _exportReportCsv() async {
+    final result = await _sessionManager.exportCurrentReportCsv();
+    if (!mounted) return;
+
+    final message = result.success && result.filePath != null
+        ? '${result.message} (${result.filePath})'
+        : result.message;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: result.success ? BirdleColors.brand : BirdleColors.danger,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -161,6 +178,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             students: _sessionManager.students,
                             currentClass: _sessionManager.currentClass,
                             googleSheetUrl: _sessionManager.sheetUrl,
+                            onExportCsv: _exportReportCsv,
+                            isExporting: _sessionManager.isExporting,
                           ),
                           // 4: AI Insights
                           AiInsightsView(
