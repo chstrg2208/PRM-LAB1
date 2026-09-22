@@ -46,9 +46,32 @@ class DashboardView extends StatelessWidget {
     final absentCount = records.where((r) => r.status == AttendanceStatus.absent).length;
     final notYetCount = records.where((r) => r.status == AttendanceStatus.notYet).length;
 
+    // Sĩ số các nhóm chuyên cần theo chuẩn ĐH FPT (Quy chế vắng > 20% cấm thi)
+    final bannedStudents = students.where((s) => s.isBanned).toList();
+    final warningStudents = students.where((s) => !s.isBanned && (s.isWarning || s.hasExhaustedAbsenceAllowance)).toList();
+    final safeStudents = students.where((s) => !s.isBanned && !s.isWarning && !s.hasExhaustedAbsenceAllowance).toList();
+
+    // Tỷ lệ chuyên cần chung của toàn bộ lớp học (tránh chia cho 0)
+    final totalClassSlots = students.fold<int>(0, (sum, s) => sum + s.totalSlots);
+    final totalClassAbsent = students.fold<int>(0, (sum, s) => sum + s.absentSlots);
+    final overallClassAttendanceRate = totalClassSlots > 0
+        ? ((totalClassSlots - totalClassAbsent) / totalClassSlots) * 100
+        : (students.isNotEmpty ? 100.0 : 0.0);
+
+    // Tỷ lệ chuyên cần slot hôm nay
     final attendanceRate = totalStudents > 0
         ? (presentCount / totalStudents) * 100
         : 0.0;
+
+    // Màu sắc động cho Tỷ lệ chuyên cần chung
+    Color overallRateColor;
+    if (overallClassAttendanceRate >= 85.0) {
+      overallRateColor = BirdleColors.success;
+    } else if (overallClassAttendanceRate >= 80.0) {
+      overallRateColor = BirdleColors.warning;
+    } else {
+      overallRateColor = BirdleColors.danger;
+    }
 
     final atRiskStudents = students.where((s) => s.absentRate >= 15.0 || s.hasExhaustedAbsenceAllowance).toList();
     final formattedDate = DateFormat('EEEE, MMMM d, y').format(currentDate);
@@ -122,6 +145,44 @@ class DashboardView extends StatelessWidget {
                 icon: Icons.fact_check_outlined,
                 label: "Open Today's Attendance",
                 onPressed: onGoToAttendance,
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // 4 Stat Cards Tổng quan chuyên cần chuẩn FPT
+          Row(
+            children: [
+              _buildMetricCard(
+                label: 'Tỷ lệ chuyên cần chung',
+                value: '${overallClassAttendanceRate.toStringAsFixed(1)}%',
+                subtitle: totalStudents > 0 ? 'Toàn bộ sinh viên lớp $currentClass' : 'Chưa có sinh viên',
+                accentColor: overallRateColor,
+                icon: Icons.pie_chart_outline,
+              ),
+              const SizedBox(width: 14),
+              _buildMetricCard(
+                label: 'Sĩ số an toàn',
+                value: '${safeStudents.length}',
+                subtitle: 'Vắng ≤ 15% (${totalStudents > 0 ? ((safeStudents.length / totalStudents) * 100).toStringAsFixed(0) : 0}%)',
+                accentColor: BirdleColors.success,
+                icon: Icons.check_circle_outline,
+              ),
+              const SizedBox(width: 14),
+              _buildMetricCard(
+                label: 'Nguy cơ cấm thi',
+                value: '${warningStudents.length}',
+                subtitle: 'Vắng 15% - 20% (còn 0-1 buổi)',
+                accentColor: BirdleColors.warning,
+                icon: Icons.warning_amber_outlined,
+              ),
+              const SizedBox(width: 14),
+              _buildMetricCard(
+                label: 'CẤM THI (> 20%)',
+                value: '${bannedStudents.length}',
+                subtitle: 'Vượt ngưỡng vắng FPT',
+                accentColor: BirdleColors.danger,
+                icon: Icons.cancel_outlined,
               ),
             ],
           ),
@@ -600,6 +661,53 @@ class DashboardView extends StatelessWidget {
         ),
         Text(timestamp, style: BirdleTypography.caption),
       ],
+    );
+  }
+
+  Widget _buildMetricCard({
+    required String label,
+    required String value,
+    required String subtitle,
+    required Color accentColor,
+    required IconData icon,
+  }) {
+    return Expanded(
+      child: BirdleCard(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    style: BirdleTypography.metadata,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Icon(icon, size: 18, color: accentColor.withValues(alpha: 0.8)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: accentColor,
+                fontFamily: BirdleTypography.fontFamily,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              style: BirdleTypography.caption,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
