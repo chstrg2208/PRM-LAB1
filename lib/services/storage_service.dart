@@ -92,6 +92,8 @@ class StorageService {
 
   /// Open external URL in browser
   static Future<void> openBrowser(String url) async {
-    await PlatformHelper.instance.openUrl(url);
+    try {
+      await PlatformHelper.instance.openUrl(url);
+    } catch (_) {}
   }
 }
