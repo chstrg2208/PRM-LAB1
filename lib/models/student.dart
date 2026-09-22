@@ -1,9 +1,9 @@
 class Student {
-  final String member; // MEMBER (Mã sinh viên, e.g. CE190585, SE170123)
-  final String code; // CODE (e.g. Lâm)
-  final String surname; // SURNAME (e.g. Quốc)
-  final String middleName; // MIDDLE NAME (e.g. Minh)
-  final String givenName; // GIVEN NAME
+  final String member; // MEMBER: Mã sinh viên (e.g. SE180001, CE190585)
+  final String code; // CODE: Mã sinh viên theo FAP (alias của rollNumber / member)
+  final String surname; // SURNAME: Họ (e.g. Lâm, Nguyễn, Trần)
+  final String middleName; // MIDDLE NAME: Tên đệm (e.g. Quốc, Văn, Thị)
+  final String givenName; // GIVEN NAME: Tên gọi (e.g. Minh, An, Bình)
   final String? customFullName;
   final String email;
   final String className;
@@ -13,7 +13,7 @@ class Student {
 
   Student({
     String? member,
-    this.code = '',
+    String? code,
     this.surname = '',
     this.middleName = '',
     this.givenName = '',
@@ -25,22 +25,43 @@ class Student {
     this.totalSlots = 20,
     this.absentSlots = 0,
     String? rollNumber,
-  })  : member = (member != null && member.isNotEmpty) ? member : (rollNumber ?? ''),
-        customFullName = (customFullName != null && customFullName.isNotEmpty) ? customFullName : fullName;
+  })  : member = _resolveMember(member, rollNumber, code),
+        code = _resolveCode(code, member, rollNumber),
+        customFullName = (customFullName != null && customFullName.trim().isNotEmpty)
+            ? customFullName.trim()
+            : (fullName != null && fullName.trim().isNotEmpty ? fullName.trim() : null);
 
-  // Alias rollNumber sang member để tương thích mã nguồn cũ
-  String get rollNumber => member;
+  static String _resolveMember(String? member, String? rollNumber, String? code) {
+    if (member != null && member.trim().isNotEmpty) return member.trim();
+    if (rollNumber != null && rollNumber.trim().isNotEmpty) return rollNumber.trim();
+    if (code != null && code.trim().isNotEmpty) return code.trim();
+    return '';
+  }
 
-  // Họ và tên hoàn chỉnh được ghép từ các trường hoặc chuỗi tên tùy chỉnh
+  static String _resolveCode(String? code, String? member, String? rollNumber) {
+    if (code != null && code.trim().isNotEmpty) return code.trim();
+    if (member != null && member.trim().isNotEmpty) return member.trim();
+    if (rollNumber != null && rollNumber.trim().isNotEmpty) return rollNumber.trim();
+    return '';
+  }
+
+  // Alias rollNumber tương đương member và code theo FAP
+  String get rollNumber => member.isNotEmpty ? member : code;
+
+  // Họ và tên hoàn chỉnh được ghép đúng thứ tự: surname (Họ) + middleName (Tên đệm) + givenName (Tên gọi)
+  // Loại bỏ khoảng trắng thừa và không bao giờ chứa CODE trong họ tên
   String get fullName {
     if (customFullName != null && customFullName!.trim().isNotEmpty) {
-      return customFullName!;
+      return customFullName!.trim();
     }
-    final parts = [code, surname, middleName, givenName].where((p) => p.trim().isNotEmpty).toList();
+    final parts = [surname, middleName, givenName]
+        .where((p) => p.trim().isNotEmpty)
+        .map((p) => p.trim())
+        .toList();
     if (parts.isNotEmpty) {
       return parts.join(' ');
     }
-    return 'Sinh viên $member';
+    return 'Sinh viên $rollNumber';
   }
 
   double get absentRate => totalSlots > 0 ? (absentSlots / totalSlots) * 100 : 0.0;
@@ -61,7 +82,7 @@ class Student {
   Map<String, dynamic> toJson() {
     return {
       'member': member,
-      'rollNumber': member,
+      'rollNumber': rollNumber,
       'code': code,
       'surname': surname,
       'middleName': middleName,
@@ -76,20 +97,37 @@ class Student {
   }
 
   factory Student.fromJson(Map<String, dynamic> json) {
-    final member = (json['member'] ?? json['MEMBER'] ?? json['rollNumber'] ?? json['RollNumber'] ?? json['id'] ?? '').toString().trim();
-    final code = (json['code'] ?? json['CODE'] ?? '').toString().trim();
-    final surname = (json['surname'] ?? json['SURNAME'] ?? '').toString().trim();
-    final middleName = (json['middleName'] ?? json['MIDDLE NAME'] ?? json['MIDDLE_NAME'] ?? '').toString().trim();
-    final givenName = (json['givenName'] ?? json['GIVEN NAME'] ?? json['GIVEN_NAME'] ?? '').toString().trim();
-    final name = (json['fullName'] ?? json['FullName'] ?? json['name'] ?? '').toString().trim();
+    final rawCode = (json['CODE'] ?? json['code'] ?? '').toString().trim();
+    final rawMember = (json['MEMBER'] ?? json['member'] ?? json['rollNumber'] ?? json['RollNumber'] ?? json['id'] ?? '').toString().trim();
+    final rollNumber = rawCode.isNotEmpty ? rawCode : rawMember;
+
+    String surname = (json['SURNAME'] ?? json['surname'] ?? json['SUR_NAME'] ?? json['Họ'] ?? json['Ho'] ?? '').toString().trim();
+    String middleName = (json['MIDDLE NAME'] ?? json['MIDDLE_NAME'] ?? json['middleName'] ?? json['MIDDLENAME'] ?? json['Tên đệm'] ?? json['Dem'] ?? '').toString().trim();
+    String givenName = (json['GIVEN NAME'] ?? json['GIVEN_NAME'] ?? json['givenName'] ?? json['GIVENNAME'] ?? json['FIRST NAME'] ?? json['FIRST_NAME'] ?? json['firstName'] ?? json['Tên'] ?? json['Ten'] ?? '').toString().trim();
+    final rawFullName = (json['FULL NAME'] ?? json['FULL_NAME'] ?? json['fullName'] ?? json['FullName'] ?? json['name'] ?? json['Họ và tên'] ?? '').toString().trim();
+
+    // Nếu không có các trường thành phần nhưng có họ tên đầy đủ, phân rã tự nhiên
+    if (surname.isEmpty && middleName.isEmpty && givenName.isEmpty && rawFullName.isNotEmpty) {
+      final words = rawFullName.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      if (words.length >= 3) {
+        surname = words.first;
+        givenName = words.last;
+        middleName = words.sublist(1, words.length - 1).join(' ');
+      } else if (words.length == 2) {
+        surname = words[0];
+        givenName = words[1];
+      } else if (words.length == 1) {
+        givenName = words[0];
+      }
+    }
 
     return Student(
-      member: member,
-      code: code,
+      member: rollNumber,
+      code: rollNumber,
       surname: surname,
       middleName: middleName,
       givenName: givenName,
-      customFullName: name.isNotEmpty ? name : null,
+      customFullName: (surname.isEmpty && middleName.isEmpty && givenName.isEmpty && rawFullName.isNotEmpty) ? rawFullName : null,
       email: (json['email'] ?? json['EMAIL'] ?? json['Email'] ?? '').toString().trim(),
       className: (json['className'] ?? json['ClassName'] ?? json['class'] ?? 'SE1801').toString().trim(),
       avatarUrl: (json['avatarUrl'] ?? json['AvatarUrl'] ?? '').toString().trim(),
@@ -110,9 +148,10 @@ class Student {
     String? avatarUrl,
     int? totalSlots,
     int? absentSlots,
+    String? rollNumber,
   }) {
     return Student(
-      member: member ?? this.member,
+      member: member ?? rollNumber ?? this.member,
       code: code ?? this.code,
       surname: surname ?? this.surname,
       middleName: middleName ?? this.middleName,

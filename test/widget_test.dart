@@ -38,12 +38,13 @@ void main() {
       expect(s.isBanned, false);
     });
 
-    test('Supports 4-field schema (Member, Code, Surname, Middle Name)', () {
+    test('Supports FAP schema (CODE, SURNAME, MIDDLE NAME, GIVEN NAME)', () {
       final s = Student(
         member: 'CE190585',
-        code: 'Lâm',
-        surname: 'Quốc',
-        middleName: 'Minh',
+        code: 'CE190585',
+        surname: 'Lâm',
+        middleName: 'Quốc',
+        givenName: 'Minh',
         className: 'SE1801',
         totalSlots: 30,
         absentSlots: 7,
@@ -51,9 +52,10 @@ void main() {
 
       expect(s.member, 'CE190585');
       expect(s.rollNumber, 'CE190585');
-      expect(s.code, 'Lâm');
-      expect(s.surname, 'Quốc');
-      expect(s.middleName, 'Minh');
+      expect(s.code, 'CE190585');
+      expect(s.surname, 'Lâm');
+      expect(s.middleName, 'Quốc');
+      expect(s.givenName, 'Minh');
       expect(s.fullName, 'Lâm Quốc Minh');
       expect(s.isBanned, true); // 7/30 = 23.33% >= 20%
     });
@@ -96,18 +98,20 @@ void main() {
       final students = [
         Student(
           member: 'CE190585',
-          code: 'Lâm',
-          surname: 'Quốc',
-          middleName: 'Minh',
+          code: 'CE190585',
+          surname: 'Lâm',
+          middleName: 'Quốc',
+          givenName: 'Minh',
           className: 'SE1801',
           totalSlots: 30,
           absentSlots: 7, // 23.33% >= 20% -> failed
         ),
         Student(
           member: 'SE170123',
-          code: 'Nguyễn',
-          surname: 'Văn',
-          middleName: 'An',
+          code: 'SE170123',
+          surname: 'Nguyễn',
+          middleName: 'Văn',
+          givenName: 'An',
           className: 'SE1801',
           totalSlots: 30,
           absentSlots: 1, // 3.33% -> normal

@@ -105,13 +105,17 @@ class _StudentsViewState extends State<StudentsView> {
                 ),
                 child: Column(
                   children: [
+                    _buildDetailRow('Mã SV (CODE)', s.rollNumber.isNotEmpty ? s.rollNumber : '-'),
+                    const SizedBox(height: 8),
+                    _buildDetailRow('Họ (SURNAME)', s.surname.isNotEmpty ? s.surname : '-'),
+                    const SizedBox(height: 8),
+                    _buildDetailRow('Tên đệm (MIDDLE NAME)', s.middleName.isNotEmpty ? s.middleName : '-'),
+                    const SizedBox(height: 8),
+                    _buildDetailRow('Tên gọi (GIVEN NAME)', s.givenName.isNotEmpty ? s.givenName : '-'),
+                    const SizedBox(height: 8),
+                    _buildDetailRow('Họ và tên đầy đủ', s.fullName),
+                    const SizedBox(height: 8),
                     _buildDetailRow('Email FPT', s.email.isNotEmpty ? s.email : '${s.member.toLowerCase()}@fpt.edu.vn'),
-                    const SizedBox(height: 8),
-                    _buildDetailRow('Họ / CODE', s.code.isNotEmpty ? s.code : '-'),
-                    const SizedBox(height: 8),
-                    _buildDetailRow('Đệm / SURNAME', s.surname.isNotEmpty ? s.surname : '-'),
-                    const SizedBox(height: 8),
-                    _buildDetailRow('Tên / MIDDLE NAME', s.middleName.isNotEmpty ? s.middleName : '-'),
                     const SizedBox(height: 8),
                     _buildDetailRow('Trạng thái đào tạo', s.isBanned ? 'CẤM THI (>=20%)' : (s.isWarning ? 'CẢNH BÁO (15-20%)' : 'ĐỦ ĐIỀU KIỆN')),
                   ],
@@ -138,8 +142,8 @@ class _StudentsViewState extends State<StudentsView> {
                             ? 'Sinh viên đã vượt hạn mức vắng cho phép (${(s.totalSlots * 0.2).floor()} buổi) và bị cấm thi theo quy chế FPT.'
                             : (s.isWarning
                                 ? 'Sinh viên đang tiệm cận mức cấm thi. Chỉ còn tối đa ${s.remainingAllowedAbsences} buổi vắng.'
-                                : 'Sinh viên có tiến độ chuyên cần tốt, còn được phép vắng tối đa ${s.remainingAllowedAbsences} buổi.'),
-                        style: const TextStyle(fontSize: 12.5, color: BirdleColors.brandDark, height: 1.35),
+                                : 'Tỷ lệ chuyên cần tốt (${(100 - s.absentRate).toStringAsFixed(0)}% tham dự). Tiếp tục duy trì phong độ.'),
+                        style: const TextStyle(fontSize: 12.5, color: BirdleColors.textPrimary, height: 1.35),
                       ),
                     ),
                   ],
@@ -191,10 +195,10 @@ class _StudentsViewState extends State<StudentsView> {
   }
 
   void _showAddStudentDialog() {
-    final memberCtrl = TextEditingController();
-    final codeCtrl = TextEditingController();
+    final rollNumberCtrl = TextEditingController();
     final surnameCtrl = TextEditingController();
     final middleNameCtrl = TextEditingController();
+    final givenNameCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
 
     showDialog(
@@ -203,15 +207,15 @@ class _StudentsViewState extends State<StudentsView> {
         shape: RoundedRectangleBorder(borderRadius: BirdleRadius.mdBorder),
         title: const Text('Thêm sinh viên mới', style: BirdleTypography.cardTitle),
         content: SizedBox(
-          width: 420,
+          width: 440,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                controller: memberCtrl,
+                controller: rollNumberCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'MEMBER (Mã SV)',
-                  hintText: 'Ví dụ: SE170123, CE190585',
+                  labelText: 'Mã SV / CODE',
+                  hintText: 'Ví dụ: SE180001, CE190585',
                 ),
                 onChanged: (val) {
                   if (val.isNotEmpty && emailCtrl.text.isEmpty) {
@@ -224,23 +228,23 @@ class _StudentsViewState extends State<StudentsView> {
                 children: [
                   Expanded(
                     child: TextField(
-                      controller: codeCtrl,
-                      decoration: const InputDecoration(labelText: 'CODE (Họ)', hintText: 'Lâm'),
+                      controller: surnameCtrl,
+                      decoration: const InputDecoration(labelText: 'Họ (SURNAME)', hintText: 'Lâm'),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: TextField(
-                      controller: surnameCtrl,
-                      decoration: const InputDecoration(labelText: 'SURNAME (Đệm)', hintText: 'Quốc'),
+                      controller: middleNameCtrl,
+                      decoration: const InputDecoration(labelText: 'Tên đệm (MIDDLE NAME)', hintText: 'Quốc'),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: middleNameCtrl,
-                decoration: const InputDecoration(labelText: 'MIDDLE NAME (Tên)', hintText: 'Minh'),
+                controller: givenNameCtrl,
+                decoration: const InputDecoration(labelText: 'Tên gọi (GIVEN NAME)', hintText: 'Minh'),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -255,14 +259,15 @@ class _StudentsViewState extends State<StudentsView> {
           BirdlePrimaryButton(
             label: 'Lưu sinh viên',
             onPressed: () {
-              final member = memberCtrl.text.trim().toUpperCase();
+              final member = rollNumberCtrl.text.trim().toUpperCase();
               if (member.isEmpty) return;
 
               final newStudent = Student(
                 member: member,
-                code: codeCtrl.text.trim(),
+                code: member,
                 surname: surnameCtrl.text.trim(),
                 middleName: middleNameCtrl.text.trim(),
+                givenName: givenNameCtrl.text.trim(),
                 email: emailCtrl.text.trim(),
                 className: widget.currentClass,
                 totalSlots: 20,
@@ -401,7 +406,7 @@ class _StudentsViewState extends State<StudentsView> {
                               Expanded(flex: 3, child: Text('EMAIL FPT', style: BirdleTypography.caption)),
                               SizedBox(width: 100, child: Text('SLOTS (VẮNG)', style: BirdleTypography.caption)),
                               SizedBox(width: 140, child: Text('ATTENDANCE RATE', style: BirdleTypography.caption)),
-                              SizedBox(width: 90, child: Text('ACTIONS', style: BirdleTypography.caption)),
+                              SizedBox(width: 96, child: Text('ACTIONS', style: BirdleTypography.caption)),
                             ],
                           ),
                         ),
@@ -438,30 +443,34 @@ class _StudentsViewState extends State<StudentsView> {
                                     ),
                                     SizedBox(
                                       width: 140,
-                                      child: Row(
-                                        children: [
-                                          AbsentRateBadge(rate: s.absentRate, showPercent: true),
-                                        ],
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: AbsentRateBadge(rate: s.absentRate, showPercent: true),
                                       ),
                                     ),
                                     SizedBox(
-                                      width: 90,
-                                      child: Row(
-                                        children: [
-                                          IconButton(
-                                            icon: const Icon(Icons.visibility_outlined, size: 16, color: BirdleColors.textSecondary),
-                                            tooltip: 'Xem hồ sơ chi tiết',
-                                            onPressed: () => _showStudentDetailDialog(s),
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(Icons.delete_outline, size: 16, color: BirdleColors.danger),
-                                            tooltip: 'Xóa khỏi lớp',
-                                            onPressed: () {
-                                              final updated = List<Student>.from(widget.students)..removeWhere((item) => item.member == s.member);
-                                              widget.onUpdateStudents(updated);
-                                            },
-                                          ),
-                                        ],
+                                      width: 96,
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: Row(
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(Icons.visibility_outlined, size: 16, color: BirdleColors.textSecondary),
+                                              tooltip: 'Xem hồ sơ chi tiết',
+                                              onPressed: () => _showStudentDetailDialog(s),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.delete_outline, size: 16, color: BirdleColors.danger),
+                                              tooltip: 'Xóa khỏi lớp',
+                                              onPressed: () {
+                                                final updated = List<Student>.from(widget.students)..removeWhere((item) => item.member == s.member);
+                                                widget.onUpdateStudents(updated);
+                                              },
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ],

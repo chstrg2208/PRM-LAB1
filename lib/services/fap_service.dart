@@ -32,28 +32,29 @@ class FapService {
         final email = '${name.split(' ').last.toLowerCase()}${rollNumber.toLowerCase()}@fpt.edu.vn';
 
         final nameWords = name.split(' ').where((w) => w.isNotEmpty).toList();
-        String code = '';
         String surname = '';
         String middleName = '';
+        String givenName = '';
 
         if (nameWords.length >= 3) {
-          code = nameWords[0];
-          surname = nameWords[1];
-          middleName = nameWords.sublist(2).join(' ');
+          surname = nameWords.first;
+          givenName = nameWords.last;
+          middleName = nameWords.sublist(1, nameWords.length - 1).join(' ');
         } else if (nameWords.length == 2) {
-          code = nameWords[0];
-          surname = nameWords[1];
+          surname = nameWords[0];
+          givenName = nameWords[1];
         } else if (nameWords.length == 1) {
-          code = nameWords[0];
+          givenName = nameWords[0];
         }
 
         if (!students.any((s) => s.member == rollNumber)) {
           students.add(
             Student(
               member: rollNumber,
-              code: code,
+              code: rollNumber,
               surname: surname,
               middleName: middleName,
+              givenName: givenName,
               customFullName: name,
               email: email,
               className: className,
