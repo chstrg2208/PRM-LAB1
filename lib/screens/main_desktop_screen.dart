@@ -30,6 +30,9 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
   String _sheetUrl = '';
   bool _isSheetConnected = false;
   bool _isLoading = false;
+  int _dataRequestId = 0;
+  String? _dataError;
+  bool _isReloadError = false;
 
   List<Student> _students = [];
   List<AttendanceRecord> _records = [];
@@ -59,9 +62,11 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     if (_sheetUrl.isNotEmpty) {
       final res = await GoogleSheetService.testConnection(_sheetUrl);
       _isSheetConnected = res['success'] == true;
+    } else {
+      _isSheetConnected = false;
     }
 
-    await _loadStudentsAndAttendance();
+    await _loadStudentsAndAttendance(isClassChange: true);
     _loadAnalyticsLogs();
 
     setState(() {
@@ -110,44 +115,100 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     }
   }
 
-  Future<void> _loadStudentsAndAttendance() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadStudentsAndAttendance({bool isClassChange = false}) async {
+    final cleanUrl = _sheetUrl.trim();
+    if (cleanUrl.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _students = [];
+          _records = [];
+          _isLoading = false;
+          _dataError = null;
+          _isReloadError = false;
+        });
+      }
+      return;
+    }
 
-    // Fetch students
-    final students = await GoogleSheetService.fetchStudents(_sheetUrl, _currentClass);
+    final requestId = ++_dataRequestId;
+    setState(() {
+      _isLoading = true;
+      if (isClassChange) {
+        _students = [];
+        _records = [];
+        _dataError = null;
+        _isReloadError = false;
+      }
+    });
 
-    // Fetch or init attendance records
-    final dateStr = '${_currentDate.year}-${_currentDate.month.toString().padLeft(2, '0')}-${_currentDate.day.toString().padLeft(2, '0')}';
-    final existingRecords = await GoogleSheetService.fetchAttendance(
-      _sheetUrl,
-      _currentClass,
-      dateStr,
-      _currentSlot,
-    );
+    try {
+      final students = await GoogleSheetService.fetchStudents(cleanUrl, _currentClass);
+      final dateStr = '${_currentDate.year}-${_currentDate.month.toString().padLeft(2, '0')}-${_currentDate.day.toString().padLeft(2, '0')}';
 
-    final records = <AttendanceRecord>[];
-    for (final s in students) {
-      final found = existingRecords.where((r) => r.rollNumber == s.rollNumber).firstOrNull;
-      if (found != null) {
-        records.add(found);
-      } else {
-        records.add(
-          AttendanceRecord(
-            rollNumber: s.rollNumber,
-            className: _currentClass,
-            date: dateStr,
-            slot: _currentSlot,
-            status: AttendanceStatus.present,
+      List<AttendanceRecord> existingRecords = [];
+      try {
+        existingRecords = await GoogleSheetService.fetchAttendance(
+          cleanUrl,
+          _currentClass,
+          dateStr,
+          _currentSlot,
+        );
+      } catch (_) {
+        // Attendance logs may not exist yet for this class/slot
+      }
+
+      if (!mounted || requestId != _dataRequestId) return;
+
+      final records = <AttendanceRecord>[];
+      for (final s in students) {
+        final found = existingRecords.where((r) => r.rollNumber == s.rollNumber).firstOrNull;
+        if (found != null) {
+          records.add(found);
+        } else {
+          records.add(
+            AttendanceRecord(
+              rollNumber: s.rollNumber,
+              className: _currentClass,
+              date: dateStr,
+              slot: _currentSlot,
+              status: AttendanceStatus.present,
+            ),
+          );
+        }
+      }
+
+      setState(() {
+        _students = students;
+        _records = records;
+        _isLoading = false;
+        _dataError = null;
+        _isReloadError = false;
+      });
+    } catch (e) {
+      if (!mounted || requestId != _dataRequestId) return;
+      final errorMsg = e.toString().replaceAll('Exception: ', '').trim();
+
+      setState(() {
+        _isLoading = false;
+        _dataError = errorMsg;
+        if (isClassChange || _students.isEmpty) {
+          _students = [];
+          _records = [];
+          _isReloadError = false;
+        } else {
+          _isReloadError = true;
+        }
+      });
+
+      if (_isReloadError && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi khi tải lại dữ liệu: $errorMsg'),
+            backgroundColor: BirdleColors.danger,
           ),
         );
       }
     }
-
-    setState(() {
-      _students = students;
-      _records = records;
-      _isLoading = false;
-    });
   }
 
   void _onStatusChanged(String rollNumber, AttendanceStatus newStatus) {
@@ -288,19 +349,28 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                         currentSlot: _currentSlot,
                         currentDate: _currentDate,
                         isLoading: _isLoading,
+                        errorMessage: _dataError,
+                        isSheetConfigured: _sheetUrl.isNotEmpty,
+                        onGoToSettings: () => setState(() => _selectedIndex = 6),
                         onClassChanged: (val) {
-                          setState(() => _currentClass = val);
+                          setState(() {
+                            _currentClass = val;
+                            _students = [];
+                            _records = [];
+                            _dataError = null;
+                            _isReloadError = false;
+                          });
                           StorageService.setSelectedClass(val);
-                          _loadStudentsAndAttendance();
+                          _loadStudentsAndAttendance(isClassChange: true);
                           _loadAnalyticsLogs(val);
                         },
                         onSlotChanged: (val) {
                           setState(() => _currentSlot = val);
-                          _loadStudentsAndAttendance();
+                          _loadStudentsAndAttendance(isClassChange: false);
                         },
                         onDateChanged: (val) {
                           setState(() => _currentDate = val);
-                          _loadStudentsAndAttendance();
+                          _loadStudentsAndAttendance(isClassChange: false);
                         },
                         onStatusChanged: _onStatusChanged,
                         onNoteChanged: _onNoteChanged,
@@ -308,13 +378,15 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                         onMarkAllAbsent: _markAllAbsent,
                         onSaveToSheet: _saveToGoogleSheet,
                         onReloadFromSheet: () {
-                          _loadStudentsAndAttendance();
+                          _loadStudentsAndAttendance(isClassChange: false);
                           _loadAnalyticsLogs();
                         },
                         onGoToFapSync: () => setState(() => _selectedIndex = 5),
                         onImportStudents: (newStudents) {
                           setState(() {
                             _students = newStudents;
+                            _dataError = null;
+                            _isReloadError = false;
                             _records = newStudents.map((s) {
                               return AttendanceRecord(
                                 rollNumber: s.rollNumber,
@@ -331,13 +403,24 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                       StudentsView(
                         students: _students,
                         currentClass: _currentClass,
+                        isLoading: _isLoading,
+                        errorMessage: _dataError,
+                        isSheetConfigured: _sheetUrl.isNotEmpty,
+                        onReload: () => _loadStudentsAndAttendance(isClassChange: false),
+                        onGoToSettings: () => setState(() => _selectedIndex = 6),
                         onUpdateStudents: (updated) {
                           setState(() => _students = updated);
                         },
                         onClassChanged: (val) {
-                          setState(() => _currentClass = val);
+                          setState(() {
+                            _currentClass = val;
+                            _students = [];
+                            _records = [];
+                            _dataError = null;
+                            _isReloadError = false;
+                          });
                           StorageService.setSelectedClass(val);
-                          _loadStudentsAndAttendance();
+                          _loadStudentsAndAttendance(isClassChange: true);
                           _loadAnalyticsLogs(val);
                         },
                         onSyncToSheet: _syncStudentsToSheet,
@@ -370,6 +453,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                         onImportStudents: (newStudents) {
                           setState(() {
                             _students = newStudents;
+                            _dataError = null;
+                            _isReloadError = false;
                             _records = newStudents.map((s) {
                               return AttendanceRecord(
                                 rollNumber: s.rollNumber,
@@ -389,9 +474,10 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                         onSaveSheetUrl: (url) {
                           setState(() {
                             _sheetUrl = url;
-                            _isSheetConnected = true;
+                            _isSheetConnected = url.isNotEmpty;
                           });
                           StorageService.setGoogleSheetUrl(url);
+                          _loadStudentsAndAttendance(isClassChange: true);
                           _loadAnalyticsLogs();
                         },
                       ),
@@ -656,7 +742,10 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
           IconButton(
             icon: const Icon(Icons.refresh, size: 18, color: BirdleColors.textSecondary),
             tooltip: 'Làm mới dữ liệu',
-            onPressed: _loadStudentsAndAttendance,
+            onPressed: () {
+              _loadStudentsAndAttendance(isClassChange: false);
+              _loadAnalyticsLogs();
+            },
           ),
         ],
       ),

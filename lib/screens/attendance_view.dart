@@ -27,6 +27,9 @@ class AttendanceView extends StatefulWidget {
   final VoidCallback onReloadFromSheet;
   final VoidCallback onGoToFapSync;
   final Function(List<Student>) onImportStudents;
+  final String? errorMessage;
+  final bool isSheetConfigured;
+  final VoidCallback? onGoToSettings;
 
   const AttendanceView({
     super.key,
@@ -47,6 +50,9 @@ class AttendanceView extends StatefulWidget {
     required this.onReloadFromSheet,
     required this.onGoToFapSync,
     required this.onImportStudents,
+    this.errorMessage,
+    this.isSheetConfigured = true,
+    this.onGoToSettings,
   });
 
   @override
@@ -226,15 +232,78 @@ class _AttendanceViewState extends State<AttendanceView> {
               padding: EdgeInsets.zero,
               child: widget.isLoading
                   ? const Center(child: CircularProgressIndicator(color: BirdleColors.brand, strokeWidth: 2))
-                  : filteredStudents.isEmpty
-                      ? const BirdleEmptyState(
-                          icon: Icons.search_off,
-                          title: 'Không tìm thấy sinh viên',
-                          description: 'Không có sinh viên nào khớp với điều kiện tìm kiếm hoặc bộ lọc hiện tại.',
+                  : !widget.isSheetConfigured
+                      ? BirdleEmptyState(
+                          icon: Icons.link_off,
+                          title: 'Chưa cấu hình Google Sheet Database',
+                          description: 'Vui lòng cấu hình URL Google Apps Script Web App trong Cài đặt để đồng bộ và điểm danh.',
+                          action: widget.onGoToSettings != null
+                              ? BirdlePrimaryButton(
+                                  icon: Icons.settings_outlined,
+                                  label: 'Mở Cài đặt',
+                                  onPressed: widget.onGoToSettings,
+                                )
+                              : null,
                         )
-                      : Column(
-                          children: [
-                            // Table Header Row
+                      : (widget.errorMessage != null && widget.students.isEmpty)
+                          ? BirdleEmptyState(
+                              icon: Icons.cloud_off,
+                              title: 'Không thể tải dữ liệu lớp ${widget.currentClass}',
+                              description: widget.errorMessage!,
+                              action: BirdlePrimaryButton(
+                                icon: Icons.refresh,
+                                label: 'Thử lại',
+                                onPressed: widget.onReloadFromSheet,
+                              ),
+                            )
+                          : widget.students.isEmpty
+                              ? BirdleEmptyState(
+                                  icon: Icons.people_outline,
+                                  title: 'Lớp chưa có sinh viên',
+                                  description: 'Lớp ${widget.currentClass} hiện chưa có sinh viên trên Google Sheet. Bạn có thể nhập danh sách từ FAP hoặc thêm sinh viên.',
+                                  action: BirdleSecondaryButton(
+                                    icon: Icons.file_upload_outlined,
+                                    label: 'Import từ FAP',
+                                    onPressed: widget.onGoToFapSync,
+                                  ),
+                                )
+                              : filteredStudents.isEmpty
+                                  ? const BirdleEmptyState(
+                                      icon: Icons.search_off,
+                                      title: 'Không tìm thấy sinh viên',
+                                      description: 'Không có sinh viên nào khớp với điều kiện tìm kiếm hoặc bộ lọc hiện tại.',
+                                    )
+                                  : Column(
+                                      children: [
+                                        if (widget.errorMessage != null)
+                                          Container(
+                                            margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                            decoration: BoxDecoration(
+                                              color: BirdleColors.dangerLight,
+                                              borderRadius: BirdleRadius.smBorder,
+                                              border: Border.all(color: BirdleColors.danger.withValues(alpha: 0.3)),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.warning_amber_rounded, size: 16, color: BirdleColors.danger),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    'Lỗi khi tải lại dữ liệu: ${widget.errorMessage}. Đang hiển thị dữ liệu đã lưu trước đó.',
+                                                    style: const TextStyle(fontSize: 12.5, color: BirdleColors.danger, fontWeight: FontWeight.w500),
+                                                  ),
+                                                ),
+                                                BirdleGhostButton(
+                                                  icon: Icons.refresh,
+                                                  label: 'Thử lại',
+                                                  color: BirdleColors.danger,
+                                                  onPressed: widget.onReloadFromSheet,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        // Table Header Row
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
                               decoration: const BoxDecoration(

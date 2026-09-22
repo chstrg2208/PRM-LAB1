@@ -11,6 +11,11 @@ class StudentsView extends StatefulWidget {
   final Function(String) onClassChanged;
   final VoidCallback onSyncToSheet;
   final VoidCallback onGoToImport;
+  final bool isLoading;
+  final String? errorMessage;
+  final bool isSheetConfigured;
+  final VoidCallback? onReload;
+  final VoidCallback? onGoToSettings;
 
   const StudentsView({
     super.key,
@@ -20,6 +25,11 @@ class StudentsView extends StatefulWidget {
     required this.onClassChanged,
     required this.onSyncToSheet,
     required this.onGoToImport,
+    this.isLoading = false,
+    this.errorMessage,
+    this.isSheetConfigured = true,
+    this.onReload,
+    this.onGoToSettings,
   });
 
   @override
@@ -379,15 +389,83 @@ class _StudentsViewState extends State<StudentsView> {
           Expanded(
             child: BirdleCard(
               padding: EdgeInsets.zero,
-              child: filtered.isEmpty
-                  ? const BirdleEmptyState(
-                      icon: Icons.people_outline,
-                      title: 'Chưa có sinh viên nào',
-                      description: 'Thêm sinh viên mới hoặc nhập danh sách từ FAP để bắt đầu quản lý.',
-                    )
-                  : Column(
-                      children: [
-                        // Table Header
+              child: widget.isLoading
+                  ? const Center(child: CircularProgressIndicator(color: BirdleColors.brand, strokeWidth: 2))
+                  : !widget.isSheetConfigured
+                      ? BirdleEmptyState(
+                          icon: Icons.link_off,
+                          title: 'Chưa cấu hình Google Sheet Database',
+                          description: 'Vui lòng cấu hình URL Google Apps Script Web App trong Cài đặt để đồng bộ danh sách sinh viên.',
+                          action: widget.onGoToSettings != null
+                              ? BirdlePrimaryButton(
+                                  icon: Icons.settings_outlined,
+                                  label: 'Mở Cài đặt',
+                                  onPressed: widget.onGoToSettings,
+                                )
+                              : null,
+                        )
+                      : (widget.errorMessage != null && widget.students.isEmpty)
+                          ? BirdleEmptyState(
+                              icon: Icons.cloud_off,
+                              title: 'Không thể tải danh sách sinh viên lớp ${widget.currentClass}',
+                              description: widget.errorMessage!,
+                              action: widget.onReload != null
+                                  ? BirdlePrimaryButton(
+                                      icon: Icons.refresh,
+                                      label: 'Thử lại',
+                                      onPressed: widget.onReload,
+                                    )
+                                  : null,
+                            )
+                          : widget.students.isEmpty
+                              ? BirdleEmptyState(
+                                  icon: Icons.people_outline,
+                                  title: 'Chưa có sinh viên nào',
+                                  description: 'Thêm sinh viên mới hoặc nhập danh sách từ FAP để bắt đầu quản lý.',
+                                  action: BirdleSecondaryButton(
+                                    icon: Icons.file_upload_outlined,
+                                    label: 'Import từ FAP',
+                                    onPressed: widget.onGoToImport,
+                                  ),
+                                )
+                              : filtered.isEmpty
+                                  ? const BirdleEmptyState(
+                                      icon: Icons.search_off,
+                                      title: 'Không tìm thấy sinh viên',
+                                      description: 'Không có sinh viên nào khớp với điều kiện tìm kiếm hiện tại.',
+                                    )
+                                  : Column(
+                                      children: [
+                                        if (widget.errorMessage != null)
+                                          Container(
+                                            margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                            decoration: BoxDecoration(
+                                              color: BirdleColors.dangerLight,
+                                              borderRadius: BirdleRadius.smBorder,
+                                              border: Border.all(color: BirdleColors.danger.withValues(alpha: 0.3)),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.warning_amber_rounded, size: 16, color: BirdleColors.danger),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    'Lỗi khi tải lại dữ liệu: ${widget.errorMessage}. Đang hiển thị dữ liệu đã lưu trước đó.',
+                                                    style: const TextStyle(fontSize: 12.5, color: BirdleColors.danger, fontWeight: FontWeight.w500),
+                                                  ),
+                                                ),
+                                                if (widget.onReload != null)
+                                                  BirdleGhostButton(
+                                                    icon: Icons.refresh,
+                                                    label: 'Thử lại',
+                                                    color: BirdleColors.danger,
+                                                    onPressed: widget.onReload,
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        // Table Header
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
                           decoration: const BoxDecoration(

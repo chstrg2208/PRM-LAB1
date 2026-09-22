@@ -227,7 +227,19 @@ class DashboardView extends StatelessWidget {
                         ),
                       ),
                       const Divider(),
-                      if (atRiskStudents.isEmpty)
+                      if (students.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Center(
+                            child: Text(
+                              isSheetConnected
+                                  ? 'Chưa có dữ liệu sinh viên cho lớp $currentClass.'
+                                  : 'Chưa cấu hình Google Sheet Database.',
+                              style: const TextStyle(color: BirdleColors.textSecondary, fontSize: 13),
+                            ),
+                          ),
+                        )
+                      else if (atRiskStudents.isEmpty)
                         const Padding(
                           padding: EdgeInsets.all(32),
                           child: Center(

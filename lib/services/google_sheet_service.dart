@@ -1,67 +1,195 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/student.dart';
 import '../models/attendance_record.dart';
 
+enum GoogleSheetErrorType {
+  unconfigured,
+  network,
+  httpError,
+  invalidJson,
+  invalidSchema,
+  apiError,
+}
+
+class GoogleSheetException implements Exception {
+  final GoogleSheetErrorType type;
+  final String message;
+  final int? statusCode;
+  final dynamic details;
+
+  const GoogleSheetException({
+    required this.type,
+    required this.message,
+    this.statusCode,
+    this.details,
+  });
+
+  @override
+  String toString() => message;
+}
+
 class GoogleSheetService {
+  /// Chuẩn hóa việc phân tích phản hồi từ Google Apps Script
+  static Map<String, dynamic> _parseApiResponse(http.Response response) {
+    if (response.statusCode != 200 && response.statusCode != 302) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.httpError,
+        statusCode: response.statusCode,
+        message: 'Lỗi máy chủ Google Apps Script: HTTP ${response.statusCode}',
+      );
+    }
+
+    dynamic decoded;
+    try {
+      final text = response.bodyBytes.isNotEmpty
+          ? utf8.decode(response.bodyBytes, allowMalformed: true)
+          : response.body;
+      decoded = jsonDecode(text);
+    } catch (_) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.invalidJson,
+        message: 'Phản hồi từ Google Apps Script không đúng định dạng JSON.',
+      );
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.invalidSchema,
+        message: 'Dữ liệu phản hồi không đúng định dạng JSON object.',
+      );
+    }
+
+    final isError = decoded['status'] == 'error' || decoded['success'] == false;
+    if (isError) {
+      final msg = (decoded['error'] ?? decoded['message'] ?? 'Lỗi từ Google Apps Script').toString();
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.apiError,
+        message: msg,
+        details: decoded,
+      );
+    }
+
+    final isSuccess = decoded['status'] == 'success' || decoded['success'] == true;
+    if (!isSuccess) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.invalidSchema,
+        message: 'Cấu trúc dữ liệu phản hồi từ Google Apps Script không hợp lệ.',
+      );
+    }
+
+    return decoded;
+  }
+
   /// Test connection to Google Apps Script Web App
-  static Future<Map<String, dynamic>> testConnection(String webAppUrl) async {
-    if (webAppUrl.trim().isEmpty) {
+  static Future<Map<String, dynamic>> testConnection(String webAppUrl, {http.Client? client}) async {
+    final cleanUrl = webAppUrl.trim();
+    if (cleanUrl.isEmpty) {
       return {'success': false, 'message': 'Chưa cấu hình URL Google Sheet Web App!'};
     }
 
-    try {
-      final uri = Uri.parse('$webAppUrl?action=test');
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+    final uri = Uri.tryParse(cleanUrl);
+    if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+      return {'success': false, 'message': 'URL Google Sheet không hợp lệ!'};
+    }
 
-      if (response.statusCode == 200 || response.statusCode == 302) {
-        // In Google Apps Script, redirects are common
-        try {
-          final data = jsonDecode(response.body);
-          return {
-            'success': true,
-            'message': data['message'] ?? 'Kết nối thành công đến Google Sheet!',
-            'data': data,
-          };
-        } catch (_) {
-          return {'success': true, 'message': 'Kết nối thành công đến Google Sheet Web App!'};
-        }
-      } else {
-        return {
-          'success': false,
-          'message': 'Lỗi máy chủ Google: Mã phản hồi HTTP ${response.statusCode}',
-        };
-      }
+    final httpClient = client ?? http.Client();
+    try {
+      final testUri = uri.replace(queryParameters: {...uri.queryParameters, 'action': 'test'});
+      final response = await httpClient.get(testUri).timeout(const Duration(seconds: 10));
+      final decoded = _parseApiResponse(response);
+
+      return {
+        'success': true,
+        'message': decoded['message'] ?? 'Kết nối thành công đến Google Sheet Database!',
+        'data': decoded,
+      };
     } catch (e) {
+      final msg = e is GoogleSheetException ? e.message : 'Không thể kết nối đến Google Sheet: $e';
       return {
         'success': false,
-        'message': 'Không thể kết nối đến Google Sheet. Kiểm tra lại URL hoặc mạng internet: $e',
+        'message': msg,
       };
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
     }
   }
 
   /// Lấy danh sách sinh viên theo lớp từ Google Sheet
-  static Future<List<Student>> fetchStudents(String webAppUrl, String className) async {
-    if (webAppUrl.trim().isEmpty) {
-      return _getDefaultSampleStudents(className);
+  static Future<List<Student>> fetchStudents(
+    String webAppUrl,
+    String className, {
+    http.Client? client,
+  }) async {
+    final cleanUrl = webAppUrl.trim();
+    if (cleanUrl.isEmpty) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.unconfigured,
+        message: 'Chưa cấu hình URL Google Sheet trong Cài đặt.',
+      );
     }
 
+    final uri = Uri.tryParse(cleanUrl);
+    if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.invalidSchema,
+        message: 'URL Google Sheet không hợp lệ.',
+      );
+    }
+
+    final httpClient = client ?? http.Client();
     try {
-      final uri = Uri.parse('$webAppUrl?action=getStudents&className=$className');
-      final response = await http.get(uri).timeout(const Duration(seconds: 12));
+      final requestUri = uri.replace(queryParameters: {
+        ...uri.queryParameters,
+        'action': 'getStudents',
+        'className': className,
+      });
+      final response = await httpClient.get(requestUri).timeout(const Duration(seconds: 12));
+      final decoded = _parseApiResponse(response);
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded['status'] == 'success' && decoded['data'] != null) {
-          final List<dynamic> list = decoded['data'];
-          return list.map((item) => Student.fromJson(item)).toList();
-        }
+      final rawData = decoded['data'];
+      if (rawData is! List) {
+        throw const GoogleSheetException(
+          type: GoogleSheetErrorType.invalidSchema,
+          message: 'Dữ liệu sinh viên trả về không phải là danh sách.',
+        );
       }
-    } catch (e) {
-      // Fallback on failure
-    }
 
-    return _getDefaultSampleStudents(className);
+      return rawData.map((item) {
+        if (item is Map<String, dynamic>) {
+          return Student.fromJson(item);
+        }
+        return Student.fromJson(Map<String, dynamic>.from(item as Map));
+      }).toList();
+    } on GoogleSheetException {
+      rethrow;
+    } on SocketException catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Không thể kết nối đến Google Sheet. Vui lòng kiểm tra lại mạng internet.',
+        details: e,
+      );
+    } on TimeoutException catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Hết thời gian chờ phản hồi từ Google Sheet (timeout).',
+        details: e,
+      );
+    } catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Lỗi khi tải danh sách sinh viên: $e',
+        details: e,
+      );
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
+    }
   }
 
   /// Lấy dữ liệu điểm danh theo lớp, ngày, slot từ Google Sheet
@@ -69,30 +197,76 @@ class GoogleSheetService {
     String webAppUrl,
     String className,
     String date,
-    int slot,
-  ) async {
-    if (webAppUrl.trim().isEmpty) {
-      return [];
-    }
-
-    try {
-      final uri = Uri.parse(
-        '$webAppUrl?action=getAttendance&className=$className&date=$date&slot=$slot',
+    int slot, {
+    http.Client? client,
+  }) async {
+    final cleanUrl = webAppUrl.trim();
+    if (cleanUrl.isEmpty) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.unconfigured,
+        message: 'Chưa cấu hình URL Google Sheet trong Cài đặt.',
       );
-      final response = await http.get(uri).timeout(const Duration(seconds: 12));
-
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded['status'] == 'success' && decoded['data'] != null) {
-          final List<dynamic> list = decoded['data'];
-          return list.map((item) => AttendanceRecord.fromJson(item)).toList();
-        }
-      }
-    } catch (e) {
-      // Error handling
     }
 
-    return [];
+    final uri = Uri.tryParse(cleanUrl);
+    if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.invalidSchema,
+        message: 'URL Google Sheet không hợp lệ.',
+      );
+    }
+
+    final httpClient = client ?? http.Client();
+    try {
+      final requestUri = uri.replace(queryParameters: {
+        ...uri.queryParameters,
+        'action': 'getAttendance',
+        'className': className,
+        'date': date,
+        'slot': slot.toString(),
+      });
+      final response = await httpClient.get(requestUri).timeout(const Duration(seconds: 12));
+      final decoded = _parseApiResponse(response);
+
+      final rawData = decoded['data'];
+      if (rawData is! List) {
+        throw const GoogleSheetException(
+          type: GoogleSheetErrorType.invalidSchema,
+          message: 'Dữ liệu điểm danh trả về không phải là danh sách.',
+        );
+      }
+
+      return rawData.map((item) {
+        if (item is Map<String, dynamic>) {
+          return AttendanceRecord.fromJson(item);
+        }
+        return AttendanceRecord.fromJson(Map<String, dynamic>.from(item as Map));
+      }).toList();
+    } on GoogleSheetException {
+      rethrow;
+    } on SocketException catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Không thể kết nối đến Google Sheet. Vui lòng kiểm tra lại mạng internet.',
+        details: e,
+      );
+    } on TimeoutException catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Hết thời gian chờ phản hồi từ Google Sheet (timeout).',
+        details: e,
+      );
+    } catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Lỗi khi tải dữ liệu điểm danh: $e',
+        details: e,
+      );
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
+    }
   }
 
   /// Ghi dữ liệu điểm danh lên Google Sheet
@@ -102,14 +276,25 @@ class GoogleSheetService {
     required String date,
     required int slot,
     required List<AttendanceRecord> records,
+    http.Client? client,
   }) async {
-    if (webAppUrl.trim().isEmpty) {
+    final cleanUrl = webAppUrl.trim();
+    if (cleanUrl.isEmpty) {
       return {
         'success': false,
         'message': 'Vui lòng cấu hình URL Google Apps Script Web App trong Cài đặt trước khi lưu!',
       };
     }
 
+    final uri = Uri.tryParse(cleanUrl);
+    if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+      return {
+        'success': false,
+        'message': 'URL Google Sheet không hợp lệ!',
+      };
+    }
+
+    final httpClient = client ?? http.Client();
     try {
       final payload = jsonEncode({
         'action': 'saveAttendance',
@@ -119,28 +304,29 @@ class GoogleSheetService {
         'records': records.map((r) => r.toJson()).toList(),
       });
 
-      final response = await http.post(
-        Uri.parse(webAppUrl),
+      final response = await httpClient.post(
+        uri,
         headers: {'Content-Type': 'application/json'},
         body: payload,
       ).timeout(const Duration(seconds: 15));
 
-      if (response.statusCode == 200 || response.statusCode == 302) {
-        return {
-          'success': true,
-          'message': 'Đã lưu điểm danh thành công vào Google Sheet!',
-        };
-      } else {
-        return {
-          'success': false,
-          'message': 'Lỗi phản hồi HTTP: ${response.statusCode}',
-        };
-      }
+      final decoded = _parseApiResponse(response);
+
+      return {
+        'success': true,
+        'message': decoded['message'] ?? 'Đã lưu điểm danh thành công vào Google Sheet!',
+        'data': decoded,
+      };
     } catch (e) {
+      final msg = e is GoogleSheetException ? e.message : 'Lỗi lưu điểm danh lên Google Sheet: $e';
       return {
         'success': false,
-        'message': 'Lỗi lưu điểm danh lên Google Sheet: $e',
+        'message': msg,
       };
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
     }
   }
 
@@ -149,14 +335,25 @@ class GoogleSheetService {
     required String webAppUrl,
     required String className,
     required List<Student> students,
+    http.Client? client,
   }) async {
-    if (webAppUrl.trim().isEmpty) {
+    final cleanUrl = webAppUrl.trim();
+    if (cleanUrl.isEmpty) {
       return {
         'success': false,
         'message': 'Chưa cấu hình URL Google Sheet Web App!',
       };
     }
 
+    final uri = Uri.tryParse(cleanUrl);
+    if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+      return {
+        'success': false,
+        'message': 'URL Google Sheet không hợp lệ!',
+      };
+    }
+
+    final httpClient = client ?? http.Client();
     try {
       final payload = jsonEncode({
         'action': 'syncStudents',
@@ -164,28 +361,29 @@ class GoogleSheetService {
         'students': students.map((s) => s.toJson()).toList(),
       });
 
-      final response = await http.post(
-        Uri.parse(webAppUrl),
+      final response = await httpClient.post(
+        uri,
         headers: {'Content-Type': 'application/json'},
         body: payload,
       ).timeout(const Duration(seconds: 15));
 
-      if (response.statusCode == 200 || response.statusCode == 302) {
-        return {
-          'success': true,
-          'message': 'Đã đồng bộ ${students.length} sinh viên lên Google Sheet thành công!',
-        };
-      } else {
-        return {
-          'success': false,
-          'message': 'Lỗi phản hồi: ${response.statusCode}',
-        };
-      }
+      final decoded = _parseApiResponse(response);
+
+      return {
+        'success': true,
+        'message': decoded['message'] ?? 'Đã đồng bộ ${students.length} sinh viên lên Google Sheet thành công!',
+        'data': decoded,
+      };
     } catch (e) {
+      final msg = e is GoogleSheetException ? e.message : 'Lỗi đồng bộ sinh viên: $e';
       return {
         'success': false,
-        'message': 'Lỗi đồng bộ sinh viên: $e',
+        'message': msg,
       };
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
     }
   }
 
@@ -198,26 +396,52 @@ class GoogleSheetService {
     final cleanUrl = webAppUrl.trim();
     if (cleanUrl.isEmpty) return [];
 
+    final uri = Uri.tryParse(cleanUrl);
+    if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.invalidSchema,
+        message: 'URL Google Sheet không hợp lệ.',
+      );
+    }
+
     final httpClient = client ?? http.Client();
     try {
-      final uri = Uri.parse('$cleanUrl?action=getAnalyticsData&className=$className');
-      final response = await httpClient.get(uri).timeout(const Duration(seconds: 12));
+      final requestUri = uri.replace(queryParameters: {
+        ...uri.queryParameters,
+        'action': 'getAnalyticsData',
+        'className': className,
+      });
+      final response = await httpClient.get(requestUri).timeout(const Duration(seconds: 12));
+      final decoded = _parseApiResponse(response);
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
-          final isSuccess = decoded['status'] == 'success' || decoded['success'] == true;
-          final rawLogs = decoded['logs'] ?? decoded['data'];
-          if (isSuccess && rawLogs != null) {
-            return List<Map<String, dynamic>>.from(rawLogs);
-          }
-          final msg = decoded['message'] ?? decoded['error'];
-          throw Exception(msg ?? 'Dữ liệu trả về từ Google Apps Script không hợp lệ');
-        }
-        throw Exception('Dữ liệu phản hồi không đúng định dạng JSON object');
-      } else {
-        throw Exception('Lỗi máy chủ Google Apps Script: HTTP ${response.statusCode}');
+      final rawLogs = decoded['logs'] ?? decoded['data'];
+      if (rawLogs is List) {
+        return List<Map<String, dynamic>>.from(rawLogs);
       }
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.invalidSchema,
+        message: 'Dữ liệu lịch sử phân tích không phải là danh sách.',
+      );
+    } on GoogleSheetException {
+      rethrow;
+    } on SocketException catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Không thể kết nối đến Google Sheet. Vui lòng kiểm tra lại mạng internet.',
+        details: e,
+      );
+    } on TimeoutException catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Hết thời gian chờ phản hồi từ Google Sheet (timeout).',
+        details: e,
+      );
+    } catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Lỗi tải dữ liệu lịch sử phân tích: $e',
+        details: e,
+      );
     } finally {
       if (client == null) {
         httpClient.close();
@@ -225,8 +449,8 @@ class GoogleSheetService {
     }
   }
 
-  /// Danh sách mẫu chuẩn sinh viên FPT (Bao gồm CE190585 Lâm Quốc Minh từ ảnh yêu cầu)
-  static List<Student> _getDefaultSampleStudents(String className) {
+  /// Danh sách mẫu sinh viên FPT phục vụ mục đích kiểm thử độc lập
+  static List<Student> getSampleStudentsForTesting([String className = 'SE1801']) {
     return [
       Student(
         member: 'CE190585',
