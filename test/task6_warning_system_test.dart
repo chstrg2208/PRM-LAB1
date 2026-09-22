@@ -84,8 +84,8 @@ void main() {
               index: 1,
               student: bannedStudent,
               record: record,
-              onStatusChanged: (_, __) {},
-              onNoteChanged: (_, __) {},
+              onStatusChanged: (roll, status) {},
+              onNoteChanged: (roll, note) {},
             ),
           ),
         ),
@@ -127,8 +127,8 @@ void main() {
               index: 1,
               student: warningStudent,
               record: record,
-              onStatusChanged: (_, __) {},
-              onNoteChanged: (_, __) {},
+              onStatusChanged: (roll, status) {},
+              onNoteChanged: (roll, note) {},
             ),
           ),
         ),
@@ -138,7 +138,7 @@ void main() {
       expect(find.text('−1'), findsOneWidget);
     });
 
-    testWidgets('8. AttendanceStudentRow KHÔNG hiển thị badge khi bình thường', (tester) async {
+    testWidgets('8. AttendanceStudentRow KHÔNG hiển thị badge và nền xanh khi chưa vắng buổi nào', (tester) async {
       tester.view.physicalSize = const Size(1600, 200);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -168,8 +168,8 @@ void main() {
               index: 1,
               student: normalStudent,
               record: record,
-              onStatusChanged: (_, __) {},
-              onNoteChanged: (_, __) {},
+              onStatusChanged: (roll, status) {},
+              onNoteChanged: (roll, note) {},
             ),
           ),
         ),

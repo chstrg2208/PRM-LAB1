@@ -110,14 +110,13 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
     super.dispose();
   }
 
-  // Màu nền row dựa trên mức độ cảnh báo
+  // Màu nền row dựa trên tỉ lệ vắng
   Color _rowBgColor() {
     final s = widget.student;
-    if (s.isBanned || s.hasExhaustedAbsenceAllowance || s.isExactlyAtAbsenceLimit) {
-      return BirdleColors.dangerLight;
-    }
-    if (s.isWarning) return BirdleColors.warningLight;
-    return Colors.white;
+    if (s.totalSlots <= 0) return Colors.white;
+    if (s.isBanned) return BirdleColors.dangerLight;         // >20% → đỏ
+    if (s.absentSlots > 0) return BirdleColors.warningLight; // >0% đến ≤20% → vàng
+    return BirdleColors.successLight;                         // 0 buổi vắng → xanh
   }
 
   @override
