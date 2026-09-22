@@ -20,7 +20,8 @@ void main() {
 
       expect(s.absentRate, 20.0);
       expect(s.isBanned, false);
-      expect(s.isAtThreshold, true);
+      expect(s.isExactlyAtAbsenceLimit, true);
+      expect(s.hasExhaustedAbsenceAllowance, true);
       expect(s.remainingAllowedAbsences, 0);
     });
 

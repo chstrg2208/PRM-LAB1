@@ -66,19 +66,23 @@ class Student {
 
   double get absentRate => totalSlots > 0 ? (absentSlots / totalSlots) * 100 : 0.0;
 
-  // Cảnh báo chuyên cần (15% - 20% khi còn lượt vắng)
+  // Cảnh báo chuyên cần (15% <= rate < 20% và còn lượt vắng)
   bool get isWarning =>
       totalSlots > 0 &&
       !isBanned &&
       (absentSlots * 100 >= totalSlots * 15) &&
       remainingAllowedAbsences > 0;
 
-  // Chạm ngưỡng vắng tối đa (đúng 20% hoặc đã hết số buổi được phép vắng nhưng chưa vượt quá 20%)
-  bool get isAtThreshold =>
-      totalSlots > 0 &&
-      !isBanned &&
-      remainingAllowedAbsences == 0 &&
-      absentSlots > 0;
+  // Đúng ngưỡng vắng 20%: absentSlots * 100 == totalSlots * 20
+  bool get isExactlyAtAbsenceLimit =>
+      totalSlots > 0 && absentSlots * 100 == totalSlots * 20;
+
+  // Đã hết lượt vắng được phép nhưng chưa bị cấm thi
+  bool get hasExhaustedAbsenceAllowance =>
+      totalSlots > 0 && !isBanned && remainingAllowedAbsences == 0;
+
+  // Giữ isAtThreshold alias tới isExactlyAtAbsenceLimit (đúng 20%)
+  bool get isAtThreshold => isExactlyAtAbsenceLimit;
 
   // Fail Attendance - Bị cấm thi theo quy chế FPT (> 20%)
   // Sinh viên được phép vắng đến và bằng 20% tổng số buổi.
@@ -93,6 +97,16 @@ class Student {
     if (totalSlots <= 0) return 0;
     final remaining = maxAllowedAbsences - absentSlots;
     return remaining < 0 ? 0 : remaining;
+  }
+
+  // Nhãn trạng thái ngắn cho đào tạo / học vụ
+  String get trainingStatusLabel {
+    if (totalSlots <= 0) return 'CHƯA ĐỦ DỮ LIỆU';
+    if (isBanned) return 'CẤM THI (>20%)';
+    if (isExactlyAtAbsenceLimit) return 'CHẠM NGƯỠNG (20%)';
+    if (hasExhaustedAbsenceAllowance) return 'HẾT LƯỢT VẮNG';
+    if (isWarning) return 'CẢNH BÁO (15-20%)';
+    return 'ĐỦ ĐIỀU KIỆN';
   }
 
   // Thông điệp trạng thái chuyên cần theo quy chế đào tạo

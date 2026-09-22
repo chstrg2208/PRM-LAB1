@@ -43,7 +43,7 @@ class DashboardView extends StatelessWidget {
         ? ((presentCount + (lateCount * 0.7)) / totalStudents) * 100
         : 0.0;
 
-    final atRiskStudents = students.where((s) => s.absentRate >= 15.0).toList();
+    final atRiskStudents = students.where((s) => s.absentRate >= 15.0 || s.hasExhaustedAbsenceAllowance).toList();
     final formattedDate = DateFormat('EEEE, MMMM d, y').format(currentDate);
 
     return SingleChildScrollView(
@@ -291,7 +291,7 @@ class DashboardView extends StatelessWidget {
                                   ),
                                   Padding(
                                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                    child: AbsentRateBadge(rate: s.absentRate, showPercent: false),
+                                    child: AbsentRateBadge(rate: s.absentRate, student: s, showPercent: false),
                                   ),
                                 ],
                               );

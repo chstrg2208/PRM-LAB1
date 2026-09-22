@@ -208,9 +208,9 @@ class AiAnalyticsService {
     });
     final worstDay = sortedDays.first;
 
-    // Lọc sinh viên Fail Attendance (> 20%) và Warning (15% - 20% hoặc chạm ngưỡng)
+    // Lọc sinh viên Fail Attendance (> 20%) và Warning (15% - 20% hoặc đã hết lượt vắng)
     final failedStudents = students.where((s) => s.isBanned).toList();
-    final warningStudents = students.where((s) => s.isWarning || s.isAtThreshold).toList();
+    final warningStudents = students.where((s) => s.isWarning || s.hasExhaustedAbsenceAllowance).toList();
 
     // Tỷ lệ chuyên cần chung từ sinh viên
     int totalAbsences = students.fold(0, (sum, s) => sum + s.absentSlots);
@@ -330,15 +330,18 @@ class AiAnalyticsService {
             (code.isNotEmpty && q.contains(code)) ||
             (name.isNotEmpty && q.contains(name))) {
           final isFail = s.isBanned;
+          final isExact20 = s.isExactlyAtAbsenceLimit;
+          final isExhausted = s.hasExhaustedAbsenceAllowance;
           final isWarn = s.isWarning;
-          final isThreshold = s.isAtThreshold;
           final status = isFail
               ? '⛔ **CẤM THI (Fail Attendance - vắng > 20%)**'
-              : (isThreshold
-                  ? '⚠️ **CHẠM NGƯỠNG (Hết số buổi vắng được phép - 20%)**'
-                  : (isWarn
-                      ? '⚠️ **CẢNH BÁO NGUY CƠ (Vắng 15% - 20%)**'
-                      : '✅ **AN TOÀN (Đi học đầy đủ / Chuyên cần tốt)**'));
+              : (isExact20
+                  ? '⚠️ **CHẠM NGƯỠNG (Hết số buổi vắng được phép - đúng 20%)**'
+                  : (isExhausted
+                      ? '⚠️ **HẾT LƯỢT VẮNG (Đã hết số buổi vắng được phép - ${s.absentRate.toStringAsFixed(1)}%)**'
+                      : (isWarn
+                          ? '⚠️ **CẢNH BÁO NGUY CƠ (Vắng 15% - 20%)**'
+                          : '✅ **AN TOÀN (Đi học đầy đủ / Chuyên cần tốt)**')));
           final maxAllowed = s.maxAllowedAbsences;
           final remaining = s.remainingAllowedAbsences;
           final advice = isFail
@@ -528,12 +531,7 @@ class AiAnalyticsService {
 
     try {
       final studentSummary = students.map((s) {
-        final isFail = s.isBanned;
-        final isThreshold = s.isAtThreshold;
-        final isWarn = s.isWarning;
-        final status = isFail
-            ? 'CẤM THI (>20%)'
-            : (isThreshold ? 'CHẠM NGƯỠNG (20%)' : (isWarn ? 'CẢNH BÁO (15-20%)' : 'ĐỦ ĐIỀU KIỆN'));
+        final status = s.trainingStatusLabel;
         return '- MSSV: ${s.member}, Họ tên: ${s.fullName} (Code: ${s.code}), Vắng: ${s.absentSlots}/${s.totalSlots} (${s.absentRate.toStringAsFixed(1)}%) -> $status';
       }).join('\n');
 

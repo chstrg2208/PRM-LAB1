@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/attendance_record.dart';
+import '../models/student.dart';
 import '../theme/app_theme.dart';
 
 /// Pill status badge for student attendance status (Present, Absent, Late, Pending)
@@ -79,11 +80,13 @@ class AttendanceStatusBadge extends StatelessWidget {
 class AbsentRateBadge extends StatelessWidget {
   final double rate;
   final bool showPercent;
+  final Student? student;
 
   const AbsentRateBadge({
     super.key,
     required this.rate,
     this.showPercent = true,
+    this.student,
   });
 
   @override
@@ -93,26 +96,56 @@ class AbsentRateBadge extends StatelessWidget {
     Color border;
     String text;
 
-    if (rate > 20.0001) {
-      bg = BirdleColors.dangerLight;
-      fg = BirdleColors.danger;
-      border = BirdleColors.danger.withValues(alpha: 0.25);
-      text = 'CẤM THI';
-    } else if (rate >= 19.9999) {
-      bg = BirdleColors.warningLight;
-      fg = BirdleColors.warning;
-      border = BirdleColors.warning.withValues(alpha: 0.3);
-      text = 'CHẠM NGƯỠNG';
-    } else if (rate >= 15.0) {
-      bg = BirdleColors.warningLight;
-      fg = BirdleColors.warning;
-      border = BirdleColors.warning.withValues(alpha: 0.3);
-      text = 'CẢNH BÁO';
+    if (student != null) {
+      final s = student!;
+      if (s.isBanned) {
+        bg = BirdleColors.dangerLight;
+        fg = BirdleColors.danger;
+        border = BirdleColors.danger.withValues(alpha: 0.25);
+        text = 'CẤM THI';
+      } else if (s.isExactlyAtAbsenceLimit) {
+        bg = BirdleColors.warningLight;
+        fg = BirdleColors.warning;
+        border = BirdleColors.warning.withValues(alpha: 0.3);
+        text = 'CHẠM NGƯỠNG';
+      } else if (s.hasExhaustedAbsenceAllowance) {
+        bg = BirdleColors.warningLight;
+        fg = BirdleColors.warning;
+        border = BirdleColors.warning.withValues(alpha: 0.3);
+        text = 'HẾT LƯỢT VẮNG';
+      } else if (s.isWarning) {
+        bg = BirdleColors.warningLight;
+        fg = BirdleColors.warning;
+        border = BirdleColors.warning.withValues(alpha: 0.3);
+        text = 'CẢNH BÁO';
+      } else {
+        bg = BirdleColors.successLight;
+        fg = BirdleColors.success;
+        border = BirdleColors.success.withValues(alpha: 0.2);
+        text = 'ĐỦ ĐIỀU KIỆN';
+      }
     } else {
-      bg = BirdleColors.successLight;
-      fg = BirdleColors.success;
-      border = BirdleColors.success.withValues(alpha: 0.2);
-      text = 'ĐỦ ĐIỀU KIỆN';
+      if (rate > 20.0) {
+        bg = BirdleColors.dangerLight;
+        fg = BirdleColors.danger;
+        border = BirdleColors.danger.withValues(alpha: 0.25);
+        text = 'CẤM THI';
+      } else if (rate == 20.0) {
+        bg = BirdleColors.warningLight;
+        fg = BirdleColors.warning;
+        border = BirdleColors.warning.withValues(alpha: 0.3);
+        text = 'CHẠM NGƯỠNG';
+      } else if (rate >= 15.0) {
+        bg = BirdleColors.warningLight;
+        fg = BirdleColors.warning;
+        border = BirdleColors.warning.withValues(alpha: 0.3);
+        text = 'CẢNH BÁO';
+      } else {
+        bg = BirdleColors.successLight;
+        fg = BirdleColors.success;
+        border = BirdleColors.success.withValues(alpha: 0.2);
+        text = 'ĐỦ ĐIỀU KIỆN';
+      }
     }
 
     final displayText = showPercent ? '$text (${rate.toStringAsFixed(0)}%)' : text;

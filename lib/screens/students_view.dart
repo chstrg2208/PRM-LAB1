@@ -106,7 +106,7 @@ class _StudentsViewState extends State<StudentsView> {
                     '${s.absentRate.toStringAsFixed(1)}%',
                     color: s.isBanned
                         ? BirdleColors.danger
-                        : ((s.isWarning || s.isAtThreshold) ? BirdleColors.warning : BirdleColors.success),
+                        : ((s.isWarning || s.hasExhaustedAbsenceAllowance) ? BirdleColors.warning : BirdleColors.success),
                   ),
                 ],
               ),
@@ -133,14 +133,7 @@ class _StudentsViewState extends State<StudentsView> {
                     const SizedBox(height: 8),
                     _buildDetailRow('Email FPT', s.email.isNotEmpty ? s.email : '${s.member.toLowerCase()}@fpt.edu.vn'),
                     const SizedBox(height: 8),
-                    _buildDetailRow(
-                      'Trạng thái đào tạo',
-                      s.isBanned
-                          ? 'CẤM THI (>20%)'
-                          : (s.isAtThreshold
-                              ? 'CHẠM NGƯỠNG (20%)'
-                              : (s.isWarning ? 'CẢNH BÁO (15-20%)' : 'ĐỦ ĐIỀU KIỆN')),
-                    ),
+                    _buildDetailRow('Trạng thái đào tạo', s.trainingStatusLabel),
                   ],
                 ),
               ),
@@ -533,7 +526,7 @@ class _StudentsViewState extends State<StudentsView> {
                                       child: FittedBox(
                                         fit: BoxFit.scaleDown,
                                         alignment: Alignment.centerLeft,
-                                        child: AbsentRateBadge(rate: s.absentRate, showPercent: true),
+                                        child: AbsentRateBadge(rate: s.absentRate, student: s, showPercent: true),
                                       ),
                                     ),
                                     SizedBox(

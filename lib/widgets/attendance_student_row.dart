@@ -219,7 +219,7 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
-              child: AbsentRateBadge(rate: widget.student.absentRate, showPercent: true),
+              child: AbsentRateBadge(rate: widget.student.absentRate, student: widget.student, showPercent: true),
             ),
           ),
         ],

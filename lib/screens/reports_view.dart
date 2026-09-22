@@ -21,8 +21,8 @@ class ReportsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = students.length;
     final banned = students.where((s) => s.isBanned).toList();
-    final warning = students.where((s) => s.isWarning || s.isAtThreshold).toList();
-    final safe = students.where((s) => !s.isBanned && !s.isWarning && !s.isAtThreshold).toList();
+    final warning = students.where((s) => s.isWarning || s.hasExhaustedAbsenceAllowance).toList();
+    final safe = students.where((s) => !s.isBanned && !s.isWarning && !s.hasExhaustedAbsenceAllowance).toList();
 
     final totalSlots = students.fold<int>(0, (sum, s) => sum + s.totalSlots);
     final absentSlots = students.fold<int>(0, (sum, s) => sum + s.absentSlots);
@@ -216,7 +216,7 @@ class ReportsView extends StatelessWidget {
                             ),
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              child: AbsentRateBadge(rate: s.absentRate, showPercent: false),
+                              child: AbsentRateBadge(rate: s.absentRate, student: s, showPercent: false),
                             ),
                           ],
                         );
