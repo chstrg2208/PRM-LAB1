@@ -145,6 +145,56 @@ function doGet(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 5. Lấy danh sách lớp hợp lệ từ danh sách các Sheet thực tế trong Spreadsheet
+  if (action === 'getClasses') {
+    try {
+      var sheets = ss.getSheets();
+      var classes = [];
+      var seen = {};
+
+      for (var k = 0; k < sheets.length; k++) {
+        var sheetItem = sheets[k];
+        // Bỏ qua sheet bị ẩn
+        if (typeof sheetItem.isSheetHidden === 'function' && sheetItem.isSheetHidden()) {
+          continue;
+        }
+
+        var sheetName = sheetItem.getName() ? sheetItem.getName().trim() : '';
+        if (!sheetName) continue;
+
+        // Loại trừ sheet hệ thống / log / metadata
+        var lowerName = sheetName.toLowerCase();
+        if (lowerName === 'attendance_logs' || sheetName.indexOf('_') === 0 || sheetName.indexOf('.') === 0) {
+          continue;
+        }
+
+        if (!seen[sheetName]) {
+          seen[sheetName] = true;
+          classes.push(sheetName);
+        }
+      }
+
+      // Sắp xếp tăng dần theo thứ tự chữ cái (A-Z, tự nhiên)
+      classes.sort(function(a, b) {
+        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+      });
+
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        status: 'success',
+        total: classes.length,
+        data: classes
+      })).setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        status: 'error',
+        error: 'Lỗi khi lấy danh sách lớp: ' + (err.message || err.toString()),
+        message: 'Lỗi khi lấy danh sách lớp: ' + (err.message || err.toString())
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
   return ContentService.createTextOutput(JSON.stringify({
     status: 'error',
     message: 'Yêu cầu GET không hợp lệ!'

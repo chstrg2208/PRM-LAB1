@@ -7,6 +7,7 @@ import 'package:birdle/screens/main_desktop_screen.dart';
 
 class FakeAttendanceApiClient implements AttendanceApiClient {
   Future<Map<String, dynamic>> Function(String sheetUrl)? onTestConnection;
+  Future<List<String>> Function(String sheetUrl)? onFetchClasses;
   Future<List<Student>> Function(String sheetUrl, String className)? onFetchStudents;
   Future<List<AttendanceRecord>> Function(String sheetUrl, String className, String date, int slot)? onFetchAttendance;
   Future<Map<String, dynamic>> Function({
@@ -32,6 +33,14 @@ class FakeAttendanceApiClient implements AttendanceApiClient {
       return onTestConnection!(sheetUrl);
     }
     return {'success': sheetUrl.isNotEmpty};
+  }
+
+  @override
+  Future<List<String>> fetchClasses(String sheetUrl) async {
+    if (onFetchClasses != null) {
+      return onFetchClasses!(sheetUrl);
+    }
+    return ['SE1801', 'SE1802', 'INIT', 'CLASS_SLOW', 'CLASS_FAST'];
   }
 
   @override

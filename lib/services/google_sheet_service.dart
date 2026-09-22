@@ -119,6 +119,79 @@ class GoogleSheetService {
     }
   }
 
+  /// Lấy danh sách lớp hợp lệ từ Google Sheet
+  static Future<List<String>> fetchClasses(
+    String webAppUrl, {
+    http.Client? client,
+  }) async {
+    final cleanUrl = webAppUrl.trim();
+    if (cleanUrl.isEmpty) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.unconfigured,
+        message: 'Chưa cấu hình URL Google Sheet trong Cài đặt.',
+      );
+    }
+
+    final uri = Uri.tryParse(cleanUrl);
+    if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.invalidSchema,
+        message: 'URL Google Sheet không hợp lệ.',
+      );
+    }
+
+    final httpClient = client ?? http.Client();
+    try {
+      final requestUri = uri.replace(queryParameters: {
+        ...uri.queryParameters,
+        'action': 'getClasses',
+      });
+      final response = await httpClient.get(requestUri).timeout(const Duration(seconds: 12));
+      final decoded = _parseApiResponse(response);
+
+      final rawData = decoded['data'];
+      if (rawData is! List) {
+        throw const GoogleSheetException(
+          type: GoogleSheetErrorType.invalidSchema,
+          message: 'Dữ liệu danh sách lớp trả về không phải là danh sách.',
+        );
+      }
+
+      final classes = rawData
+          .map((item) => item?.toString().trim() ?? '')
+          .where((name) => name.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+
+      return classes;
+    } on GoogleSheetException {
+      rethrow;
+    } on SocketException catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Không thể kết nối đến Google Sheet. Vui lòng kiểm tra lại mạng internet.',
+        details: e,
+      );
+    } on TimeoutException catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Hết thời gian chờ phản hồi từ Google Sheet (timeout).',
+        details: e,
+      );
+    } catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Lỗi khi tải danh sách lớp: $e',
+        details: e,
+      );
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
+    }
+  }
+
   /// Lấy danh sách sinh viên theo lớp từ Google Sheet
   static Future<List<Student>> fetchStudents(
     String webAppUrl,

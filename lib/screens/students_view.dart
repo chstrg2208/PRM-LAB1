@@ -7,6 +7,10 @@ import '../widgets/status_badge.dart';
 class StudentsView extends StatefulWidget {
   final List<Student> students;
   final String currentClass;
+  final List<String> availableClasses;
+  final bool isLoadingClasses;
+  final String? classesError;
+  final VoidCallback? onRetryLoadClasses;
   final Function(List<Student>) onUpdateStudents;
   final Function(String) onClassChanged;
   final VoidCallback onSyncToSheet;
@@ -21,6 +25,10 @@ class StudentsView extends StatefulWidget {
     super.key,
     required this.students,
     required this.currentClass,
+    this.availableClasses = const [],
+    this.isLoadingClasses = false,
+    this.classesError,
+    this.onRetryLoadClasses,
     required this.onUpdateStudents,
     required this.onClassChanged,
     required this.onSyncToSheet,
@@ -339,18 +347,50 @@ class _StudentsViewState extends State<StudentsView> {
                   borderRadius: BirdleRadius.smBorder,
                   border: Border.all(color: BirdleColors.border),
                 ),
-                child: DropdownButton<String>(
-                  value: widget.currentClass,
-                  underline: const SizedBox(),
-                  isDense: true,
-                  style: const TextStyle(fontWeight: FontWeight.w600, color: BirdleColors.textPrimary, fontSize: 13),
-                  items: ['SE1801', 'SE1802', 'SE1803', 'IA1801', 'PRM392-Lab']
-                      .map((c) => DropdownMenuItem(value: c, child: Text('Lớp $c')))
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) widget.onClassChanged(val);
-                  },
-                ),
+                child: widget.isLoadingClasses
+                    ? const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(strokeWidth: 1.5, color: BirdleColors.textSecondary),
+                          ),
+                          SizedBox(width: 6),
+                          Text('Đang tải lớp...', style: TextStyle(fontSize: 12.5, color: BirdleColors.textMuted)),
+                        ],
+                      )
+                    : widget.classesError != null
+                        ? InkWell(
+                            onTap: widget.onRetryLoadClasses,
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.error_outline, size: 14, color: BirdleColors.danger),
+                                SizedBox(width: 4),
+                                Text('Lỗi tải lớp (Thử lại)', style: TextStyle(fontSize: 12, color: BirdleColors.danger, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          )
+                        : widget.availableClasses.isEmpty && widget.currentClass.isEmpty
+                            ? const Text('Chưa có lớp', style: TextStyle(fontSize: 12.5, color: BirdleColors.textMuted, fontStyle: FontStyle.italic))
+                            : DropdownButton<String>(
+                                value: (widget.availableClasses.contains(widget.currentClass) || widget.availableClasses.isEmpty) && widget.currentClass.isNotEmpty
+                                    ? widget.currentClass
+                                    : null,
+                                hint: const Text('Chọn lớp', style: TextStyle(fontSize: 13, color: BirdleColors.textMuted)),
+                                underline: const SizedBox(),
+                                isDense: true,
+                                style: const TextStyle(fontWeight: FontWeight.w600, color: BirdleColors.textPrimary, fontSize: 13),
+                                items: (widget.availableClasses.isNotEmpty ? widget.availableClasses : [widget.currentClass])
+                                    .map((c) => DropdownMenuItem(value: c, child: Text('Lớp $c')))
+                                    .toList(),
+                                onChanged: widget.availableClasses.isNotEmpty
+                                    ? (val) {
+                                        if (val != null) widget.onClassChanged(val);
+                                      }
+                                    : null,
+                              ),
               ),
               const SizedBox(width: 10),
               BirdleSecondaryButton(
@@ -406,6 +446,32 @@ class _StudentsViewState extends State<StudentsView> {
                                 )
                               : null,
                         )
+                      : (widget.classesError != null && widget.availableClasses.isEmpty && widget.students.isEmpty)
+                          ? BirdleEmptyState(
+                              icon: Icons.cloud_off,
+                              title: 'Không thể tải danh sách lớp học',
+                              description: widget.classesError!,
+                              action: widget.onRetryLoadClasses != null
+                                  ? BirdlePrimaryButton(
+                                      icon: Icons.refresh,
+                                      label: 'Thử lại',
+                                      onPressed: widget.onRetryLoadClasses,
+                                    )
+                                  : null,
+                            )
+                      : (!widget.isLoadingClasses && widget.classesError == null && widget.availableClasses.isEmpty && widget.students.isEmpty && widget.currentClass.isEmpty)
+                          ? BirdleEmptyState(
+                              icon: Icons.class_outlined,
+                              title: 'Không tìm thấy lớp học',
+                              description: 'Bảng tính Google Sheet hiện chưa có sheet lớp học nào (hoặc các sheet đều bị ẩn). Hãy tạo sheet lớp trên Google Sheet.',
+                              action: widget.onRetryLoadClasses != null
+                                  ? BirdlePrimaryButton(
+                                      icon: Icons.refresh,
+                                      label: 'Tải lại danh sách lớp',
+                                      onPressed: widget.onRetryLoadClasses,
+                                    )
+                                  : null,
+                            )
                       : (widget.errorMessage != null && widget.students.isEmpty)
                           ? BirdleEmptyState(
                               icon: Icons.cloud_off,

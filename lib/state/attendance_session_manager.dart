@@ -29,6 +29,7 @@ class OperationResult {
 /// Abstract API Client cho phép Dependency Injection và Unit Testing mà không gọi Google Apps Script thật
 abstract class AttendanceApiClient {
   Future<Map<String, dynamic>> testConnection(String sheetUrl);
+  Future<List<String>> fetchClasses(String sheetUrl);
   Future<List<Student>> fetchStudents(String sheetUrl, String className);
   Future<List<AttendanceRecord>> fetchAttendance(String sheetUrl, String className, String date, int slot);
   Future<Map<String, dynamic>> saveAttendance({
@@ -53,6 +54,10 @@ class DefaultAttendanceApiClient implements AttendanceApiClient {
   @override
   Future<Map<String, dynamic>> testConnection(String sheetUrl) =>
       GoogleSheetService.testConnection(sheetUrl);
+
+  @override
+  Future<List<String>> fetchClasses(String sheetUrl) =>
+      GoogleSheetService.fetchClasses(sheetUrl);
 
   @override
   Future<List<Student>> fetchStudents(String sheetUrl, String className) =>
@@ -101,6 +106,11 @@ class AttendanceSessionManager extends ChangeNotifier {
   final CsvExporter _csvExporter;
 
   String _currentClass;
+  List<String> _availableClasses = [];
+  bool _isLoadingClasses = false;
+  String? _classesError;
+  int _classesRequestId = 0;
+
   int _currentSlot;
   DateTime _currentDate;
   String _sheetUrl;
@@ -125,17 +135,22 @@ class AttendanceSessionManager extends ChangeNotifier {
     this.apiClient = const DefaultAttendanceApiClient(),
     CsvExporter? csvExporter,
     String initialClass = 'SE1801',
+    List<String> initialClasses = const [],
     int initialSlot = 1,
     DateTime? initialDate,
     String initialSheetUrl = '',
   })  : _csvExporter = csvExporter ?? CsvExportService.exportToFile,
         _currentClass = initialClass,
+        _availableClasses = List.from(initialClasses),
         _currentSlot = initialSlot,
         _currentDate = initialDate ?? DateTime.now(),
         _sheetUrl = initialSheetUrl;
 
   // Getters
   String get currentClass => _currentClass;
+  List<String> get availableClasses => List.unmodifiable(_availableClasses);
+  bool get isLoadingClasses => _isLoadingClasses;
+  String? get classesError => _classesError;
   int get currentSlot => _currentSlot;
   DateTime get currentDate => _currentDate;
   String get sheetUrl => _sheetUrl;
@@ -190,27 +205,103 @@ class AttendanceSessionManager extends ChangeNotifier {
       _isSheetConnected = false;
     }
 
-    await loadStudentsAndAttendance(isClassChange: true);
-    await loadAnalyticsLogs();
+    if (_isSheetConnected) {
+      await loadClasses(forceReloadDataIfClassMatches: true);
+    } else {
+      await loadStudentsAndAttendance(isClassChange: true);
+      await loadAnalyticsLogs();
+    }
 
     _isLoading = false;
     notifyListeners();
   }
 
+  /// Tải danh sách lớp hợp lệ từ Google Sheet
+  Future<void> loadClasses({bool forceReloadDataIfClassMatches = false}) async {
+    final cleanUrl = _sheetUrl.trim();
+    if (cleanUrl.isEmpty) {
+      _availableClasses = [];
+      _isLoadingClasses = false;
+      _classesError = null;
+      notifyListeners();
+      return;
+    }
+
+    final requestId = ++_classesRequestId;
+    _isLoadingClasses = true;
+    _classesError = null;
+    notifyListeners();
+
+    try {
+      final classes = await apiClient.fetchClasses(cleanUrl);
+
+      // Chống race condition khi URL đổi hoặc manager đã dispose
+      if (requestId != _classesRequestId || _disposed) return;
+
+      _availableClasses = classes;
+      _isLoadingClasses = false;
+      _classesError = null;
+
+      if (_availableClasses.isEmpty) {
+        // Nếu danh sách rỗng, không tự bịa lớp và không gọi tải/sync điểm danh với tên lớp rỗng
+        _currentClass = '';
+        _students = [];
+        _records = [];
+        _dataError = null;
+        notifyListeners();
+        return;
+      }
+
+      // Xử lý chọn lớp:
+      final classStillExists = _currentClass.isNotEmpty && _availableClasses.contains(_currentClass);
+      if (classStillExists) {
+        // Lớp đang chọn vẫn còn tồn tại: giữ nguyên!
+        // Không tự tải lại dữ liệu nếu lớp không đổi (tránh mất state đang nhập dở)
+        notifyListeners();
+        if (forceReloadDataIfClassMatches) {
+          await Future.wait([
+            loadStudentsAndAttendance(isClassChange: true),
+            loadAnalyticsLogs(_currentClass),
+          ]);
+        }
+      } else {
+        // Lớp hiện tại không còn tồn tại: chọn lớp đầu tiên một cách xác định
+        _currentClass = _availableClasses.first;
+        StorageService.setSelectedClass(_currentClass);
+        notifyListeners();
+        await Future.wait([
+          loadStudentsAndAttendance(isClassChange: true),
+          loadAnalyticsLogs(_currentClass),
+        ]);
+      }
+    } catch (e) {
+      if (requestId != _classesRequestId || _disposed) return;
+      _isLoadingClasses = false;
+      _classesError = e is GoogleSheetException ? e.message : 'Không thể tải danh sách lớp: $e';
+      notifyListeners();
+    }
+  }
+
   /// Chuyển lớp đang chọn và nạp lại dữ liệu
   Future<void> selectClass(String newClass) async {
-    if (_currentClass == newClass && _students.isNotEmpty) return;
-    _currentClass = newClass;
+    final trimmed = newClass.trim();
+    if (trimmed.isEmpty) return;
+    if (_availableClasses.isNotEmpty && !_availableClasses.contains(trimmed)) return;
+    if (_currentClass == trimmed && _students.isNotEmpty) return;
+
+    _currentClass = trimmed;
     _students = [];
     _records = [];
     _dataError = null;
     _isReloadError = false;
     notifyListeners();
 
-    StorageService.setSelectedClass(newClass);
+    if (_availableClasses.isEmpty || _availableClasses.contains(trimmed)) {
+      StorageService.setSelectedClass(trimmed);
+    }
     await Future.wait([
       loadStudentsAndAttendance(isClassChange: true),
-      loadAnalyticsLogs(newClass),
+      loadAnalyticsLogs(trimmed),
     ]);
   }
 
@@ -233,19 +324,25 @@ class AttendanceSessionManager extends ChangeNotifier {
   Future<void> setSheetUrl(String url) async {
     _sheetUrl = url;
     _isSheetConnected = url.trim().isNotEmpty;
+    _classesError = null;
+    _availableClasses = [];
     notifyListeners();
 
     StorageService.setGoogleSheetUrl(url);
-    await Future.wait([
-      loadStudentsAndAttendance(isClassChange: true),
-      loadAnalyticsLogs(),
-    ]);
+    if (_isSheetConnected) {
+      await loadClasses(forceReloadDataIfClassMatches: true);
+    } else {
+      _currentClass = '';
+      _students = [];
+      _records = [];
+      notifyListeners();
+    }
   }
 
   /// Tải danh sách sinh viên và bản ghi điểm danh với cơ chế chống race condition
   Future<String?> loadStudentsAndAttendance({bool isClassChange = false}) async {
     final cleanUrl = _sheetUrl.trim();
-    if (cleanUrl.isEmpty) {
+    if (cleanUrl.isEmpty || _currentClass.trim().isEmpty) {
       _students = [];
       _records = [];
       _isLoading = false;
@@ -328,9 +425,9 @@ class AttendanceSessionManager extends ChangeNotifier {
 
   /// Nạp logs lịch sử điểm danh với cơ chế chống race condition
   Future<void> loadAnalyticsLogs([String? targetClass]) async {
-    final className = targetClass ?? _currentClass;
-    if (_sheetUrl.isEmpty) {
-      _analyticsStatus = AnalyticsDataStatus.unconfigured;
+    final className = (targetClass ?? _currentClass).trim();
+    if (_sheetUrl.isEmpty || className.isEmpty) {
+      _analyticsStatus = _sheetUrl.isEmpty ? AnalyticsDataStatus.unconfigured : AnalyticsDataStatus.empty;
       _historyLogs = [];
       _analyticsError = null;
       _isLoadingAnalytics = false;

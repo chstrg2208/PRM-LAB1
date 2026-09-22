@@ -11,6 +11,9 @@ class FakeAttendanceApiClient implements AttendanceApiClient {
   Future<Map<String, dynamic>> testConnection(String sheetUrl) async => {'success': true};
 
   @override
+  Future<List<String>> fetchClasses(String sheetUrl) async => ['SE1801'];
+
+  @override
   Future<List<Student>> fetchStudents(String sheetUrl, String className) async => [];
 
   @override
