@@ -772,6 +772,7 @@ function doPost(e) {
       _updateClassMatrixAttendance(ss, className, body.sessionNumber || slot, records);
 
       return ContentService.createTextOutput(JSON.stringify({
+        success: true,
         status: 'success',
         message: 'Đã lưu ' + newRows.length + ' bản ghi điểm danh vào Google Sheet!',
         className: className,
@@ -1336,6 +1337,29 @@ function _handleStudentCheckIn(ss, params) {
         headerRowIdx = r;
         break;
       }
+    }
+
+    // Kiểm tra trạng thái buổi học trên Metadata Dòng 1-4 (Chống gian lận khi đã chốt điểm danh)
+    var isSessionClosed = false;
+    for (var mr = 0; mr < headerRowIdx; mr++) {
+      var rArr = cData[mr];
+      for (var mc = 0; mc < rArr.length; mc++) {
+        var lbl = (rArr[mc] || '').toString().trim().toUpperCase();
+        var val = (rArr[mc + 1] !== undefined) ? rArr[mc + 1].toString().trim() : '';
+        if (lbl.indexOf('TRẠNG THÁI') >= 0 || lbl.indexOf('STATUS') >= 0) {
+          if (val === 'Đã điểm danh' || val.toLowerCase() === 'done' || val.toLowerCase() === 'completed') {
+            isSessionClosed = true;
+          }
+        }
+      }
+    }
+
+    if (isSessionClosed && params.force !== 'true' && params.reopen !== 'true') {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        status: 'error',
+        message: 'Buổi học này đã hoàn tất điểm danh QR. Sinh viên không thể tự quét mã nữa! Vui lòng liên hệ trực tiếp Giảng viên để được hỗ trợ.'
+      })).setMimeType(ContentService.MimeType.JSON);
     }
 
     var headerRow = cData[headerRowIdx] || [];

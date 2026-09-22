@@ -149,6 +149,9 @@ class AttendanceSessionManager extends ChangeNotifier {
   bool _isLoadingTodayClasses = false;
   QrAttendanceSession? _activeQrSession;
   int _currentSessionNumber = 1;
+  bool _isQrCompleted = false;
+  bool _isReopenedQr = false;
+  String _sheetSessionStatus = '';
 
   AttendanceSessionManager({
     this.apiClient = const DefaultAttendanceApiClient(),
@@ -189,6 +192,29 @@ class AttendanceSessionManager extends ChangeNotifier {
     final sessionDayStart = DateTime(_currentDate.year, _currentDate.month, _currentDate.day);
     return sessionDayStart.isAfter(todayStart);
   }
+
+  /// Buổi học đã hoàn tất điểm danh (đã lưu lên Sheet hoặc đã hoàn tất phiên QR)
+  bool get isSessionCompleted {
+    if (_isQrCompleted) return true;
+    final statusLower = _sheetSessionStatus.trim().toLowerCase();
+    if (statusLower == 'đã điểm danh' || statusLower == 'done' || statusLower == 'completed') {
+      return true;
+    }
+    if (_records.isNotEmpty && _records.every((r) => r.status != AttendanceStatus.notYet)) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Nút điểm danh QR có bị khóa chống gian lận hay không
+  bool get isQrAttendanceLocked {
+    if (isSessionDateLocked) return true;
+    if (isSessionCompleted && !_isReopenedQr) return true;
+    return false;
+  }
+
+  /// Phiên QR đang mở lại hay không
+  bool get isReopenedQr => _isReopenedQr;
 
   List<Map<String, dynamic>> get todayClasses => List.unmodifiable(_todayClasses);
   bool get isLoadingTodayClasses => _isLoadingTodayClasses;
@@ -468,8 +494,12 @@ class AttendanceSessionManager extends ChangeNotifier {
   }
 
   /// Khởi tạo phiên điểm danh QR động 30s
-  QrAttendanceSession? startQrAttendanceSession({int? sessionNumber}) {
+  QrAttendanceSession? startQrAttendanceSession({int? sessionNumber, bool forceReopen = false}) {
     if (isSessionDateLocked) return null;
+    if (isQrAttendanceLocked && !forceReopen) return null;
+    if (forceReopen) {
+      _isReopenedQr = true;
+    }
     final sessNo = sessionNumber ?? _currentSessionNumber;
     _activeQrSession = QrAttendanceSession(
       sessionId: '${_currentClass}_slot${_currentSlot}_buoi$sessNo',
@@ -481,6 +511,12 @@ class AttendanceSessionManager extends ChangeNotifier {
     );
     notifyListeners();
     return _activeQrSession;
+  }
+
+  /// Mở lại phiên điểm danh QR (cho phép giảng viên kích hoạt lại khi có sự cố)
+  QrAttendanceSession? reopenQrAttendanceSession({int? sessionNumber}) {
+    _isReopenedQr = true;
+    return startQrAttendanceSession(sessionNumber: sessionNumber, forceReopen: true);
   }
 
   /// Lấy danh sách email sinh viên đã quét mã QR thành công từ backend
@@ -530,6 +566,9 @@ class AttendanceSessionManager extends ChangeNotifier {
     }
 
     _activeQrSession = null;
+    _isQrCompleted = true;
+    _isReopenedQr = false;
+    _sheetSessionStatus = 'Đã điểm danh';
     notifyListeners();
   }
 
@@ -623,6 +662,16 @@ class AttendanceSessionManager extends ChangeNotifier {
       _isLoading = false;
       _dataError = null;
       _isReloadError = false;
+
+      final hasCompletedAttendance = records.isNotEmpty &&
+          records.any((r) => r.status == AttendanceStatus.present || r.status == AttendanceStatus.absent);
+      if (hasCompletedAttendance) {
+        _isQrCompleted = true;
+      } else {
+        _isQrCompleted = false;
+      }
+      _isReopenedQr = false;
+
       notifyListeners();
       return null;
     } catch (e) {
@@ -764,6 +813,9 @@ class AttendanceSessionManager extends ChangeNotifier {
 
       final isSuccess = result['success'] == true;
       if (isSuccess) {
+        _isQrCompleted = true;
+        _isReopenedQr = false;
+        _sheetSessionStatus = 'Đã điểm danh';
         await Future.wait([
           loadAnalyticsLogs(),
           loadTodayClasses(),
