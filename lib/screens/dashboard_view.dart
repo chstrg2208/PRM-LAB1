@@ -186,6 +186,82 @@ class DashboardView extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+
+          // Attendance Health Bar (Thanh sức khỏe chuyên cần lớp học)
+          BirdleCard(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.health_and_safety_outlined, size: 17, color: BirdleColors.brand),
+                    const SizedBox(width: 8),
+                    const Text('Sức khỏe chuyên cần lớp học (FPT Attendance Health)', style: BirdleTypography.cardTitle),
+                    const Spacer(),
+                    Text(
+                      'Lớp $currentClass · Tổng $totalStudents sinh viên',
+                      style: BirdleTypography.metadata,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: SizedBox(
+                    height: 10,
+                    child: totalStudents == 0
+                        ? Container(color: BirdleColors.surfaceSecondary)
+                        : Row(
+                            children: [
+                              if (safeStudents.isNotEmpty)
+                                Expanded(
+                                  flex: safeStudents.length,
+                                  child: Container(color: BirdleColors.success),
+                                ),
+                              if (warningStudents.isNotEmpty)
+                                Expanded(
+                                  flex: warningStudents.length,
+                                  child: Container(color: BirdleColors.warning),
+                                ),
+                              if (bannedStudents.isNotEmpty)
+                                Expanded(
+                                  flex: bannedStudents.length,
+                                  child: Container(color: BirdleColors.danger),
+                                ),
+                            ],
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (totalStudents == 0)
+                  const Text(
+                    'Chưa có dữ liệu sinh viên cho lớp này.',
+                    style: TextStyle(fontSize: 12, color: BirdleColors.textMuted, fontStyle: FontStyle.italic),
+                  )
+                else
+                  Wrap(
+                    spacing: 24,
+                    runSpacing: 8,
+                    children: [
+                      _buildLegendDot(
+                        BirdleColors.success,
+                        'An toàn (<15% vắng): ${safeStudents.length} SV (${((safeStudents.length / totalStudents) * 100).toStringAsFixed(1)}%)',
+                      ),
+                      _buildLegendDot(
+                        BirdleColors.warning,
+                        'Nguy cơ (15-20% vắng): ${warningStudents.length} SV (${((warningStudents.length / totalStudents) * 100).toStringAsFixed(1)}%)',
+                      ),
+                      _buildLegendDot(
+                        BirdleColors.danger,
+                        'Cấm thi (>20% vắng): ${bannedStudents.length} SV (${((bannedStudents.length / totalStudents) * 100).toStringAsFixed(1)}%)',
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
           const SizedBox(height: 24),
 
           // Khối hiển thị Lịch dạy hôm nay theo chuẩn 4 Slot FPT
@@ -708,6 +784,21 @@ class DashboardView extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildLegendDot(Color color, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(text, style: BirdleTypography.metadata),
+      ],
     );
   }
 }
