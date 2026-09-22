@@ -46,7 +46,7 @@ function doGet(e) {
         var givenName = row[4] ? row[4].toString().trim() : '';
         
         // Tạo fullName tự động từ các trường họ tên
-        var nameParts = [code, surname, middleName, givenName].filter(function(p) { return p && p.length > 0; });
+        var nameParts = [surname, middleName, givenName].map(function(p) { return p ? p.trim() : ''; }).filter(function(p) { return p.length > 0; });
         var fullName = nameParts.join(' ');
         if (!fullName || fullName.trim() === '') {
           fullName = 'Sinh viên ' + member;
