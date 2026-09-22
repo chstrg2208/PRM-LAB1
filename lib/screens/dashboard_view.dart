@@ -15,6 +15,8 @@ class DashboardView extends StatelessWidget {
   final DateTime currentDate;
   final bool isSheetConnected;
   final List<Map<String, dynamic>> todayClasses;
+  final List<String> availableClasses;
+  final ValueChanged<String>? onClassChanged;
   final void Function(String className, int slot)? onSelectClassAndSlot;
   final VoidCallback onGoToAttendance;
   final VoidCallback onGoToFapSync;
@@ -29,6 +31,8 @@ class DashboardView extends StatelessWidget {
     required this.currentDate,
     required this.isSheetConnected,
     this.todayClasses = const [],
+    this.availableClasses = const [],
+    this.onClassChanged,
     this.onSelectClassAndSlot,
     required this.onGoToAttendance,
     required this.onGoToFapSync,
@@ -71,6 +75,43 @@ class DashboardView extends StatelessWidget {
                   ],
                 ),
               ),
+
+              // Class Dropdown Selector
+              Container(
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: BirdleColors.surface,
+                  borderRadius: BirdleRadius.smBorder,
+                  border: Border.all(color: BirdleColors.border),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.school_outlined, size: 17, color: BirdleColors.brand),
+                    const SizedBox(width: 8),
+                    DropdownButton<String>(
+                      value: (availableClasses.contains(currentClass) || availableClasses.isEmpty) && currentClass.isNotEmpty
+                          ? currentClass
+                          : null,
+                      hint: const Text('Chọn lớp', style: TextStyle(fontSize: 13, color: BirdleColors.textMuted)),
+                      underline: const SizedBox(),
+                      isDense: true,
+                      style: const TextStyle(fontWeight: FontWeight.w600, color: BirdleColors.textPrimary, fontSize: 13),
+                      items: (availableClasses.isNotEmpty ? availableClasses : [currentClass])
+                          .map((c) => DropdownMenuItem(value: c, child: Text('Lớp $c')))
+                          .toList(),
+                      onChanged: availableClasses.isNotEmpty && onClassChanged != null
+                          ? (val) {
+                              if (val != null) onClassChanged!(val);
+                            }
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+
               BirdleSecondaryButton(
                 icon: Icons.file_upload_outlined,
                 label: 'Import from FAP',
