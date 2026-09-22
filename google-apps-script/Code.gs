@@ -22,59 +22,226 @@ function doGet(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  // 2. Lấy danh sách sinh viên theo lớp (Cấu trúc: MEMBER, CODE, SURNAME, MIDDLE NAME, GIVEN NAME)
+  // 2. Lấy danh sách sinh viên theo lớp (Hỗ trợ cấu trúc Metadata Dòng 1-4 và Dynamic Column Mapping)
   if (action === 'getStudents') {
-    var className = e.parameter.className || 'SE1801';
-    var sheet = ss.getSheetByName(className);
-    
+    var reqName = (e.parameter.className || e.parameter.tabName || 'SE1801').toString().trim();
+    var sheet = ss.getSheetByName(reqName);
+
+    // Nếu chưa tìm thấy chính xác, thử tìm sheet bắt đầu bằng reqName + '_' (ví dụ SE1801 -> SE1801_PRM393)
+    if (!sheet) {
+      var allSheets = ss.getSheets();
+      for (var sIdx = 0; sIdx < allSheets.length; sIdx++) {
+        var sName = allSheets[sIdx].getName();
+        if (sName.toLowerCase() === reqName.toLowerCase() ||
+            sName.toLowerCase().indexOf(reqName.toLowerCase() + '_') === 0 ||
+            reqName.toLowerCase().indexOf(sName.toLowerCase() + '_') === 0) {
+          sheet = allSheets[sIdx];
+          break;
+        }
+      }
+    }
+
     // Nếu chưa có sheet cho lớp này, tự động khởi tạo sheet chuẩn
     if (!sheet) {
-      sheet = _createSampleClassSheet(ss, className);
+      sheet = _createSampleClassSheet(ss, reqName);
     }
 
     var data = sheet.getDataRange().getValues();
     var students = [];
+    var meta = {
+      subject: '',
+      room: '',
+      days: '',
+      slot: 1,
+      slotTime: '',
+      startDate: '',
+      currentSession: 1,
+      totalSessions: 20,
+      nextDate: '',
+      sessionStatus: 'Chưa điểm danh'
+    };
 
-    // Bỏ qua dòng tiêu đề (index 0)
-    for (var i = 1; i < data.length; i++) {
-      var row = data[i];
-      if (row[0] && row[0].toString().trim() !== '') {
-        var member = row[0].toString().trim();
-        var code = row[1] ? row[1].toString().trim() : '';
-        var surname = row[2] ? row[2].toString().trim() : '';
-        var middleName = row[3] ? row[3].toString().trim() : '';
-        var givenName = row[4] ? row[4].toString().trim() : '';
-        
-        // Tạo fullName tự động từ các trường họ tên
-        var nameParts = [surname, middleName, givenName].map(function(p) { return p ? p.trim() : ''; }).filter(function(p) { return p.length > 0; });
-        var fullName = nameParts.join(' ');
-        if (!fullName || fullName.trim() === '') {
-          fullName = 'Sinh viên ' + member;
-        }
-
-        var totalSlots = row[5] ? parseInt(row[5]) : 20;
-        var absentSlots = row[6] ? parseInt(row[6]) : 0;
-        var email = row[7] ? row[7].toString().trim() : (member.toLowerCase() + '@fpt.edu.vn');
-
-        students.push({
-          member: member,
-          rollNumber: member,
-          code: code,
-          surname: surname,
-          middleName: middleName,
-          givenName: givenName,
-          fullName: fullName,
-          email: email,
-          className: className,
-          totalSlots: totalSlots,
-          absentSlots: absentSlots
-        });
+    // 1. Tìm dòng Header (dòng chứa MSSV / ROLLNUMBER / MEMBER / CODE / STUDENT ID)
+    var headerRowIdx = -1;
+    for (var r = 0; r < Math.min(data.length, 7); r++) {
+      var rowStr = data[r].map(function(c) { return (c || '').toString().trim().toUpperCase(); }).join(' ');
+      if (rowStr.indexOf('MSSV') >= 0 || rowStr.indexOf('ROLLNUMBER') >= 0 || rowStr.indexOf('MEMBER') >= 0 || rowStr.indexOf('MÃ SV') >= 0 || rowStr.indexOf('MÃ SINH VIÊN') >= 0 || rowStr.indexOf('STUDENT ID') >= 0) {
+        headerRowIdx = r;
+        break;
       }
+    }
+
+    // 2. Nếu dòng Header nằm ở dòng > 0 (ví dụ dòng 5, index 4): Đọc metadata từ các dòng trước
+    if (headerRowIdx > 0) {
+      for (var mRow = 0; mRow < headerRowIdx; mRow++) {
+        var rData = data[mRow];
+        for (var c = 0; c < rData.length; c++) {
+          var label = (rData[c] || '').toString().trim().toUpperCase();
+          var val = (rData[c + 1] !== undefined) ? rData[c + 1].toString().trim() : '';
+
+          if (label.indexOf('MÔN HỌC') >= 0 || label.indexOf('SUBJECT') >= 0) {
+            meta.subject = val;
+          } else if (label.indexOf('LỊCH') >= 0 || label.indexOf('SLOT') >= 0) {
+            var dMatch = val.match(/(T[2-7]-T[2-7])/i);
+            if (dMatch) meta.days = dMatch[1].toUpperCase();
+            var sMatch = val.match(/Slot\s*([1-6])/i);
+            if (sMatch) meta.slot = parseInt(sMatch[1]);
+            var tMatch = val.match(/\(([^)]+)\)/);
+            if (tMatch) meta.slotTime = tMatch[1];
+          } else if (label.indexOf('PHÒNG') >= 0 || label.indexOf('ROOM') >= 0) {
+            meta.room = val;
+          } else if (label.indexOf('NGÀY BẮT ĐẦU') >= 0 || label.indexOf('START DATE') >= 0) {
+            meta.startDate = val;
+          } else if (label.indexOf('BUỔI HIỆN TẠI') >= 0 || label.indexOf('CURRENT SESSION') >= 0) {
+            var currMatch = val.match(/(\d+)/);
+            if (currMatch) meta.currentSession = parseInt(currMatch[1]);
+          } else if (label.indexOf('TỔNG SỐ BUỔI') >= 0 || label.indexOf('TOTAL SESSIONS') >= 0) {
+            var totMatch = val.match(/(\d+)/);
+            if (totMatch) meta.totalSessions = parseInt(totMatch[1]);
+          } else if (label.indexOf('NGÀY HỌC TIẾP THEO') >= 0 || label.indexOf('NEXT DATE') >= 0 || label.indexOf('NEXT CLASS') >= 0) {
+            meta.nextDate = val;
+          } else if (label.indexOf('TRẠNG THÁI') >= 0 || label.indexOf('STATUS') >= 0) {
+            meta.sessionStatus = val;
+          }
+        }
+      }
+    } else {
+      headerRowIdx = 0; // Legacy sheet format
+    }
+
+    // 3. Dynamic Column Header Mapping trên dòng tiêu đề
+    var headerRow = data[headerRowIdx] || [];
+    var colMap = {
+      mssv: -1,
+      member: -1,
+      code: -1,
+      surname: -1,
+      middleName: -1,
+      givenName: -1,
+      fullName: -1,
+      email: -1,
+      totalSlots: -1,
+      absentSlots: -1,
+      slots20: {} // map 1..20
+    };
+
+    for (var colIdx = 0; colIdx < headerRow.length; colIdx++) {
+      var colName = (headerRow[colIdx] || '').toString().trim().toUpperCase();
+      if (!colName) continue;
+
+      if (colMap.code === -1 && (colName === 'CODE' || colName === 'STUDENTCODE' || colName === 'STUDENT CODE')) {
+        colMap.code = colIdx;
+      }
+      if (colMap.member === -1 && (colName === 'MEMBER' || colName === 'ROLLNUMBER' || colName === 'ROLL NUMBER')) {
+        colMap.member = colIdx;
+      }
+
+      if (colMap.mssv === -1 && (colName === 'MSSV' || colName === 'MÃ SINH VIÊN' || colName === 'MÃ SV' || colName === 'ROLLNUMBER' || colName === 'MEMBER' || colName === 'CODE' || colName === 'STUDENT ID' || colName === 'STUDENTCODE')) {
+        colMap.mssv = colIdx;
+      } else if (colMap.surname === -1 && (colName === 'HỌ' || colName === 'SURNAME' || colName === 'HO' || colName === 'LAST NAME')) {
+        colMap.surname = colIdx;
+      } else if (colMap.middleName === -1 && (colName === 'TÊN ĐỆM' || colName === 'MIDDLE NAME' || colName === 'TEN DEM' || colName === 'MIDDLENAME')) {
+        colMap.middleName = colIdx;
+      } else if (colMap.givenName === -1 && (colName === 'TÊN' || colName === 'GIVEN NAME' || colName === 'FIRST NAME' || colName === 'TEN' || colName === 'GIVENNAME') && colName !== 'TÊN ĐỆM') {
+        colMap.givenName = colIdx;
+      } else if (colMap.fullName === -1 && (colName === 'HỌ VÀ TÊN' || colName === 'FULL NAME' || colName === 'FULLNAME' || colName === 'NAME')) {
+        colMap.fullName = colIdx;
+      } else if (colMap.email === -1 && (colName === 'EMAIL' || colName === 'THƯ ĐIỆN TỬ' || colName === 'MAIL')) {
+        colMap.email = colIdx;
+      } else if (colMap.totalSlots === -1 && (colName === 'TỔNG BUỔI' || colName === 'TOTAL SLOTS' || colName === 'TOTAL' || colName === 'TỔNG TIẾT')) {
+        colMap.totalSlots = colIdx;
+      } else if (colMap.absentSlots === -1 && (colName === 'VẮNG' || colName === 'ABSENT' || colName === 'ABSENT SLOTS' || colName === 'SỐ BUỔI VẮNG')) {
+        colMap.absentSlots = colIdx;
+      }
+
+      // Check slot column B1..B20 hoặc SLOT 1..SLOT 20
+      var bMatch = colName.match(/^B([1-9]|1[0-9]|20)$/i);
+      if (bMatch) {
+        colMap.slots20[parseInt(bMatch[1])] = colIdx;
+      } else {
+        var slotMatch = colName.match(/^SLOT\s*([1-9]|1[0-9]|20)$/i);
+        if (slotMatch) {
+          colMap.slots20[parseInt(slotMatch[1])] = colIdx;
+        }
+      }
+    }
+
+    if (colMap.mssv === -1) colMap.mssv = 0;
+
+    // 4. Đọc từng dòng dữ liệu sinh viên
+    for (var i = headerRowIdx + 1; i < data.length; i++) {
+      var row = data[i];
+      var code = (colMap.code >= 0 && row[colMap.code] !== undefined) ? row[colMap.code].toString().trim() : '';
+      var member = (colMap.member >= 0 && row[colMap.member] !== undefined) ? row[colMap.member].toString().trim() : '';
+      var mssv = (colMap.mssv >= 0 && row[colMap.mssv] !== undefined) ? row[colMap.mssv].toString().trim() : '';
+      if (!mssv) mssv = code || member;
+      if (!code) code = mssv;
+      if (!member) member = mssv;
+      if (!mssv) continue;
+
+      var surname = (colMap.surname >= 0 && row[colMap.surname] !== undefined) ? row[colMap.surname].toString().trim() : '';
+      var middleName = (colMap.middleName >= 0 && row[colMap.middleName] !== undefined) ? row[colMap.middleName].toString().trim() : '';
+      var givenName = (colMap.givenName >= 0 && row[colMap.givenName] !== undefined) ? row[colMap.givenName].toString().trim() : '';
+      var rawFullName = (colMap.fullName >= 0 && row[colMap.fullName] !== undefined) ? row[colMap.fullName].toString().trim() : '';
+
+      var fullName = '';
+      if (surname || middleName || givenName) {
+        var nameParts = [surname, middleName, givenName].filter(function(p) { return p && p.length > 0; });
+        fullName = nameParts.join(' ');
+      } else if (rawFullName) {
+        fullName = rawFullName;
+      } else {
+        fullName = 'Sinh viên ' + mssv;
+      }
+
+      var email = (colMap.email >= 0 && row[colMap.email] !== undefined && row[colMap.email].toString().trim() !== '')
+        ? row[colMap.email].toString().trim()
+        : (mssv.toLowerCase() + '@fpt.edu.vn');
+
+      var totalSlots = (colMap.totalSlots >= 0 && row[colMap.totalSlots]) ? parseInt(row[colMap.totalSlots]) : (meta.totalSessions || 20);
+      var absentSlots = (colMap.absentSlots >= 0 && row[colMap.absentSlots]) ? parseInt(row[colMap.absentSlots]) : 0;
+
+      // Đọc trạng thái 20 slot (B1..B20)
+      var slots20 = [];
+      for (var sn = 1; sn <= 20; sn++) {
+        var sCol = colMap.slots20[sn];
+        if (sCol !== undefined && sCol >= 0 && row[sCol] !== undefined) {
+          slots20.push(row[sCol].toString().trim());
+        } else {
+          slots20.push('');
+        }
+      }
+
+      students.push({
+        member: member,
+        rollNumber: mssv,
+        code: code,
+        surname: surname,
+        middleName: middleName,
+        givenName: givenName,
+        fullName: fullName,
+        email: email,
+        className: sheet.getName(),
+        totalSlots: totalSlots,
+        absentSlots: absentSlots,
+        slots20: slots20
+      });
     }
 
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success',
-      className: className,
+      success: true,
+      className: sheet.getName(),
+      subject: meta.subject,
+      room: meta.room,
+      days: meta.days,
+      slot: meta.slot,
+      slotTime: meta.slotTime || _getFptSlotTime(meta.slot),
+      startDate: meta.startDate,
+      currentSession: meta.currentSession,
+      totalSessions: meta.totalSessions,
+      nextDate: meta.nextDate,
+      sessionStatus: meta.sessionStatus,
       total: students.length,
       data: students
     })).setMimeType(ContentService.MimeType.JSON);
@@ -122,8 +289,12 @@ function doGet(e) {
     if (logSheet) {
       var allLogs = logSheet.getDataRange().getValues();
       for (var m = 1; m < allLogs.length; m++) {
-        var l = allLogs[m];
-        if (!targetClass || l[1] === targetClass) {
+        var logClass = (l[1] || '').toString().trim();
+        var targetStr = (targetClass || '').toString().trim();
+        var isClassMatch = !targetStr ||
+                           logClass === targetStr ||
+                           logClass.split('_')[0].toUpperCase() === targetStr.split('_')[0].toUpperCase();
+        if (isClassMatch) {
           logs.push({
             timestamp: l[0],
             className: l[1],
@@ -195,6 +366,249 @@ function doGet(e) {
     }
   }
 
+  // 5. Lấy danh sách lớp có tiết học hôm nay theo quy tắc FPT (4 slot, T2-T5 / T3-T6 / T4-T7)
+  if (action === 'getTodayClasses') {
+    try {
+      var targetDateStr = (e.parameter.date || '').toString().trim();
+      var targetDate = targetDateStr ? new Date(targetDateStr) : new Date();
+      var weekday = targetDate.getDay(); // 0 = Chủ Nhật, 1 = Thứ Hai ... 6 = Thứ Bảy
+
+      var scheduleSheet = _getOrCreateSchedulesSheet(ss);
+      var schedData = scheduleSheet.getDataRange().getValues();
+      var logSheet = ss.getSheetByName('Attendance_Logs');
+      var logValues = logSheet ? logSheet.getDataRange().getValues() : [];
+
+      var y = targetDate.getFullYear();
+      var m = ('0' + (targetDate.getMonth() + 1)).slice(-2);
+      var d = ('0' + targetDate.getDate()).slice(-2);
+      var isoDate = y + '-' + m + '-' + d;
+
+      var todayClasses = [];
+      var seenClasses = {};
+
+      // 1. Quét trực tiếp các Sheet lớp để lấy metadata từ Dòng 1-4 (Single Source of Truth)
+      var allSheets = ss.getSheets();
+      for (var sh = 0; sh < allSheets.length; sh++) {
+        var aSheet = allSheets[sh];
+        if (typeof aSheet.isSheetHidden === 'function' && aSheet.isSheetHidden()) continue;
+        var sName = aSheet.getName() ? aSheet.getName().trim() : '';
+        if (!sName || sName.indexOf('_') === 0 || sName.indexOf('.') === 0 || sName.toLowerCase() === 'attendance_logs') continue;
+
+        var sData = aSheet.getDataRange().getValues();
+        if (sData.length < 5) continue;
+
+        // Kiểm tra xem Dòng 1-4 có chứa metadata không
+        var row0Str = sData[0].join(' ').toUpperCase();
+        var row1Str = sData[1].join(' ').toUpperCase();
+        if (row0Str.indexOf('MÔN HỌC') >= 0 || row1Str.indexOf('LỊCH') >= 0 || row1Str.indexOf('SLOT') >= 0) {
+          var sMeta = {
+            subject: '',
+            days: '',
+            slot: 1,
+            room: 'NVH-601',
+            startDate: '2026-09-07',
+            currentSession: 1,
+            totalSessions: 20,
+            nextDate: '',
+            sessionStatus: 'Chưa điểm danh'
+          };
+
+          for (var mr = 0; mr < 4; mr++) {
+            var rArr = sData[mr];
+            for (var mc = 0; mc < rArr.length; mc++) {
+              var lbl = (rArr[mc] || '').toString().trim().toUpperCase();
+              var val = (rArr[mc + 1] !== undefined) ? rArr[mc + 1].toString().trim() : '';
+              if (lbl.indexOf('MÔN HỌC') >= 0 || lbl.indexOf('SUBJECT') >= 0) sMeta.subject = val;
+              else if (lbl.indexOf('LỊCH') >= 0 || lbl.indexOf('SLOT') >= 0) {
+                var dm = val.match(/(T[2-7]-T[2-7])/i);
+                if (dm) sMeta.days = dm[1].toUpperCase();
+                var sm = val.match(/Slot\s*([1-6])/i);
+                if (sm) sMeta.slot = parseInt(sm[1]);
+              } else if (lbl.indexOf('PHÒNG') >= 0 || lbl.indexOf('ROOM') >= 0) sMeta.room = val;
+              else if (lbl.indexOf('NGÀY BẮT ĐẦU') >= 0 || lbl.indexOf('START DATE') >= 0) sMeta.startDate = val;
+              else if (lbl.indexOf('BUỔI HIỆN TẠI') >= 0) {
+                var csm = val.match(/(\d+)/);
+                if (csm) sMeta.currentSession = parseInt(csm[1]);
+              } else if (lbl.indexOf('TỔNG SỐ BUỔI') >= 0) {
+                var tsm = val.match(/(\d+)/);
+                if (tsm) sMeta.totalSessions = parseInt(tsm[1]);
+              } else if (lbl.indexOf('NGÀY HỌC TIẾP THEO') >= 0 || lbl.indexOf('NEXT DATE') >= 0) sMeta.nextDate = val;
+              else if (lbl.indexOf('TRẠNG THÁI') >= 0 || lbl.indexOf('STATUS') >= 0) sMeta.sessionStatus = val;
+            }
+          }
+
+          var isMatch = false;
+          var days = sMeta.days || 'T2-T5';
+          if (days.indexOf('T2') >= 0 && days.indexOf('T5') >= 0 && (weekday === 1 || weekday === 4)) isMatch = true;
+          if (days.indexOf('T3') >= 0 && days.indexOf('T6') >= 0 && (weekday === 2 || weekday === 5)) isMatch = true;
+          if (days.indexOf('T4') >= 0 && days.indexOf('T7') >= 0 && (weekday === 3 || weekday === 6)) isMatch = true;
+
+          // Khớp thêm ngày học tiếp theo
+          if (sMeta.nextDate) {
+            var ndParts = sMeta.nextDate.split(/[\/\-]/);
+            if (ndParts.length === 3) {
+              var ndIso = ndParts[2].length === 4 ? (ndParts[2] + '-' + ndParts[1] + '-' + ndParts[0]) : sMeta.nextDate;
+              if (ndIso === isoDate || sMeta.nextDate === (d + '/' + m + '/' + y)) {
+                isMatch = true;
+              }
+            }
+          }
+
+          if (isMatch) {
+            var parts = sName.split('_');
+            var subCode = parts[1] || (sMeta.subject.split(' - ')[0] || 'PRM393');
+            var stuCount = Math.max(0, sData.length - 5);
+
+            var isDone = (sMeta.sessionStatus === 'Đã điểm danh');
+            for (var lg = 1; lg < logValues.length; lg++) {
+              if (logValues[lg][1] === sName && logValues[lg][2] === isoDate && parseInt(logValues[lg][3]) === sMeta.slot) {
+                isDone = true;
+                break;
+              }
+            }
+
+            seenClasses[sName] = true;
+            todayClasses.push({
+              className: sName,
+              subjectCode: subCode,
+              slot: sMeta.slot,
+              slotTime: _getFptSlotTime(sMeta.slot),
+              daysOfWeek: days,
+              room: sMeta.room,
+              sessionNumber: sMeta.currentSession,
+              totalSessions: sMeta.totalSessions,
+              totalStudents: stuCount,
+              isAttendanceDone: isDone,
+              date: isoDate,
+              nextDate: sMeta.nextDate
+            });
+          }
+        }
+      }
+
+      // 2. Fallback nếu các sheet chưa có metadata Dòng 1-4: Quét sheet _Class_Schedules
+      if (todayClasses.length === 0) {
+        var scheduleSheet = ss.getSheetByName('_Class_Schedules');
+        if (scheduleSheet) {
+          var schedData = scheduleSheet.getDataRange().getValues();
+          for (var sIdx = 1; sIdx < schedData.length; sIdx++) {
+            var sRow = schedData[sIdx];
+            if (!sRow[0] || sRow[0].toString().trim() === '') continue;
+            var cName = sRow[0].toString().trim();
+            if (seenClasses[cName]) continue;
+            var subCode = sRow[1] ? sRow[1].toString().trim() : 'PRM393';
+            var slotNum = sRow[2] ? parseInt(sRow[2]) : 1;
+            var days = sRow[3] ? sRow[3].toString().trim().toUpperCase() : 'T2-T5';
+            var room = sRow[4] ? sRow[4].toString().trim() : 'NVH-601';
+            var startStr = sRow[5] ? sRow[5].toString().trim() : '2026-09-07';
+            var totalSess = sRow[6] ? parseInt(sRow[6]) : 20;
+
+            var isMatchDay = false;
+            if (days.indexOf('T2') >= 0 && days.indexOf('T5') >= 0 && (weekday === 1 || weekday === 4)) isMatchDay = true;
+            if (days.indexOf('T3') >= 0 && days.indexOf('T6') >= 0 && (weekday === 2 || weekday === 5)) isMatchDay = true;
+            if (days.indexOf('T4') >= 0 && days.indexOf('T7') >= 0 && (weekday === 3 || weekday === 6)) isMatchDay = true;
+
+            if (isMatchDay) {
+              var sessNo = _calcSessionNo(startStr, targetDate, days, totalSess);
+              var isDone = false;
+              for (var lg = 1; lg < logValues.length; lg++) {
+                if (logValues[lg][1] === cName && logValues[lg][2] === isoDate && parseInt(logValues[lg][3]) === slotNum) {
+                  isDone = true;
+                  break;
+                }
+              }
+
+              var cSheet = ss.getSheetByName(cName);
+              var stuCount = cSheet ? Math.max(0, cSheet.getLastRow() - 1) : 0;
+
+              todayClasses.push({
+                className: cName,
+                subjectCode: subCode,
+                slot: slotNum,
+                slotTime: _getFptSlotTime(slotNum),
+                daysOfWeek: days,
+                room: room,
+                sessionNumber: sessNo,
+                totalSessions: totalSess,
+                totalStudents: stuCount,
+                isAttendanceDone: isDone,
+                date: isoDate
+              });
+            }
+          }
+        }
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        status: 'success',
+        date: isoDate,
+        total: todayClasses.length,
+        data: todayClasses
+      })).setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        status: 'error',
+        message: 'Lỗi khi lấy danh sách tiết học hôm nay: ' + err.toString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  // 6. Lấy toàn bộ danh sách cấu hình lịch học
+  if (action === 'getClassSchedules') {
+    try {
+      var sSheet = _getOrCreateSchedulesSheet(ss);
+      var sData = sSheet.getDataRange().getValues();
+      var schedules = [];
+      for (var k = 1; k < sData.length; k++) {
+        var r = sData[k];
+        if (r[0] && r[0].toString().trim() !== '') {
+          schedules.push({
+            className: r[0].toString().trim(),
+            subjectCode: r[1] ? r[1].toString().trim() : 'PRM393',
+            slot: r[2] ? parseInt(r[2]) : 1,
+            daysOfWeek: r[3] ? r[3].toString().trim() : 'T2-T5',
+            room: r[4] ? r[4].toString().trim() : 'BE-302',
+            startDate: r[5] ? r[5].toString().trim() : '2026-09-01',
+            totalSessions: r[6] ? parseInt(r[6]) : 20
+          });
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        status: 'success',
+        total: schedules.length,
+        data: schedules
+      })).setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        status: 'error',
+        message: 'Lỗi tải danh sách lịch học: ' + err.toString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  // 7. Giao diện Web Form điểm danh khi sinh viên quét mã QR trên điện thoại
+  if (action === 'checkinForm') {
+    var cNameParam = (e.parameter.class || 'SE1801').toString().trim();
+    var slotParam = (e.parameter.slot || '1').toString().trim();
+    var sessParam = (e.parameter.session || '1').toString().trim();
+    var tokenParam = (e.parameter.token || '').toString().trim();
+    return _renderCheckInHtml(cNameParam, slotParam, sessParam, tokenParam);
+  }
+
+  // 8. API Sinh viên check-in bằng Email FPT
+  if (action === 'studentCheckIn') {
+    return _handleStudentCheckIn(ss, e.parameter);
+  }
+
+  // 9. API Lấy danh sách email đã quét QR thành công của phiên
+  if (action === 'getQrStatus') {
+    return _handleGetQrStatus(ss, e.parameter);
+  }
+
   return ContentService.createTextOutput(JSON.stringify({
     status: 'error',
     message: 'Yêu cầu GET không hợp lệ!'
@@ -234,6 +648,7 @@ function doPost(e) {
       var date = (body.date || '').toString().trim();
       var slot = parseInt(body.slot, 10);
       var records = body.records;
+      var bypassDateLock = body.bypassDateLock === true;
 
       // Validation các trường bắt buộc
       if (!className) {
@@ -259,6 +674,25 @@ function doPost(e) {
           status: 'error',
           message: 'Danh sách bản ghi điểm danh không hợp lệ (records)!'
         })).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      // Date Lock Validation: Chỉ cho phép điểm danh sau 00:00 của ngày học (date <= today GMT+7)
+      if (!bypassDateLock && date) {
+        var todayGmt7 = (typeof Utilities !== 'undefined')
+          ? Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd')
+          : (function() {
+              var nowUtc = new Date();
+              var gmt7 = new Date(nowUtc.getTime() + 7 * 3600 * 1000);
+              return gmt7.toISOString().slice(0, 10);
+            })();
+        var dateNorm = _normalizeDateToIso(date);
+        if (dateNorm && dateNorm > todayGmt7) {
+          return ContentService.createTextOutput(JSON.stringify({
+            status: 'error',
+            error: 'date_locked',
+            message: 'Buổi học ngày ' + date + ' chưa diễn ra! Chỉ được phép điểm danh sau 00:00 ngày học.'
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
       }
 
       var logSheet = ss.getSheetByName('Attendance_Logs');
@@ -300,7 +734,11 @@ function doPost(e) {
         var member = (rec.rollNumber || rec.member || '').toString().trim().toUpperCase();
         if (!member) continue;
 
-        var status = (rec.status || 'present').toString().trim().toLowerCase();
+        var status = (rec.status || 'notyet').toString().trim().toLowerCase();
+        // Không lưu các bản ghi notyet hoặc chưa điểm danh vào Attendance_Logs
+        if (status === 'notyet' || status === 'not yet' || status === 'chưa điểm danh' || status === '' || status === '-') {
+          continue;
+        }
         var note = (rec.note || '').toString().trim();
 
         newRows.push([
@@ -329,6 +767,9 @@ function doPost(e) {
 
       // Tính lại chính xác số buổi vắng (ABSENT) từ Attendance_Logs cho sheet lớp
       _recalculateClassAbsentCount(ss, className, logSheet);
+
+      // Cập nhật trực tiếp ma trận điểm danh 20 buổi (B1..B20) trong sheet lớp
+      _updateClassMatrixAttendance(ss, className, body.sessionNumber || slot, records);
 
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
@@ -467,30 +908,654 @@ function _updateStudentAbsentCount(ss, className, records) {
   _recalculateClassAbsentCount(ss, className, logSheet);
 }
 
-// Tự tạo sheet mẫu cho lớp với cấu trúc theo đúng ảnh
+// Cập nhật trực tiếp ma trận điểm danh 20 buổi (B1..B20) và cột VẮNG trong sheet lớp
+function _updateClassMatrixAttendance(ss, className, sessionNum, records) {
+  try {
+    var sheet = ss.getSheetByName(className);
+    if (!sheet) {
+      var allSheets = ss.getSheets();
+      for (var sIdx = 0; sIdx < allSheets.length; sIdx++) {
+        var sName = allSheets[sIdx].getName();
+        if (sName.toLowerCase() === className.toLowerCase() ||
+            sName.toLowerCase().indexOf(className.toLowerCase() + '_') === 0 ||
+            className.toLowerCase().indexOf(sName.toLowerCase() + '_') === 0) {
+          sheet = allSheets[sIdx];
+          break;
+        }
+      }
+    }
+    if (!sheet) return;
+
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return;
+
+    // Tìm dòng header
+    var headerRowIdx = -1;
+    for (var r = 0; r < Math.min(data.length, 7); r++) {
+      var rowStr = data[r].map(function(c) { return (c || '').toString().trim().toUpperCase(); }).join(' ');
+      if (rowStr.indexOf('MSSV') >= 0 || rowStr.indexOf('ROLLNUMBER') >= 0 || rowStr.indexOf('MEMBER') >= 0 || rowStr.indexOf('STUDENT ID') >= 0) {
+        headerRowIdx = r;
+        break;
+      }
+    }
+    if (headerRowIdx < 0) return;
+
+    var headerRow = data[headerRowIdx];
+    var mssvCol = -1;
+    var absentCol = -1;
+    var sessionCol = -1;
+    var slotCols = {};
+
+    for (var c = 0; c < headerRow.length; c++) {
+      var hName = (headerRow[c] || '').toString().trim().toUpperCase();
+      if (mssvCol === -1 && (hName === 'MSSV' || hName === 'ROLLNUMBER' || hName === 'MEMBER' || hName === 'CODE' || hName === 'STUDENT ID')) {
+        mssvCol = c;
+      } else if (absentCol === -1 && (hName === 'VẮNG' || hName === 'ABSENT' || hName === 'SỐ BUỔI VẮNG')) {
+        absentCol = c;
+      }
+
+      var bMatch = hName.match(/^B([1-9]|1[0-9]|20)$/i);
+      if (bMatch) {
+        var sNum = parseInt(bMatch[1]);
+        slotCols[sNum] = c;
+        if (sNum === parseInt(sessionNum)) {
+          sessionCol = c;
+        }
+      }
+    }
+
+    if (mssvCol < 0) return;
+
+    // Map records theo rollNumber/member
+    var statusMap = {};
+    for (var i = 0; i < records.length; i++) {
+      var rec = records[i];
+      var rId = (rec.rollNumber || rec.member || '').toString().trim().toUpperCase();
+      var st = (rec.status || 'notyet').toString().trim().toLowerCase();
+      var codeVal = '';
+      if (st === 'present' || st === 'có mặt' || st === 'p') codeVal = 'P';
+      else if (st === 'absent' || st === 'vắng' || st === 'a') codeVal = 'A';
+      else if (st === 'late' || st === 'muộn' || st === 'l') codeVal = 'L';
+      else codeVal = ''; // notyet / chưa điểm danh -> RỖNG ""
+      statusMap[rId] = codeVal;
+    }
+
+    // Cập nhật từng sinh viên
+    for (var row = headerRowIdx + 1; row < data.length; row++) {
+      var sId = (data[row][mssvCol] || '').toString().trim().toUpperCase();
+      if (!sId) continue;
+
+      var newCode = statusMap[sId];
+      if (sessionCol >= 0 && newCode !== undefined) {
+        data[row][sessionCol] = newCode;
+        sheet.getRange(row + 1, sessionCol + 1).setValue(newCode);
+      }
+
+      // Đếm lại số buổi vắng 'A' trong các cột slotCols nếu sheet có các cột slot
+      if (absentCol >= 0 && Object.keys(slotCols).length > 0) {
+        var aCount = 0;
+        for (var s = 1; s <= 20; s++) {
+          var colIdx = slotCols[s];
+          if (colIdx !== undefined && colIdx >= 0) {
+            var val = (data[row][colIdx] || '').toString().trim().toUpperCase();
+            if (val === 'A' || val === 'VẮNG' || val === 'ABSENT') {
+              aCount++;
+            }
+          }
+        }
+        sheet.getRange(row + 1, absentCol + 1).setValue(aCount);
+      }
+    }
+
+    // Kiểm tra xem buổi học này có ít nhất 1 sinh viên thực sự được điểm danh (P, A, L) không
+    var hasActualAttendance = false;
+    for (var k in statusMap) {
+      if (statusMap[k] === 'P' || statusMap[k] === 'A' || statusMap[k] === 'L') {
+        hasActualAttendance = true;
+        break;
+      }
+    }
+
+    // Đánh dấu trạng thái buổi là Đã điểm danh và tự động cập nhật Ngày học tiếp theo nếu có điểm danh thực tế
+    if (headerRowIdx > 0) {
+      if (hasActualAttendance) {
+        for (var mr = 0; mr < headerRowIdx; mr++) {
+          for (var mc = 0; mc < data[mr].length; mc++) {
+            var lbl = (data[mr][mc] || '').toString().trim().toUpperCase();
+            if (lbl.indexOf('TRẠNG THÁI') >= 0 || lbl.indexOf('STATUS') >= 0) {
+              sheet.getRange(mr + 1, mc + 2).setValue('Đã điểm danh');
+              break;
+            }
+          }
+        }
+        _advanceSessionAndNextDate(sheet, headerRowIdx, data, sessionNum);
+      }
+    }
+  } catch (_) {}
+}
+
+// Chuẩn hóa chuỗi ngày sang định dạng YYYY-MM-DD
+function _normalizeDateToIso(dateStr) {
+  if (!dateStr) return '';
+  var s = dateStr.toString().trim();
+  var mIso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (mIso) {
+    var y = mIso[1];
+    var m = ('0' + mIso[2]).slice(-2);
+    var d = ('0' + mIso[3]).slice(-2);
+    return y + '-' + m + '-' + d;
+  }
+  var mDmY = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (mDmY) {
+    var d2 = ('0' + mDmY[1]).slice(-2);
+    var m2 = ('0' + mDmY[2]).slice(-2);
+    var y2 = mDmY[3];
+    return y2 + '-' + m2 + '-' + d2;
+  }
+  return s;
+}
+
+// Tự động chuyển đổi Ngày tiếp theo và tăng Buổi học sau khi lưu điểm danh thành công
+function _advanceSessionAndNextDate(sheet, headerRowIdx, data, sessionNum) {
+  try {
+    var days = 'T2-T5';
+    var nextDateRow = -1;
+    var nextDateCol = -1;
+    var currentNextDateStr = '';
+    var sessRow = -1;
+    var sessCol = -1;
+    var totalSess = 20;
+
+    for (var r = 0; r < headerRowIdx; r++) {
+      for (var c = 0; c < data[r].length; c++) {
+        var cell = (data[r][c] || '').toString().trim().toUpperCase();
+        if (cell.indexOf('LỊCH') >= 0 || cell.indexOf('DAYS') >= 0) {
+          var val = (data[r][c + 1] || '').toString().trim().toUpperCase();
+          if (val.indexOf('T3-T6') >= 0) days = 'T3-T6';
+          else if (val.indexOf('T4-T7') >= 0) days = 'T4-T7';
+          else if (val.indexOf('T2-T5') >= 0) days = 'T2-T5';
+        }
+        if (cell.indexOf('NGÀY HỌC TIẾP THEO') >= 0 || cell.indexOf('NEXT DATE') >= 0 || cell.indexOf('NEXT CLASS') >= 0) {
+          nextDateRow = r;
+          nextDateCol = c + 1;
+          currentNextDateStr = (data[r][c + 1] || '').toString().trim();
+        }
+        if (cell.indexOf('BUỔI HIỆN TẠI') >= 0 || cell.indexOf('CURRENT SESSION') >= 0) {
+          sessRow = r;
+          sessCol = c + 1;
+        }
+        if (cell.indexOf('TỔNG SỐ BUỔI') >= 0 || cell.indexOf('TOTAL SESSIONS') >= 0) {
+          var parsedTot = parseInt((data[r][c + 1] || '').toString().trim(), 10);
+          if (!isNaN(parsedTot) && parsedTot > 0) totalSess = parsedTot;
+        }
+      }
+    }
+
+    // 1. Cập nhật buổi hiện tại tăng lên 1 (nếu chưa vượt totalSess)
+    var currentSessNum = parseInt(sessionNum, 10);
+    if (isNaN(currentSessNum) || currentSessNum <= 0) currentSessNum = 1;
+    var nextSessNum = Math.min(currentSessNum + 1, totalSess);
+    if (sessRow >= 0 && sessCol >= 0) {
+      sheet.getRange(sessRow + 1, sessCol + 1).setValue(nextSessNum + ' / ' + totalSess);
+    }
+
+    // 2. Tính ngày tiếp theo từ currentNextDateStr hoặc ngày hôm nay
+    var baseDate = new Date();
+    if (currentNextDateStr) {
+      var iso = _normalizeDateToIso(currentNextDateStr);
+      if (iso) {
+        var dp = iso.split('-');
+        baseDate = new Date(parseInt(dp[0]), parseInt(dp[1]) - 1, parseInt(dp[2]));
+      }
+    }
+
+    var nextDateObj = _calculateNextFptDate(baseDate, days);
+    var dStr = ('0' + nextDateObj.getDate()).slice(-2);
+    var mStr = ('0' + (nextDateObj.getMonth() + 1)).slice(-2);
+    var yStr = nextDateObj.getFullYear();
+    var nextDateFormatted = dStr + '/' + mStr + '/' + yStr;
+
+    if (nextDateRow >= 0 && nextDateCol >= 0) {
+      sheet.getRange(nextDateRow + 1, nextDateCol + 1).setValue(nextDateFormatted);
+    }
+  } catch (_) {}
+}
+
+function _calculateNextFptDate(fromDate, daysPattern) {
+  var d = new Date(fromDate.getTime());
+  var dayOfWeek = d.getDay(); // 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat
+  var daysToAdd = 3;
+
+  var upperDays = (daysPattern || 'T2-T5').toUpperCase();
+
+  if (upperDays.indexOf('T2-T5') >= 0) {
+    if (dayOfWeek === 1) daysToAdd = 3; // Monday -> Thursday (+3)
+    else if (dayOfWeek === 4) daysToAdd = 4; // Thursday -> Monday (+4)
+    else if (dayOfWeek < 1) daysToAdd = 1; // Sun -> Mon
+    else if (dayOfWeek < 4) daysToAdd = 4 - dayOfWeek; // Tue/Wed -> Thu
+    else daysToAdd = 8 - dayOfWeek; // Fri/Sat -> next Mon
+  } else if (upperDays.indexOf('T3-T6') >= 0) {
+    if (dayOfWeek === 2) daysToAdd = 3; // Tuesday -> Friday (+3)
+    else if (dayOfWeek === 5) daysToAdd = 4; // Friday -> Tuesday (+4)
+    else if (dayOfWeek < 2) daysToAdd = 2 - dayOfWeek; // Sun/Mon -> Tue
+    else if (dayOfWeek < 5) daysToAdd = 5 - dayOfWeek; // Wed/Thu -> Fri
+    else daysToAdd = 9 - dayOfWeek; // Sat -> next Tue
+  } else if (upperDays.indexOf('T4-T7') >= 0) {
+    if (dayOfWeek === 3) daysToAdd = 3; // Wednesday -> Saturday (+3)
+    else if (dayOfWeek === 6) daysToAdd = 4; // Saturday -> Wednesday (+4)
+    else if (dayOfWeek < 3) daysToAdd = 3 - dayOfWeek;
+    else if (dayOfWeek < 6) daysToAdd = 6 - dayOfWeek;
+    else daysToAdd = 10 - dayOfWeek;
+  }
+
+  d.setDate(d.getDate() + daysToAdd);
+  return d;
+}
+
+// Tự tạo sheet mẫu cho lớp với cấu trúc chuẩn FPT (Metadata Dòng 1-4, Header Dòng 5)
 function _createSampleClassSheet(ss, className) {
   var sheet = ss.insertSheet(className);
-  var headers = ['MEMBER', 'CODE', 'SURNAME', 'MIDDLE NAME', 'GIVEN NAME', 'TOTAL SLOTS', 'ABSENT', 'EMAIL'];
+
+  var parts = className.split('_');
+  var subCode = parts[1] || 'PRM393';
+
+  var metaRows = [
+    ['Môn học:', subCode + ' - Lập trình Di động', 'Buổi hiện tại:', '1 / 20'],
+    ['Lịch & Slot:', 'T2-T5 | Slot 1 (07:00 - 09:15)', 'Ngày học tiếp theo:', '22/09/2026'],
+    ['Phòng học:', 'NVH-611', 'Trạng thái buổi:', 'Chưa điểm danh'],
+    ['Ngày bắt đầu:', '07/09/2026', 'Tổng số buổi:', 20]
+  ];
+  sheet.getRange(1, 1, 4, 4).setValues(metaRows);
+
+  var headers = ['STT', 'MSSV', 'HỌ', 'TÊN ĐỆM', 'TÊN', 'EMAIL', 'TỔNG BUỔI', 'VẮNG'];
+  for (var b = 1; b <= 20; b++) headers.push('B' + b);
   sheet.appendRow(headers);
 
-  var hRange = sheet.getRange(1, 1, 1, headers.length);
-  hRange.setBackground('#6366F1');
+  var hRange = sheet.getRange(5, 1, 1, headers.length);
+  hRange.setBackground('#059669');
   hRange.setFontColor('#FFFFFF');
   hRange.setFontWeight('bold');
 
-  // Dữ liệu mẫu thực tế, bao gồm CE190585 Lâm Quốc Minh từ ảnh yêu cầu
   var sampleData = [
-    ['CE190585', 'Lâm', 'Quốc', 'Minh', '', 20, 1, 'minhlqce190585@fpt.edu.vn'],
-    ['SE170123', 'Nguyễn', 'Văn', 'An', '', 20, 2, 'annvse170123@fpt.edu.vn'],
-    ['SE170456', 'Trần', 'Thị', 'Bình', '', 20, 0, 'binhttse170456@fpt.edu.vn'],
-    ['SE170789', 'Lê', 'Hoàng', 'Cường', '', 20, 3, 'cuonglhse170789@fpt.edu.vn'],
-    ['SE171012', 'Phạm', 'Minh', 'Đức', '', 20, 5, 'ducpmse171012@fpt.edu.vn'], // 5/20 = 25% -> FAIL ATTENDANCE (CẤM THI)
-    ['SE171345', 'Vũ', 'Hải', 'Đăng', '', 20, 4, 'dangvhse171345@fpt.edu.vn'], // 4/20 = 20% -> FAIL ATTENDANCE (CẤM THI)
-    ['HE160234', 'Đỗ', 'Thùy', 'Linh', '', 20, 0, 'linhdthe160234@fpt.edu.vn'],
-    ['HE160567', 'Ngô', 'Quốc', 'Nam', '', 20, 1, 'namnqhe160567@fpt.edu.vn'],
-    ['IA160890', 'Hoàng', 'Mai', 'Phương', '', 20, 6, 'phuonghmia160890@fpt.edu.vn'] // 6/20 = 30% -> FAIL ATTENDANCE
+    [1, 'CE190585', 'Lâm', 'Quốc', 'Minh', 'minhlqce190585@fpt.edu.vn', 20, 0],
+    [2, 'SE170125', 'Nguyễn', 'Văn', 'An', 'anvse170125@fpt.edu.vn', 20, 1],
+    [3, 'SE170456', 'Trần', 'Thị', 'Bình', 'binhttse170456@fpt.edu.vn', 20, 0],
+    [4, 'SE170789', 'Lê', 'Hoàng', 'Cương', 'cuonglhse170789@fpt.edu.vn', 20, 3],
+    [5, 'SE171012', 'Phạm', 'Minh', 'Đức', 'ducpmse171012@fpt.edu.vn', 20, 4],
+    [6, 'SE171345', 'Vũ', 'Hải', 'Đăng', 'dangvhse171345@fpt.edu.vn', 20, 2],
+    [7, 'SE160234', 'Đỗ', 'Thùy', 'Linh', 'linhdthse160234@fpt.edu.vn', 20, 0],
+    [8, 'SE160567', 'Ngô', 'Quốc', 'Nam', 'namngqse160567@fpt.edu.vn', 20, 1],
+    [9, 'IA160090', 'Hoàng', 'Mai', 'Phương', 'phuonghmia160090@fpt.edu.vn', 20, 5]
   ];
 
-  sheet.getRange(2, 1, sampleData.length, headers.length).setValues(sampleData);
+  var paddedData = [];
+  for (var i = 0; i < sampleData.length; i++) {
+    var pRow = sampleData[i].slice();
+    for (var sl = 0; sl < 20; sl++) pRow.push('');
+    paddedData.push(pRow);
+  }
+
+  sheet.getRange(6, 1, paddedData.length, headers.length).setValues(paddedData);
   return sheet;
 }
+
+// Khung giờ 4 Slot chuẩn FPT (135 phút/tiết)
+function _getFptSlotTime(slot) {
+  switch (parseInt(slot)) {
+    case 1: return '07:00 - 09:15';
+    case 2: return '09:30 - 11:45';
+    case 3: return '12:30 - 14:45';
+    case 4: return '15:00 - 17:15';
+    case 5: return '17:30 - 19:45';
+    case 6: return '20:00 - 22:15';
+    default: return 'Slot ' + slot;
+  }
+}
+
+// Tính số thứ tự buổi học (1..20) dựa trên ngày bắt đầu và cặp ngày học
+function _calcSessionNo(startDateStr, targetDate, daysOfWeek, totalSessions) {
+  try {
+    var start = new Date(startDateStr);
+    var target = new Date(targetDate);
+    start.setHours(0, 0, 0, 0);
+    target.setHours(0, 0, 0, 0);
+    if (target < start) return 1;
+
+    var days = (daysOfWeek || 'T2-T5').toUpperCase();
+    var allowedWeekdays = [];
+    if (days.indexOf('T2') >= 0 && days.indexOf('T5') >= 0) allowedWeekdays = [1, 4];
+    else if (days.indexOf('T3') >= 0 && days.indexOf('T6') >= 0) allowedWeekdays = [2, 5];
+    else if (days.indexOf('T4') >= 0 && days.indexOf('T7') >= 0) allowedWeekdays = [3, 6];
+    else allowedWeekdays = [1, 4];
+
+    var count = 0;
+    var cur = new Date(start.getTime());
+    while (cur <= target) {
+      if (allowedWeekdays.indexOf(cur.getDay()) >= 0) {
+        count++;
+        if (count >= totalSessions) return totalSessions;
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return count > 0 ? count : 1;
+  } catch (_) {
+    return 1;
+  }
+}
+
+// Quản lý hoặc tự tạo sheet cấu hình lịch học _Class_Schedules
+function _getOrCreateSchedulesSheet(ss) {
+  var sheet = ss.getSheetByName('_Class_Schedules');
+  if (!sheet) {
+    sheet = ss.insertSheet('_Class_Schedules');
+    var headers = ['CLASS_NAME', 'SUBJECT_CODE', 'SLOT', 'DAYS_OF_WEEK', 'ROOM', 'START_DATE', 'TOTAL_SESSIONS'];
+    sheet.appendRow(headers);
+    var hRange = sheet.getRange(1, 1, 1, headers.length);
+    hRange.setBackground('#0D9488');
+    hRange.setFontColor('#FFFFFF');
+    hRange.setFontWeight('bold');
+
+    var sampleRows = [
+      ['SE1801', 'PRM393', 1, 'T2-T5', 'BE-302', '2026-09-01', 20],
+      ['IA1601', 'PRM393', 2, 'T3-T6', 'BE-304', '2026-09-01', 20]
+    ];
+    sheet.getRange(2, 1, sampleRows.length, headers.length).setValues(sampleRows);
+  }
+  return sheet;
+}
+
+// Quản lý hoặc tự tạo sheet lưu check-in QR tạm thời _Qr_CheckIns
+function _getOrCreateQrCheckInsSheet(ss) {
+  var sheet = ss.getSheetByName('_Qr_CheckIns');
+  if (!sheet) {
+    sheet = ss.insertSheet('_Qr_CheckIns');
+    var headers = ['TIMESTAMP', 'CLASS_NAME', 'DATE', 'SLOT', 'SESSION_NO', 'EMAIL', 'STUDENT_NAME', 'TOKEN'];
+    sheet.appendRow(headers);
+    var hRange = sheet.getRange(1, 1, 1, headers.length);
+    hRange.setBackground('#F59E0B');
+    hRange.setFontColor('#FFFFFF');
+    hRange.setFontWeight('bold');
+  }
+  return sheet;
+}
+
+// Xử lý khi sinh viên gửi yêu cầu check-in bằng Email (Hỗ trợ OAuth Google & Email FPT)
+function _handleStudentCheckIn(ss, params) {
+  try {
+    var cName = (params.className || params.class || '').toString().trim();
+    var oauthEmail = '';
+    try {
+      if (typeof Session !== 'undefined' && Session.getActiveUser) {
+        oauthEmail = Session.getActiveUser().getEmail() || '';
+      }
+    } catch (e) {}
+
+    var email = (params.email || oauthEmail || '').toString().trim().toLowerCase();
+    var slot = parseInt(params.slot || '1', 10);
+    var sessionNo = parseInt(params.session || '1', 10);
+    var date = (params.date || '').toString().trim();
+    var token = (params.token || '').toString().trim();
+
+    if (!cName || !email) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        status: 'error',
+        message: 'Thiếu thông tin lớp học hoặc email đăng nhập OAuth!'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var cSheet = ss.getSheetByName(cName);
+    // Hỗ trợ tìm sheet thông minh theo prefix (SE1801 -> SE1801_PRM393)
+    if (!cSheet) {
+      var allSheets = ss.getSheets();
+      for (var sIdx = 0; sIdx < allSheets.length; sIdx++) {
+        var sName = allSheets[sIdx].getName();
+        if (sName.toLowerCase() === cName.toLowerCase() ||
+            sName.toLowerCase().indexOf(cName.toLowerCase() + '_') === 0 ||
+            cName.toLowerCase().indexOf(sName.toLowerCase() + '_') === 0) {
+          cSheet = allSheets[sIdx];
+          cName = sName;
+          break;
+        }
+      }
+    }
+
+    if (!cSheet) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        status: 'error',
+        message: 'Lớp ' + cName + ' không tồn tại trong hệ thống!'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var cData = cSheet.getDataRange().getValues();
+    var headerRowIdx = 0;
+    for (var r = 0; r < Math.min(cData.length, 7); r++) {
+      var rowStr = cData[r].map(function(c) { return (c || '').toString().trim().toUpperCase(); }).join(' ');
+      if (rowStr.indexOf('MSSV') >= 0 || rowStr.indexOf('ROLLNUMBER') >= 0 || rowStr.indexOf('MEMBER') >= 0 || rowStr.indexOf('MÃ SV') >= 0 || rowStr.indexOf('CODE') >= 0) {
+        headerRowIdx = r;
+        break;
+      }
+    }
+
+    var headerRow = cData[headerRowIdx] || [];
+    var mssvCol = -1, emailCol = -1, hoCol = -1, demCol = -1, tenCol = -1, fullNameCol = -1;
+    for (var h = 0; h < headerRow.length; h++) {
+      var hText = (headerRow[h] || '').toString().trim().toUpperCase();
+      if (hText === 'EMAIL') {
+        emailCol = h;
+      } else if (hText === 'MSSV' || hText === 'MÃ SV' || hText === 'MÃ SINH VIÊN' || hText === 'ROLLNUMBER' || hText === 'MEMBER' || hText === 'CODE') {
+        if (mssvCol === -1) mssvCol = h;
+      } else if (hText === 'HỌ' || hText === 'SURNAME') {
+        hoCol = h;
+      } else if (hText === 'TÊN ĐỆM' || hText === 'MIDDLE NAME') {
+        demCol = h;
+      } else if (hText === 'TÊN' || hText === 'GIVEN NAME' || hText === 'FIRST NAME') {
+        tenCol = h;
+      } else if (hText === 'HỌ VÀ TÊN' || hText === 'FULL NAME' || hText === 'STUDENT NAME') {
+        fullNameCol = h;
+      }
+    }
+
+    var studentFound = null;
+    for (var i = headerRowIdx + 1; i < cData.length; i++) {
+      var row = cData[i];
+      var rowEmail = (emailCol >= 0 && row[emailCol] !== undefined) ? row[emailCol].toString().trim().toLowerCase() : '';
+      var mssv = (mssvCol >= 0 && row[mssvCol] !== undefined) ? row[mssvCol].toString().trim() : '';
+      var defEmail = mssv ? (mssv.toLowerCase() + '@fpt.edu.vn') : '';
+
+      if ((rowEmail && rowEmail === email) || (defEmail && defEmail === email)) {
+        var fName = '';
+        if (fullNameCol >= 0 && row[fullNameCol]) {
+          fName = row[fullNameCol].toString().trim();
+        } else {
+          var p1 = (hoCol >= 0 && row[hoCol]) ? row[hoCol].toString().trim() : '';
+          var p2 = (demCol >= 0 && row[demCol]) ? row[demCol].toString().trim() : '';
+          var p3 = (tenCol >= 0 && row[tenCol]) ? row[tenCol].toString().trim() : '';
+          fName = [p1, p2, p3].filter(function(x) { return x.length > 0; }).join(' ');
+        }
+        studentFound = {
+          rollNumber: mssv,
+          member: mssv,
+          fullName: fName || ('Sinh viên ' + mssv),
+          email: rowEmail || email
+        };
+        break;
+      }
+    }
+
+    if (!studentFound) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        status: 'error',
+        message: 'Email ' + email + ' không có trong danh sách sinh viên lớp ' + cName + '!'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Ghi nhận vào sheet lưu check-in tạm _Qr_CheckIns
+    var qrSheet = _getOrCreateQrCheckInsSheet(ss);
+    var qrData = qrSheet.getDataRange().getValues();
+    var nowIso = new Date().toISOString();
+    var todayStr = date || nowIso.slice(0, 10);
+
+    // Kiểm tra xem đã check-in chưa
+    var alreadyCheckedIn = false;
+    for (var q = 1; q < qrData.length; q++) {
+      var qRow = qrData[q];
+      if (qRow[1] === cName && qRow[2] === todayStr && parseInt(qRow[3]) === slot && (qRow[5] || '').toString().toLowerCase() === email) {
+        alreadyCheckedIn = true;
+        break;
+      }
+    }
+
+    if (!alreadyCheckedIn) {
+      qrSheet.appendRow([nowIso, cName, todayStr, slot, sessionNo, email, studentFound.fullName, token]);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      status: 'success',
+      message: 'Điểm danh thành công (Có mặt)!',
+      data: {
+        student: studentFound,
+        className: cName,
+        slot: slot,
+        sessionNumber: sessionNo,
+        alreadyCheckedIn: alreadyCheckedIn
+      }
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      status: 'error',
+      message: 'Lỗi điểm danh: ' + err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// Lấy danh sách email đã quét QR trong phiên
+function _handleGetQrStatus(ss, params) {
+  try {
+    var cName = (params.className || params.class || '').toString().trim();
+    var slot = parseInt(params.slot || '1', 10);
+    var date = (params.date || new Date().toISOString().slice(0, 10)).toString().trim();
+
+    var qrSheet = ss.getSheetByName('_Qr_CheckIns');
+    var checkedInList = [];
+    if (qrSheet) {
+      var data = qrSheet.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        var r = data[i];
+        var rClass = (r[1] || '').toString().trim();
+        var matchClass = (rClass.toLowerCase() === cName.toLowerCase() ||
+                          rClass.toLowerCase().indexOf(cName.toLowerCase() + '_') === 0 ||
+                          cName.toLowerCase().indexOf(rClass.toLowerCase() + '_') === 0);
+        if (matchClass && r[2] === date && parseInt(r[3]) === slot) {
+          checkedInList.push({
+            email: (r[5] || '').toString().trim().toLowerCase(),
+            name: r[6] || '',
+            timestamp: r[0] || ''
+          });
+        }
+      }
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      status: 'success',
+      total: checkedInList.length,
+      data: checkedInList
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      status: 'error',
+      message: 'Lỗi lấy trạng thái QR: ' + err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// Render Web Page cho sinh viên quét mã QR (Hỗ trợ xác thực OAuth Google Account)
+function _renderCheckInHtml(className, slot, sessionNo, token) {
+  var oauthEmail = '';
+  try {
+    if (typeof Session !== 'undefined' && Session.getActiveUser) {
+      oauthEmail = Session.getActiveUser().getEmail() || '';
+    }
+  } catch (e) {}
+
+  var html = '<!DOCTYPE html>' +
+    '<html lang="vi">' +
+    '<head>' +
+    '  <meta charset="utf-8">' +
+    '  <meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+    '  <title>FAP Attendance - Điểm Danh QR</title>' +
+    '  <style>' +
+    '    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0F172A; color: #F8FAFC; margin: 0; padding: 24px 16px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }' +
+    '    .card { background: #1E293B; border: 1px solid #334155; border-radius: 16px; padding: 28px 24px; max-width: 420px; width: 100%; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }' +
+    '    .badge { display: inline-block; background: #0D9488; color: white; padding: 4px 12px; border-radius: 9999px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }' +
+    '    h1 { font-size: 22px; margin: 0 0 8px 0; color: #F8FAFC; font-weight: 700; }' +
+    '    .meta { color: #94A3B8; font-size: 14px; margin-bottom: 24px; line-height: 1.5; }' +
+    '    .oauth-box { background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 10px; padding: 12px 14px; font-size: 13px; color: #93C5FD; margin-bottom: 18px; }' +
+    '    label { display: block; font-size: 13px; font-weight: 600; color: #CBD5E1; margin-bottom: 8px; }' +
+    '    input { width: 100%; padding: 14px 16px; background: #0F172A; border: 1px solid #475569; border-radius: 10px; color: white; font-size: 15px; box-sizing: border-box; margin-bottom: 20px; outline: none; transition: border-color 0.2s; }' +
+    '    input:focus { border-color: #14B8A6; }' +
+    '    button { width: 100%; padding: 14px; background: #0D9488; border: none; border-radius: 10px; color: white; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }' +
+    '    button:hover { background: #0F766E; }' +
+    '    .result { margin-top: 20px; padding: 14px; border-radius: 10px; display: none; font-size: 14px; text-align: center; }' +
+    '    .success { background: rgba(16, 185, 129, 0.2); border: 1px solid #10B981; color: #34D399; }' +
+    '    .error { background: rgba(239, 68, 68, 0.2); border: 1px solid #EF4444; color: #F87171; }' +
+    '  </style>' +
+    '</head>' +
+    '<body>' +
+    '  <div class="card">' +
+    '    <span class="badge">FAP ATTENDANCE</span>' +
+    '    <h1>Xác Nhận Có Mặt</h1>' +
+    '    <div class="meta">Lớp: <b>' + className + '</b> · Slot <b>' + slot + '</b> · Buổi <b>' + sessionNo + '/20</b></div>' +
+    (oauthEmail ? '    <div class="oauth-box">Đăng nhập Google OAuth: <b>' + oauthEmail + '</b></div>' : '') +
+    '    <form id="checkinForm">' +
+    '      <label for="email">Email FPT của bạn (@fpt.edu.vn):</label>' +
+    '      <input type="email" id="email" value="' + (oauthEmail || '') + '" placeholder="ví dụ: annvse170123@fpt.edu.vn" required ' + (oauthEmail ? 'readonly' : 'autofocus') + '>' +
+    '      <button type="submit" id="btnSubmit">Xác Nhận Có Mặt</button>' +
+    '    </form>' +
+    '    <div id="resBox" class="result"></div>' +
+    '  </div>' +
+    '  <script>' +
+    '    var form = document.getElementById("checkinForm");' +
+    '    var resBox = document.getElementById("resBox");' +
+    '    var btn = document.getElementById("btnSubmit");' +
+    '    form.onsubmit = function(e) {' +
+    '      e.preventDefault();' +
+    '      var email = document.getElementById("email").value.trim();' +
+    '      btn.disabled = true;' +
+    '      btn.innerText = "Đang xác thực OAuth...";' +
+    '      var url = window.location.href.split("?")[0] + "?action=studentCheckIn&className=" + encodeURIComponent("' + className + '") + "&slot=" + encodeURIComponent("' + slot + '") + "&session=" + encodeURIComponent("' + sessionNo + '") + "&token=" + encodeURIComponent("' + token + '") + "&email=" + encodeURIComponent(email);' +
+    '      fetch(url).then(function(r) { return r.json(); }).then(function(data) {' +
+    '        resBox.style.display = "block";' +
+    '        if (data.success) {' +
+    '          resBox.className = "result success";' +
+    '          resBox.innerHTML = "<b>✓ Điểm danh thành công!</b><br>" + (data.data.student.fullName || email) + " đã được ghi nhận Có mặt!";' +
+    '          form.style.display = "none";' +
+    '        } else {' +
+    '          resBox.className = "result error";' +
+    '          resBox.innerText = data.message || "Lỗi điểm danh!";' +
+    '          btn.disabled = false;' +
+    '          btn.innerText = "Thử lại";' +
+    '        }' +
+    '      }).catch(function(err) {' +
+    '        resBox.style.display = "block";' +
+    '        resBox.className = "result error";' +
+    '        resBox.innerText = "Lỗi kết nối mạng: " + err;' +
+    '        btn.disabled = false;' +
+    '        btn.innerText = "Thử lại";' +
+    '      });' +
+    '    };' +
+    '  </script>' +
+    '</body>' +
+    '</html>';
+
+  return HtmlService.createHtmlOutput(html)
+    .setTitle('FAP - Điểm danh ' + className)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+

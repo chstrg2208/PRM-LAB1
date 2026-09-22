@@ -20,17 +20,17 @@ class ClassSession {
   static String getSlotTime(int slot) {
     switch (slot) {
       case 1:
-        return '07:30 - 09:50';
+        return '07:00 - 09:15';
       case 2:
-        return '10:00 - 12:20';
+        return '09:30 - 11:45';
       case 3:
-        return '12:50 - 15:10';
+        return '12:30 - 14:45';
       case 4:
-        return '15:20 - 17:40';
+        return '15:00 - 17:15';
       case 5:
-        return '18:00 - 20:20';
+        return '17:30 - 19:45';
       case 6:
-        return '20:30 - 22:50';
+        return '20:00 - 22:15';
       default:
         return 'Slot $slot';
     }

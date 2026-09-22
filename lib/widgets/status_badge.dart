@@ -22,6 +22,12 @@ class AttendanceStatusBadge extends StatelessWidget {
     String label;
 
     switch (status) {
+      case AttendanceStatus.notYet:
+        bg = BirdleColors.surfaceSecondary;
+        fg = BirdleColors.textMuted;
+        border = BirdleColors.border;
+        label = 'Chưa điểm danh';
+        break;
       case AttendanceStatus.present:
         bg = BirdleColors.successLight;
         fg = BirdleColors.success;

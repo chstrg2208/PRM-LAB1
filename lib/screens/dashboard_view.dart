@@ -14,6 +14,8 @@ class DashboardView extends StatelessWidget {
   final int currentSlot;
   final DateTime currentDate;
   final bool isSheetConnected;
+  final List<Map<String, dynamic>> todayClasses;
+  final void Function(String className, int slot)? onSelectClassAndSlot;
   final VoidCallback onGoToAttendance;
   final VoidCallback onGoToFapSync;
   final VoidCallback onGoToSettings;
@@ -26,6 +28,8 @@ class DashboardView extends StatelessWidget {
     required this.currentSlot,
     required this.currentDate,
     required this.isSheetConnected,
+    this.todayClasses = const [],
+    this.onSelectClassAndSlot,
     required this.onGoToAttendance,
     required this.onGoToFapSync,
     required this.onGoToSettings,
@@ -36,11 +40,10 @@ class DashboardView extends StatelessWidget {
     final totalStudents = students.length;
     final presentCount = records.where((r) => r.status == AttendanceStatus.present).length;
     final absentCount = records.where((r) => r.status == AttendanceStatus.absent).length;
-    final lateCount = records.where((r) => r.status == AttendanceStatus.late).length;
-    final pendingCount = totalStudents - (presentCount + absentCount + lateCount);
+    final notYetCount = records.where((r) => r.status == AttendanceStatus.notYet).length;
 
     final attendanceRate = totalStudents > 0
-        ? ((presentCount + (lateCount * 0.7)) / totalStudents) * 100
+        ? (presentCount / totalStudents) * 100
         : 0.0;
 
     final atRiskStudents = students.where((s) => s.absentRate >= 15.0 || s.hasExhaustedAbsenceAllowance).toList();
@@ -79,6 +82,146 @@ class DashboardView extends StatelessWidget {
                 label: "Open Today's Attendance",
                 onPressed: onGoToAttendance,
               ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Khối hiển thị Lịch dạy hôm nay theo chuẩn 4 Slot FPT
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.calendar_today_outlined, size: 18, color: BirdleColors.brand),
+                  const SizedBox(width: 8),
+                  const Text('Lịch dạy hôm nay (Chuẩn 4 Slot FPT)', style: BirdleTypography.sectionTitle),
+                  const Spacer(),
+                  Text(
+                    '${todayClasses.length} lớp có tiết',
+                    style: BirdleTypography.metadata,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (todayClasses.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: BirdleColors.surface,
+                    borderRadius: BirdleRadius.mdBorder,
+                    border: Border.all(color: BirdleColors.border),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Hôm nay không có lớp nào có lịch dạy theo thời khóa biểu FPT (T2-T5 / T3-T6 / T4-T7).',
+                      style: TextStyle(color: BirdleColors.textMuted, fontSize: 13),
+                    ),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 16,
+                  children: todayClasses.map((c) {
+                    final cName = c['className']?.toString() ?? '';
+                    final slot = int.tryParse(c['slot']?.toString() ?? '1') ?? 1;
+                    final slotTime = c['slotTime']?.toString() ?? ClassSession.getSlotTime(slot);
+                    final isDone = c['isAttendanceDone'] == true;
+                    final sessNo = c['sessionNumber'] ?? 1;
+                    final totalStu = c['totalStudents'] ?? 0;
+                    final room = c['room'] ?? 'BE-302';
+                    final isSelected = cName == currentClass && slot == currentSlot;
+
+                    return SizedBox(
+                      width: 320,
+                      child: BirdleCard(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: BirdleColors.brand.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'Slot $slot',
+                                    style: const TextStyle(
+                                      color: BirdleColors.brand,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    slotTime,
+                                    style: BirdleTypography.metadata,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (isDone)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: BirdleColors.success.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Text('Đã điểm danh', style: TextStyle(color: BirdleColors.success, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  )
+                                else
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: BirdleColors.warning.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Text('Chưa điểm danh', style: TextStyle(color: BirdleColors.warning, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Lớp $cName · $room',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: BirdleColors.textPrimary),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Tiến độ: Buổi $sessNo/20 · $totalStu sinh viên',
+                              style: BirdleTypography.metadata,
+                            ),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              child: isSelected
+                                  ? BirdlePrimaryButton(
+                                      label: 'Vào điểm danh ngay',
+                                      icon: Icons.qr_code_scanner,
+                                      onPressed: onGoToAttendance,
+                                    )
+                                  : BirdleSecondaryButton(
+                                      label: 'Chọn lớp này',
+                                      icon: Icons.arrow_forward,
+                                      onPressed: () {
+                                        if (onSelectClassAndSlot != null) {
+                                          onSelectClassAndSlot!(cName, slot);
+                                        }
+                                        onGoToAttendance();
+                                      },
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
             ],
           ),
           const SizedBox(height: 24),
@@ -129,13 +272,11 @@ class DashboardView extends StatelessWidget {
                   children: [
                     _buildStatItem('Tổng sinh viên', '$totalStudents', null),
                     _buildDivider(),
+                    _buildStatItem('Chưa điểm danh', '$notYetCount', BirdleColors.textMuted),
+                    _buildDivider(),
                     _buildStatItem('Có mặt (Present)', '$presentCount', BirdleColors.success),
                     _buildDivider(),
                     _buildStatItem('Vắng (Absent)', '$absentCount', BirdleColors.danger),
-                    _buildDivider(),
-                    _buildStatItem('Muộn (Late)', '$lateCount', BirdleColors.warning),
-                    _buildDivider(),
-                    _buildStatItem('Chưa điểm danh', '${pendingCount < 0 ? 0 : pendingCount}', BirdleColors.textMuted),
                   ],
                 ),
                 const SizedBox(height: 20),
@@ -152,20 +293,15 @@ class DashboardView extends StatelessWidget {
                             flex: presentCount,
                             child: Container(color: BirdleColors.success),
                           ),
-                        if (lateCount > 0)
-                          Expanded(
-                            flex: lateCount,
-                            child: Container(color: BirdleColors.warning),
-                          ),
                         if (absentCount > 0)
                           Expanded(
                             flex: absentCount,
                             child: Container(color: BirdleColors.danger),
                           ),
-                        if (pendingCount > 0)
+                        if (notYetCount > 0)
                           Expanded(
-                            flex: pendingCount,
-                            child: Container(color: BirdleColors.pending.withValues(alpha: 0.3)),
+                            flex: notYetCount,
+                            child: Container(color: BirdleColors.surfaceSecondary),
                           ),
                       ],
                     ),

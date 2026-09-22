@@ -66,6 +66,8 @@ class FakeAttendanceApiClient implements AttendanceApiClient {
     required String date,
     required int slot,
     required List<AttendanceRecord> records,
+    int? sessionNumber,
+    bool bypassDateLock = false,
   }) async {
     saveCallCount++;
     if (onSaveAttendance != null) {
@@ -102,6 +104,11 @@ class FakeAttendanceApiClient implements AttendanceApiClient {
     if (onFetchAnalyticsLogs != null) {
       return onFetchAnalyticsLogs!(sheetUrl, className);
     }
+    return [];
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTodayClasses(String sheetUrl, {DateTime? date}) async {
     return [];
   }
 }
@@ -371,7 +378,8 @@ void main() {
           home: MainDesktopScreen(sessionManager: manager),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('BIRDLE'), findsOneWidget);
       expect(find.text('Sheets: Connected'), findsOneWidget);

@@ -3,6 +3,7 @@ import '../models/student.dart';
 import '../theme/app_theme.dart';
 import '../widgets/birdle_components.dart';
 import '../widgets/status_badge.dart';
+import '../widgets/student_slots_dialog.dart';
 
 class StudentsView extends StatefulWidget {
   final List<Student> students;
@@ -167,6 +168,26 @@ class _StudentsViewState extends State<StudentsView> {
                       ),
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Nút xem chi tiết 20 slot điểm danh
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.grid_view_rounded, size: 16),
+                  label: const Text('Xem ma trận 20 buổi học của sinh viên'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: BirdleColors.brand,
+                    side: const BorderSide(color: BirdleColors.brand),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    StudentSlotsDialog.show(this.context, s);
+                  },
                 ),
               ),
             ],
@@ -552,7 +573,7 @@ class _StudentsViewState extends State<StudentsView> {
                               Expanded(flex: 3, child: Text('EMAIL FPT', style: BirdleTypography.caption)),
                               SizedBox(width: 100, child: Text('SLOTS (VẮNG)', style: BirdleTypography.caption)),
                               SizedBox(width: 140, child: Text('ATTENDANCE RATE', style: BirdleTypography.caption)),
-                              SizedBox(width: 96, child: Text('ACTIONS', style: BirdleTypography.caption)),
+                              SizedBox(width: 124, child: Text('ACTIONS', style: BirdleTypography.caption)),
                             ],
                           ),
                         ),
@@ -596,12 +617,17 @@ class _StudentsViewState extends State<StudentsView> {
                                       ),
                                     ),
                                     SizedBox(
-                                      width: 96,
+                                      width: 124,
                                       child: FittedBox(
                                         fit: BoxFit.scaleDown,
                                         alignment: Alignment.centerLeft,
                                         child: Row(
                                           children: [
+                                            IconButton(
+                                              icon: const Icon(Icons.grid_view_rounded, size: 16, color: BirdleColors.brand),
+                                              tooltip: 'Xem ma trận 20 slot',
+                                              onPressed: () => StudentSlotsDialog.show(context, s),
+                                            ),
                                             IconButton(
                                               icon: const Icon(Icons.visibility_outlined, size: 16, color: BirdleColors.textSecondary),
                                               tooltip: 'Xem hồ sơ chi tiết',

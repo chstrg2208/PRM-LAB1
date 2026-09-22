@@ -65,6 +65,37 @@ class CsvExportService {
     return buffer.toString();
   }
 
+  /// Header CSV chi tiết bao gồm ma trận 20 buổi học FPT
+  static const String detailedCsvHeader =
+      'Mã SV,Họ và tên,Lớp,Email,Tổng số buổi,Vắng,Có mặt,Tỷ lệ vắng,Trạng thái,B1,B2,B3,B4,B5,B6,B7,B8,B9,B10,B11,B12,B13,B14,B15,B16,B17,B18,B19,B20';
+
+  /// Sinh chuỗi nội dung CSV chi tiết kèm ma trận 20 buổi học
+  static String generateDetailedCsvContent({
+    required List<Student> students,
+    String? className,
+  }) {
+    final buffer = StringBuffer();
+    buffer.write(utf8Bom);
+    buffer.writeln(detailedCsvHeader);
+
+    for (final s in students) {
+      final rollNumber = escapeCsvField(s.rollNumber);
+      final fullName = escapeCsvField(s.fullName);
+      final cName = escapeCsvField(s.className.isNotEmpty ? s.className : (className ?? ''));
+      final email = escapeCsvField(s.email);
+      final totalSlots = s.totalSlots;
+      final absentSlots = s.absentSlots;
+      final presentSlots = (totalSlots - absentSlots) > 0 ? (totalSlots - absentSlots) : 0;
+      final absentRate = '${s.absentRate.toStringAsFixed(1)}%';
+      final status = escapeCsvField(s.trainingStatusLabel);
+      final slotCols = List.generate(20, (idx) => escapeCsvField(s.getSlot20Status(idx + 1))).join(',');
+
+      buffer.writeln('$rollNumber,$fullName,$cName,$email,$totalSlots,$absentSlots,$presentSlots,$absentRate,$status,$slotCols');
+    }
+
+    return buffer.toString();
+  }
+
   /// Tạo tên file an toàn cho báo cáo chuyên cần
   static String generateFileName({
     required String className,

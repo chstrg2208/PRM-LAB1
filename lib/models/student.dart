@@ -10,6 +10,7 @@ class Student {
   final String avatarUrl;
   int totalSlots;
   int absentSlots;
+  final List<String> slots20;
 
   Student({
     String? member,
@@ -25,11 +26,15 @@ class Student {
     this.totalSlots = 20,
     this.absentSlots = 0,
     String? rollNumber,
+    List<String>? slots20,
   })  : member = _resolveMember(member, rollNumber, code),
         code = _resolveCode(code, member, rollNumber),
         customFullName = (customFullName != null && customFullName.trim().isNotEmpty)
             ? customFullName.trim()
-            : (fullName != null && fullName.trim().isNotEmpty ? fullName.trim() : null);
+            : (fullName != null && fullName.trim().isNotEmpty ? fullName.trim() : null),
+        slots20 = slots20 != null
+            ? List.unmodifiable([...slots20, ...List.filled(20 - slots20.length > 0 ? 20 - slots20.length : 0, '')].sublist(0, 20))
+            : List.unmodifiable(List.filled(20, ''));
 
   static String _resolveMember(String? member, String? rollNumber, String? code) {
     if (member != null && member.trim().isNotEmpty) return member.trim();
@@ -123,6 +128,36 @@ class Student {
     return 'Còn được phép vắng $remainingAllowedAbsences buổi.';
   }
 
+  /// Trạng thái của một buổi cụ thể (1-indexed: 1..20)
+  String getSlot20Status(int slotNumber) {
+    if (slotNumber < 1 || slotNumber > slots20.length) return '';
+    return slots20[slotNumber - 1].trim();
+  }
+
+  /// Số buổi đã có mặt theo ma trận 20 slot
+  int get attendedSlots20Count {
+    return slots20.where((s) {
+      final l = s.trim().toLowerCase();
+      return l == 'p' || l == 'present' || l == 'cm' || l == 'có mặt';
+    }).length;
+  }
+
+  /// Số buổi vắng theo ma trận 20 slot
+  int get absentSlots20Count {
+    return slots20.where((s) {
+      final l = s.trim().toLowerCase();
+      return l == 'a' || l == 'absent' || l == 'v' || l == 'vắng';
+    }).length;
+  }
+
+  /// Số buổi chưa điểm danh theo ma trận 20 slot
+  int get notYetSlots20Count {
+    return slots20.where((s) {
+      final l = s.trim().toLowerCase();
+      return l.isEmpty || l == '-' || l == 'not yet' || l == 'ny' || l.contains('chưa');
+    }).length;
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'member': member,
@@ -137,6 +172,7 @@ class Student {
       'avatarUrl': avatarUrl,
       'totalSlots': totalSlots,
       'absentSlots': absentSlots,
+      'slots20': slots20,
     };
   }
 
@@ -165,6 +201,11 @@ class Student {
       }
     }
 
+    List<String>? parsedSlots20;
+    if (json['slots20'] is List) {
+      parsedSlots20 = (json['slots20'] as List).map((e) => e?.toString().trim() ?? '').toList();
+    }
+
     return Student(
       member: rollNumber,
       code: rollNumber,
@@ -177,6 +218,7 @@ class Student {
       avatarUrl: (json['avatarUrl'] ?? json['AvatarUrl'] ?? '').toString().trim(),
       totalSlots: int.tryParse((json['totalSlots'] ?? json['TOTAL SLOTS'] ?? '20').toString()) ?? 20,
       absentSlots: int.tryParse((json['absentSlots'] ?? json['ABSENT'] ?? '0').toString()) ?? 0,
+      slots20: parsedSlots20,
     );
   }
 
@@ -193,6 +235,7 @@ class Student {
     int? totalSlots,
     int? absentSlots,
     String? rollNumber,
+    List<String>? slots20,
   }) {
     return Student(
       member: member ?? rollNumber ?? this.member,
@@ -206,6 +249,7 @@ class Student {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       totalSlots: totalSlots ?? this.totalSlots,
       absentSlots: absentSlots ?? this.absentSlots,
+      slots20: slots20 ?? this.slots20,
     );
   }
 }

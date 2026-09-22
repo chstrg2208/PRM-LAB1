@@ -4,6 +4,7 @@ import '../models/attendance_record.dart';
 import '../models/student.dart';
 import '../theme/app_theme.dart';
 import 'status_badge.dart';
+import 'student_slots_dialog.dart';
 
 /// Single student row in AttendanceView table with stabilized controller lifecycle
 /// and 300ms note debounce (Task BK-02).
@@ -153,12 +154,20 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
 
           // Status Controls (Segmented / Inline Pills per Section 12)
           SizedBox(
-            width: 220,
+            width: 205,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
               child: Row(
                 children: [
+                  _buildStatusPill(
+                    label: 'Chưa',
+                    isSelected: widget.record.status == AttendanceStatus.notYet,
+                    selectedBg: BirdleColors.surfaceSecondary,
+                    selectedFg: BirdleColors.textMuted,
+                    onTap: () => _handleStatusChanged(AttendanceStatus.notYet),
+                  ),
+                  const SizedBox(width: 4),
                   _buildStatusPill(
                     label: 'Có mặt',
                     isSelected: widget.record.status == AttendanceStatus.present,
@@ -173,14 +182,6 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
                     selectedBg: BirdleColors.dangerLight,
                     selectedFg: BirdleColors.danger,
                     onTap: () => _handleStatusChanged(AttendanceStatus.absent),
-                  ),
-                  const SizedBox(width: 4),
-                  _buildStatusPill(
-                    label: 'Muộn',
-                    isSelected: widget.record.status == AttendanceStatus.late,
-                    selectedBg: BirdleColors.warningLight,
-                    selectedFg: BirdleColors.warning,
-                    onTap: () => _handleStatusChanged(AttendanceStatus.late),
                   ),
                 ],
               ),
@@ -213,13 +214,35 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
             ),
           ),
 
-          // Attendance Rate & Badge
+          // Attendance Rate & Badge (kèm nút xem ma trận 20 slot)
           SizedBox(
-            width: 130,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: AbsentRateBadge(rate: widget.student.absentRate, student: widget.student, showPercent: true),
+            width: 140,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => StudentSlotsDialog.show(context, widget.student),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Tooltip(
+                      message: 'Nhấn để xem chi tiết 20 slot của sinh viên',
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: AbsentRateBadge(rate: widget.student.absentRate, student: widget.student, showPercent: true),
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.grid_view_rounded, size: 16, color: BirdleColors.textMuted),
+                  tooltip: 'Xem chi tiết 20 slot',
+                  splashRadius: 16,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  onPressed: () => StudentSlotsDialog.show(context, widget.student),
+                ),
+              ],
             ),
           ),
         ],

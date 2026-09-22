@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/student.dart';
 import '../models/attendance_record.dart';
+import '../models/class_schedule.dart';
 import '../services/ai_analytics_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
@@ -16,6 +17,7 @@ class AiInsightsView extends StatefulWidget {
   final String? analyticsError;
   final bool isLoadingAnalytics;
   final VoidCallback? onRetryLoadAnalytics;
+  final ClassSchedule? schedule;
 
   const AiInsightsView({
     super.key,
@@ -28,6 +30,7 @@ class AiInsightsView extends StatefulWidget {
     this.analyticsError,
     this.isLoadingAnalytics = false,
     this.onRetryLoadAnalytics,
+    this.schedule,
   });
 
   @override
@@ -85,6 +88,7 @@ class _AiInsightsViewState extends State<AiInsightsView> {
       prompt: q,
       report: _report,
       students: widget.students,
+      schedule: widget.schedule,
     );
 
     if (mounted) {

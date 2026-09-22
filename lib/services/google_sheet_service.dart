@@ -349,6 +349,8 @@ class GoogleSheetService {
     required String date,
     required int slot,
     required List<AttendanceRecord> records,
+    int? sessionNumber,
+    bool bypassDateLock = false,
     http.Client? client,
   }) async {
     final cleanUrl = webAppUrl.trim();
@@ -369,13 +371,20 @@ class GoogleSheetService {
 
     final httpClient = client ?? http.Client();
     try {
-      final payload = jsonEncode({
+      final payloadMap = <String, dynamic>{
         'action': 'saveAttendance',
         'className': className,
         'date': date,
         'slot': slot,
         'records': records.map((r) => r.toJson()).toList(),
-      });
+      };
+      if (sessionNumber != null) {
+        payloadMap['sessionNumber'] = sessionNumber;
+      }
+      if (bypassDateLock) {
+        payloadMap['bypassDateLock'] = true;
+      }
+      final payload = jsonEncode(payloadMap);
 
       final response = await httpClient.post(
         uri,
@@ -515,6 +524,103 @@ class GoogleSheetService {
         message: 'Lỗi tải dữ liệu lịch sử phân tích: $e',
         details: e,
       );
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
+    }
+  }
+
+  /// Lấy danh sách tiết học có lịch trong ngày hôm nay theo quy tắc FPT
+  static Future<List<Map<String, dynamic>>> fetchTodayClasses(
+    String webAppUrl, {
+    DateTime? date,
+    http.Client? client,
+  }) async {
+    final cleanUrl = webAppUrl.trim();
+    if (cleanUrl.isEmpty) {
+      return [];
+    }
+
+    final uri = Uri.tryParse(cleanUrl);
+    if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+      return [];
+    }
+
+    final targetDate = date ?? DateTime.now();
+    final y = targetDate.year.toString().padLeft(4, '0');
+    final m = targetDate.month.toString().padLeft(2, '0');
+    final d = targetDate.day.toString().padLeft(2, '0');
+    final dateStr = '$y-$m-$d';
+
+    final httpClient = client ?? http.Client();
+    try {
+      final requestUri = uri.replace(queryParameters: {
+        ...uri.queryParameters,
+        'action': 'getTodayClasses',
+        'date': dateStr,
+      });
+
+      final response = await httpClient.get(requestUri).timeout(const Duration(seconds: 10));
+      final decoded = _parseApiResponse(response);
+      final rawData = decoded['data'];
+      if (rawData is List) {
+        return List<Map<String, dynamic>>.from(
+          rawData.whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
+        );
+      }
+      return [];
+    } catch (_) {
+      return [];
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
+    }
+  }
+
+  /// Lấy danh sách email sinh viên đã quét QR check-in thành công
+  static Future<List<String>> fetchQrCheckedInEmails(
+    String webAppUrl, {
+    required String className,
+    required int slot,
+    DateTime? date,
+    http.Client? client,
+  }) async {
+    final cleanUrl = webAppUrl.trim();
+    if (cleanUrl.isEmpty) return [];
+
+    final uri = Uri.tryParse(cleanUrl);
+    if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) return [];
+
+    final targetDate = date ?? DateTime.now();
+    final y = targetDate.year.toString().padLeft(4, '0');
+    final m = targetDate.month.toString().padLeft(2, '0');
+    final d = targetDate.day.toString().padLeft(2, '0');
+    final dateStr = '$y-$m-$d';
+
+    final httpClient = client ?? http.Client();
+    try {
+      final requestUri = uri.replace(queryParameters: {
+        ...uri.queryParameters,
+        'action': 'getQrStatus',
+        'className': className,
+        'slot': slot.toString(),
+        'date': dateStr,
+      });
+
+      final response = await httpClient.get(requestUri).timeout(const Duration(seconds: 6));
+      final decoded = _parseApiResponse(response);
+      final rawData = decoded['data'];
+      if (rawData is List) {
+        return rawData
+            .map((item) => (item is Map ? item['email'] : item)?.toString().trim().toLowerCase() ?? '')
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
     } finally {
       if (client == null) {
         httpClient.close();

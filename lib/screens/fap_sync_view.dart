@@ -237,7 +237,7 @@ class _FapSyncViewState extends State<FapSyncView> {
   Widget _buildFapSyncContent() {
     final presentCount = widget.records.where((r) => r.status == AttendanceStatus.present).length;
     final absentCount = widget.records.where((r) => r.status == AttendanceStatus.absent).length;
-    final lateCount = widget.records.where((r) => r.status == AttendanceStatus.late).length;
+    final notYetCount = widget.records.where((r) => r.status == AttendanceStatus.notYet).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,7 +269,7 @@ class _FapSyncViewState extends State<FapSyncView> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${widget.students.length} sinh viên ($presentCount Có mặt, $absentCount Vắng, $lateCount Muộn) đang chờ gửi lên FAP',
+                      '${widget.students.length} sinh viên ($presentCount Có mặt, $absentCount Vắng, $notYetCount Chưa điểm danh) đang chờ gửi lên FAP',
                       style: BirdleTypography.metadata,
                     ),
                   ],

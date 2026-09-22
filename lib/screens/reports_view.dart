@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/student.dart';
+import '../models/attendance_record.dart';
+import '../models/class_schedule.dart';
 import '../theme/app_theme.dart';
 import '../widgets/birdle_components.dart';
 import '../widgets/status_badge.dart';
@@ -11,6 +13,13 @@ class ReportsView extends StatelessWidget {
   final String googleSheetUrl;
   final VoidCallback? onExportCsv;
   final bool isExporting;
+  final ClassSchedule? schedule;
+  final List<String> availableClasses;
+  final List<AttendanceRecord> records;
+  final List<Map<String, dynamic>>? historyLogs;
+  final ValueChanged<String>? onClassChanged;
+  final int currentSlot;
+  final DateTime? currentDate;
 
   const ReportsView({
     super.key,
@@ -19,6 +28,13 @@ class ReportsView extends StatelessWidget {
     required this.googleSheetUrl,
     this.onExportCsv,
     this.isExporting = false,
+    this.schedule,
+    this.availableClasses = const [],
+    this.records = const [],
+    this.historyLogs,
+    this.onClassChanged,
+    this.currentSlot = 1,
+    this.currentDate,
   });
 
   @override

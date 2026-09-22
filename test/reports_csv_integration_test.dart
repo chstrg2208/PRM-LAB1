@@ -26,6 +26,8 @@ class FakeAttendanceApiClient implements AttendanceApiClient {
     required String date,
     required int slot,
     required List<AttendanceRecord> records,
+    int? sessionNumber,
+    bool bypassDateLock = false,
   }) async => {'success': true};
 
   @override
@@ -37,6 +39,9 @@ class FakeAttendanceApiClient implements AttendanceApiClient {
 
   @override
   Future<List<Map<String, dynamic>>> fetchAnalyticsLogs(String sheetUrl, String className) async => [];
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTodayClasses(String sheetUrl, {DateTime? date}) async => [];
 }
 
 void main() {

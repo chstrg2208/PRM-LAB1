@@ -132,6 +132,11 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             currentSlot: _sessionManager.currentSlot,
                             currentDate: _sessionManager.currentDate,
                             isSheetConnected: _sessionManager.isSheetConnected,
+                            todayClasses: _sessionManager.todayClasses,
+                            onSelectClassAndSlot: (cName, slot) {
+                              _sessionManager.selectClass(cName);
+                              _sessionManager.selectSlot(slot);
+                            },
                             onGoToAttendance: () => setState(() => _selectedIndex = 1),
                             onGoToFapSync: () => setState(() => _selectedIndex = 5),
                             onGoToSettings: () => setState(() => _selectedIndex = 6),
@@ -147,6 +152,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             onRetryLoadClasses: () => _sessionManager.loadClasses(),
                             currentSlot: _sessionManager.currentSlot,
                             currentDate: _sessionManager.currentDate,
+                            isDateLocked: _sessionManager.isSessionDateLocked,
                             isLoading: _sessionManager.isLoading,
                             errorMessage: _sessionManager.dataError,
                             isSheetConfigured: _sessionManager.isSheetConfigured,
@@ -158,6 +164,11 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             onNoteChanged: _sessionManager.updateNote,
                             onMarkAllPresent: _sessionManager.markAllPresent,
                             onMarkAllAbsent: _sessionManager.markAllAbsent,
+                            currentSessionNumber: _sessionManager.currentSessionNumber,
+                            onStartQrAttendance: () => _sessionManager.startQrAttendanceSession(),
+                            onFinishQrAttendance: () => _sessionManager.finishQrAttendance(),
+                            onCancelQrAttendance: () => _sessionManager.cancelQrAttendance(),
+                            onPollQrStatus: () => _sessionManager.pollQrCheckIns(),
                             onSaveToSheet: _saveToGoogleSheet,
                             onReloadFromSheet: _reloadFromSheet,
                             onGoToFapSync: () => setState(() => _selectedIndex = 5),
@@ -188,6 +199,13 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             googleSheetUrl: _sessionManager.sheetUrl,
                             onExportCsv: _exportReportCsv,
                             isExporting: _sessionManager.isExporting,
+                            schedule: _sessionManager.currentSchedule,
+                            availableClasses: _sessionManager.availableClasses,
+                            records: _sessionManager.records,
+                            historyLogs: _sessionManager.historyLogs,
+                            onClassChanged: _sessionManager.selectClass,
+                            currentSlot: _sessionManager.currentSlot,
+                            currentDate: _sessionManager.currentDate,
                           ),
                           // 4: AI Insights
                           AiInsightsView(
@@ -200,6 +218,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             isLoadingAnalytics: _sessionManager.isLoadingAnalytics,
                             onRetryLoadAnalytics: () => _sessionManager.loadAnalyticsLogs(),
                             onConfigureByok: () => setState(() => _selectedIndex = 6),
+                            schedule: _sessionManager.currentSchedule,
                           ),
                           // 5: FAP Sync & Import Center
                           FapSyncView(

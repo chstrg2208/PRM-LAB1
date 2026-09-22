@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/student.dart';
 import '../models/attendance_record.dart';
 import '../models/class_session.dart';
+import '../models/class_schedule.dart';
 
 class SlotStat {
   final int slot;
@@ -278,7 +279,7 @@ class AiAnalyticsService {
   }
 
   /// Trả lời câu hỏi tương tác người dùng
-  static String answerAiQuestion(String query, AiAttendanceReport report, {List<Student>? students}) {
+  static String answerAiQuestion(String query, AiAttendanceReport report, {List<Student>? students, ClassSchedule? schedule}) {
     final q = query.toLowerCase().trim();
 
     // 1. Chào hỏi & Thăm hỏi tự nhiên
@@ -523,10 +524,11 @@ class AiAnalyticsService {
     required String prompt,
     required AiAttendanceReport report,
     required List<Student> students,
+    ClassSchedule? schedule,
   }) async {
     final cleanKey = apiKey.trim();
     if (cleanKey.isEmpty) {
-      return answerAiQuestion(prompt, report, students: students);
+      return answerAiQuestion(prompt, report, students: students, schedule: schedule);
     }
 
     try {
@@ -540,11 +542,18 @@ class AiAnalyticsService {
               '- Thứ vắng nhiều nhất trong tuần: ${report.worstDay.dayName} với ${report.worstDay.absentCount} lượt vắng (${report.worstDay.absentRate.toStringAsFixed(1)}%)'
           : '- Phân tích theo Slot & Thứ: Chưa đủ dữ liệu thống kê lịch sử để xác định xu hướng.';
 
+      final scheduleSection = schedule != null
+          ? '- Môn học: ${schedule.subjectCode}\n'
+            '- Phòng học: ${schedule.room}\n'
+            '- Lịch học: ${schedule.daysOfWeek} (Slot ${schedule.slot}: ${schedule.slotTime})\n'
+            '- Tiến độ buổi học: Buổi ${schedule.currentSession}/${schedule.totalSessions}\n'
+          : '';
+
       final contextText = '''
 Dữ liệu điểm danh thực tế lớp học:
 - Trạng thái dữ liệu lịch sử: ${report.hasHistory ? "Đã nạp từ database Google Sheets" : "Chưa đủ dữ liệu thống kê lịch sử"}
 - Tỷ lệ chuyên cần trung bình toàn lớp: ${report.overallAttendanceRate.toStringAsFixed(1)}%
-$historyStatusText
+$scheduleSection$historyStatusText
 - Số sinh viên bị cấm thi (>20%): ${report.failedStudents.length} sinh viên
 - Số sinh viên cảnh báo (15-20%): ${report.warningStudents.length} sinh viên
 

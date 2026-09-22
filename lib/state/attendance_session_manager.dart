@@ -2,6 +2,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/student.dart';
 import '../models/attendance_record.dart';
+import '../models/class_schedule.dart';
+import '../models/class_session.dart';
+import '../models/qr_attendance_session.dart';
 import '../services/google_sheet_service.dart';
 import '../services/storage_service.dart';
 import '../services/ai_analytics_service.dart';
@@ -38,6 +41,8 @@ abstract class AttendanceApiClient {
     required String date,
     required int slot,
     required List<AttendanceRecord> records,
+    int? sessionNumber,
+    bool bypassDateLock = false,
   });
   Future<Map<String, dynamic>> syncStudents({
     required String webAppUrl,
@@ -45,6 +50,7 @@ abstract class AttendanceApiClient {
     required List<Student> students,
   });
   Future<List<Map<String, dynamic>>> fetchAnalyticsLogs(String sheetUrl, String className);
+  Future<List<Map<String, dynamic>>> fetchTodayClasses(String sheetUrl, {DateTime? date});
 }
 
 /// Default Client chuyển tiếp sang GoogleSheetService
@@ -74,6 +80,8 @@ class DefaultAttendanceApiClient implements AttendanceApiClient {
     required String date,
     required int slot,
     required List<AttendanceRecord> records,
+    int? sessionNumber,
+    bool bypassDateLock = false,
   }) =>
       GoogleSheetService.saveAttendance(
         webAppUrl: webAppUrl,
@@ -81,6 +89,8 @@ class DefaultAttendanceApiClient implements AttendanceApiClient {
         date: date,
         slot: slot,
         records: records,
+        sessionNumber: sessionNumber,
+        bypassDateLock: bypassDateLock,
       );
 
   @override
@@ -98,6 +108,10 @@ class DefaultAttendanceApiClient implements AttendanceApiClient {
   @override
   Future<List<Map<String, dynamic>>> fetchAnalyticsLogs(String sheetUrl, String className) =>
       GoogleSheetService.fetchAnalyticsLogs(sheetUrl, className);
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTodayClasses(String sheetUrl, {DateTime? date}) =>
+      GoogleSheetService.fetchTodayClasses(sheetUrl, date: date);
 }
 
 /// State Manager quản lý phiên làm việc điểm danh, danh sách sinh viên và logs phân tích
@@ -131,6 +145,11 @@ class AttendanceSessionManager extends ChangeNotifier {
   int _analyticsRequestId = 0;
   bool _disposed = false;
 
+  List<Map<String, dynamic>> _todayClasses = [];
+  bool _isLoadingTodayClasses = false;
+  QrAttendanceSession? _activeQrSession;
+  int _currentSessionNumber = 1;
+
   AttendanceSessionManager({
     this.apiClient = const DefaultAttendanceApiClient(),
     CsvExporter? csvExporter,
@@ -144,7 +163,9 @@ class AttendanceSessionManager extends ChangeNotifier {
         _availableClasses = List.from(initialClasses),
         _currentSlot = initialSlot,
         _currentDate = initialDate ?? DateTime.now(),
-        _sheetUrl = initialSheetUrl;
+        _sheetUrl = initialSheetUrl {
+    _currentSessionNumber = _calculateSessionNumber(_currentClass, _currentDate);
+  }
 
   // Getters
   String get currentClass => _currentClass;
@@ -160,6 +181,35 @@ class AttendanceSessionManager extends ChangeNotifier {
   String? get dataError => _dataError;
   bool get isReloadError => _isReloadError;
   bool get isExporting => _isExporting;
+
+  /// Kiểm tra buổi học có bị khóa ngày hay không (Chỉ mở điểm danh sau 00:00 của ngày học)
+  bool get isSessionDateLocked {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final sessionDayStart = DateTime(_currentDate.year, _currentDate.month, _currentDate.day);
+    return sessionDayStart.isAfter(todayStart);
+  }
+
+  List<Map<String, dynamic>> get todayClasses => List.unmodifiable(_todayClasses);
+  bool get isLoadingTodayClasses => _isLoadingTodayClasses;
+  QrAttendanceSession? get activeQrSession => _activeQrSession;
+  int get currentSessionNumber => _currentSessionNumber;
+
+  /// Thông tin lịch học chuẩn FPT của lớp hiện tại
+  ClassSchedule get currentSchedule {
+    final clean = _currentClass.trim().toUpperCase();
+    final isIA = clean.startsWith('IA');
+    return ClassSchedule(
+      className: _currentClass,
+      subjectCode: isIA ? 'CSN101' : 'PRM393',
+      slot: _currentSlot,
+      daysOfWeek: isIA ? 'T3-T6' : 'T2-T5',
+      room: isIA ? 'NVH-603' : 'NVH-611',
+      startDate: DateTime(2026, 9, 7),
+      currentSession: _currentSessionNumber > 0 ? _currentSessionNumber : 1,
+      totalSessions: 20,
+    );
+  }
 
   List<Student> get students => List.unmodifiable(_students);
   List<AttendanceRecord> get records => List.unmodifiable(_records);
@@ -211,6 +261,7 @@ class AttendanceSessionManager extends ChangeNotifier {
       await loadStudentsAndAttendance(isClassChange: true);
       await loadAnalyticsLogs();
     }
+    await loadTodayClasses();
 
     _isLoading = false;
     notifyListeners();
@@ -294,6 +345,7 @@ class AttendanceSessionManager extends ChangeNotifier {
     _records = [];
     _dataError = null;
     _isReloadError = false;
+    _currentSessionNumber = _calculateSessionNumber(trimmed, _currentDate);
     notifyListeners();
 
     if (_availableClasses.isEmpty || _availableClasses.contains(trimmed)) {
@@ -309,6 +361,7 @@ class AttendanceSessionManager extends ChangeNotifier {
   Future<void> selectSlot(int newSlot) async {
     if (_currentSlot == newSlot) return;
     _currentSlot = newSlot;
+    _currentSessionNumber = _calculateSessionNumber(_currentClass, _currentDate);
     notifyListeners();
     await loadStudentsAndAttendance(isClassChange: false);
   }
@@ -316,8 +369,168 @@ class AttendanceSessionManager extends ChangeNotifier {
   /// Đổi ngày điểm danh
   Future<void> selectDate(DateTime newDate) async {
     _currentDate = newDate;
+    _currentSessionNumber = _calculateSessionNumber(_currentClass, newDate);
     notifyListeners();
-    await loadStudentsAndAttendance(isClassChange: false);
+    await Future.wait([
+      loadStudentsAndAttendance(isClassChange: false),
+      loadTodayClasses(newDate),
+    ]);
+  }
+
+  int _calculateSessionNumber(String className, DateTime date) {
+    final clean = className.trim().toUpperCase();
+    final sched = ClassSchedule(
+      className: className,
+      subjectCode: 'PRM393',
+      slot: _currentSlot,
+      daysOfWeek: clean.startsWith('IA') ? 'T3-T6' : 'T2-T5',
+      room: 'BE-302',
+      startDate: DateTime(2026, 9, 1),
+    );
+    return sched.calculateSessionNumber(date);
+  }
+
+  /// Tải danh sách các lớp có tiết học hôm nay theo chuẩn FPT
+  Future<void> loadTodayClasses([DateTime? date]) async {
+    final targetDate = date ?? _currentDate;
+    _isLoadingTodayClasses = true;
+    notifyListeners();
+
+    try {
+      if (_sheetUrl.trim().isNotEmpty) {
+        final res = await apiClient.fetchTodayClasses(_sheetUrl, date: targetDate);
+        if (res.isNotEmpty) {
+          _todayClasses = res;
+          _isLoadingTodayClasses = false;
+          notifyListeners();
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // Fallback thông minh: Tự động lọc dựa trên thứ trong tuần của targetDate
+    final fallbackList = <Map<String, dynamic>>[];
+    final weekday = targetDate.weekday;
+
+    // SE1801 học T2-T5 slot 1
+    if (weekday == DateTime.monday || weekday == DateTime.thursday) {
+      final schedSE = ClassSchedule(
+        className: 'SE1801',
+        subjectCode: 'PRM393',
+        slot: 1,
+        daysOfWeek: 'T2-T5',
+        room: 'BE-302',
+        startDate: DateTime(2026, 9, 1),
+      );
+      fallbackList.add({
+        'className': 'SE1801',
+        'subjectCode': 'PRM393',
+        'slot': 1,
+        'slotTime': ClassSession.getSlotTime(1),
+        'daysOfWeek': 'T2-T5',
+        'room': 'BE-302',
+        'sessionNumber': schedSE.calculateSessionNumber(targetDate),
+        'totalSessions': 20,
+        'totalStudents': _students.isNotEmpty && _currentClass == 'SE1801' ? _students.length : 10,
+        'isAttendanceDone': false,
+        'date': '${targetDate.year}-${targetDate.month.toString().padLeft(2, '0')}-${targetDate.day.toString().padLeft(2, '0')}',
+      });
+    }
+
+    // IA1601 học T3-T6 slot 2
+    if (weekday == DateTime.tuesday || weekday == DateTime.friday) {
+      final schedIA = ClassSchedule(
+        className: 'IA1601',
+        subjectCode: 'PRM393',
+        slot: 2,
+        daysOfWeek: 'T3-T6',
+        room: 'BE-304',
+        startDate: DateTime(2026, 9, 1),
+      );
+      fallbackList.add({
+        'className': 'IA1601',
+        'subjectCode': 'PRM393',
+        'slot': 2,
+        'slotTime': ClassSession.getSlotTime(2),
+        'daysOfWeek': 'T3-T6',
+        'room': 'BE-304',
+        'sessionNumber': schedIA.calculateSessionNumber(targetDate),
+        'totalSessions': 20,
+        'totalStudents': 5,
+        'isAttendanceDone': false,
+        'date': '${targetDate.year}-${targetDate.month.toString().padLeft(2, '0')}-${targetDate.day.toString().padLeft(2, '0')}',
+      });
+    }
+
+    _todayClasses = fallbackList;
+    _isLoadingTodayClasses = false;
+    notifyListeners();
+  }
+
+  /// Khởi tạo phiên điểm danh QR động 30s
+  QrAttendanceSession? startQrAttendanceSession({int? sessionNumber}) {
+    if (isSessionDateLocked) return null;
+    final sessNo = sessionNumber ?? _currentSessionNumber;
+    _activeQrSession = QrAttendanceSession(
+      sessionId: '${_currentClass}_slot${_currentSlot}_buoi$sessNo',
+      className: _currentClass,
+      slot: _currentSlot,
+      sessionNumber: sessNo,
+      date: _currentDate,
+      webAppUrl: _sheetUrl,
+    );
+    notifyListeners();
+    return _activeQrSession;
+  }
+
+  /// Lấy danh sách email sinh viên đã quét mã QR thành công từ backend
+  Future<void> pollQrCheckIns() async {
+    if (_activeQrSession == null) return;
+    if (_sheetUrl.trim().isNotEmpty) {
+      try {
+        final checkedEmails = await GoogleSheetService.fetchQrCheckedInEmails(
+          _sheetUrl,
+          className: _currentClass,
+          slot: _currentSlot,
+          date: _currentDate,
+        );
+        for (final email in checkedEmails) {
+          _activeQrSession!.markCheckedIn(email);
+          final student = _students.cast<Student?>().firstWhere(
+            (s) => s != null && s.email.trim().toLowerCase() == email.trim().toLowerCase(),
+            orElse: () => null,
+          );
+          if (student != null) {
+            updateAttendanceStatus(student.rollNumber, AttendanceStatus.present);
+          }
+        }
+        notifyListeners();
+      } catch (_) {}
+    }
+  }
+
+  /// Hủy hoặc đóng phiên QR mà không làm thay đổi trạng thái sinh viên chưa quét
+  void cancelQrAttendance() {
+    _activeQrSession = null;
+    notifyListeners();
+  }
+
+  /// Kết thúc điểm danh QR: Các sinh viên CHƯA quét mã tự động bị đánh Absent (vắng)
+  void finishQrAttendance() {
+    if (_activeQrSession == null) return;
+    final checkedEmails = _activeQrSession!.checkedInEmails;
+
+    for (final s in _students) {
+      final emailClean = s.email.trim().toLowerCase();
+      if (checkedEmails.contains(emailClean)) {
+        updateAttendanceStatus(s.rollNumber, AttendanceStatus.present);
+      } else {
+        updateAttendanceStatus(s.rollNumber, AttendanceStatus.absent);
+      }
+    }
+
+    _activeQrSession = null;
+    notifyListeners();
   }
 
   /// Cập nhật và lưu Google Sheet Web App URL
@@ -386,13 +599,20 @@ class AttendanceSessionManager extends ChangeNotifier {
         if (found != null) {
           records.add(found);
         } else {
+          final slotVal = (_currentSessionNumber >= 1 && _currentSessionNumber <= s.slots20.length)
+              ? s.slots20[_currentSessionNumber - 1]
+              : '';
+          final initialStatus = slotVal.isNotEmpty
+              ? AttendanceStatus.fromString(slotVal)
+              : AttendanceStatus.notYet;
+
           records.add(
             AttendanceRecord(
               rollNumber: s.rollNumber,
               className: _currentClass,
               date: dateStr,
               slot: _currentSlot,
-              status: AttendanceStatus.present,
+              status: initialStatus,
             ),
           );
         }
@@ -508,13 +728,20 @@ class AttendanceSessionManager extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
-  /// Lưu điểm danh lên Google Sheets (idempotent, không race condition, cập nhật analytics khi thành công)
-  Future<OperationResult> saveAttendance() async {
+  /// Lưu điểm danh lên Google Sheets (idempotent, không race condition, cập nhật analytics khi thành công)  /// Lưu điểm danh hiện tại lên Google Sheets
+  Future<OperationResult> saveAttendance({bool bypassDateLock = false}) async {
     if (_sheetUrl.isEmpty) {
       return const OperationResult(
         success: false,
         message: '⚠️ Vui lòng cấu hình URL Google Apps Script Web App trong Cài đặt trước!',
         requiresConfiguration: true,
+      );
+    }
+
+    if (!bypassDateLock && isSessionDateLocked) {
+      return OperationResult(
+        success: false,
+        message: 'Buổi học ngày ${_currentDate.day.toString().padLeft(2, '0')}/${_currentDate.month.toString().padLeft(2, '0')}/${_currentDate.year} chưa diễn ra! Chỉ được phép điểm danh sau 00:00 ngày học.',
       );
     }
 
@@ -529,13 +756,18 @@ class AttendanceSessionManager extends ChangeNotifier {
         date: dateStr,
         slot: _currentSlot,
         records: _records,
+        sessionNumber: _currentSessionNumber,
+        bypassDateLock: bypassDateLock,
       );
       _isLoading = false;
       notifyListeners();
 
       final isSuccess = result['success'] == true;
       if (isSuccess) {
-        await loadAnalyticsLogs();
+        await Future.wait([
+          loadAnalyticsLogs(),
+          loadTodayClasses(),
+        ]);
       }
 
       return OperationResult(

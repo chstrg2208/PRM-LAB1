@@ -3,11 +3,13 @@ import 'package:intl/intl.dart';
 import '../models/student.dart';
 import '../models/attendance_record.dart';
 import '../models/class_session.dart';
+import '../models/qr_attendance_session.dart';
 import '../theme/app_theme.dart';
 import '../widgets/birdle_components.dart';
 import '../widgets/attendance_student_row.dart';
 import '../widgets/fap_sync_dialog.dart';
 import '../widgets/import_fap_dialog.dart';
+import '../widgets/qr_attendance_dialog.dart';
 
 class AttendanceView extends StatefulWidget {
   final List<Student> students;
@@ -34,6 +36,12 @@ class AttendanceView extends StatefulWidget {
   final String? errorMessage;
   final bool isSheetConfigured;
   final VoidCallback? onGoToSettings;
+  final int currentSessionNumber;
+  final bool isDateLocked;
+  final QrAttendanceSession? Function()? onStartQrAttendance;
+  final VoidCallback? onFinishQrAttendance;
+  final VoidCallback? onCancelQrAttendance;
+  final Future<void> Function()? onPollQrStatus;
 
   const AttendanceView({
     super.key,
@@ -46,6 +54,7 @@ class AttendanceView extends StatefulWidget {
     this.onRetryLoadClasses,
     required this.currentSlot,
     required this.currentDate,
+    this.isDateLocked = false,
     required this.isLoading,
     required this.onClassChanged,
     required this.onSlotChanged,
@@ -61,6 +70,11 @@ class AttendanceView extends StatefulWidget {
     this.errorMessage,
     this.isSheetConfigured = true,
     this.onGoToSettings,
+    this.currentSessionNumber = 1,
+    this.onStartQrAttendance,
+    this.onFinishQrAttendance,
+    this.onCancelQrAttendance,
+    this.onPollQrStatus,
   });
 
   @override
@@ -80,6 +94,10 @@ class _AttendanceViewState extends State<AttendanceView> {
 
   @override
   Widget build(BuildContext context) {
+    final isLocked = widget.isDateLocked ||
+        (DateTime(widget.currentDate.year, widget.currentDate.month, widget.currentDate.day)
+            .isAfter(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)));
+
     // Filter students
     final filteredStudents = widget.students.where((s) {
       if (_searchQuery.isNotEmpty) {
@@ -89,109 +107,208 @@ class _AttendanceViewState extends State<AttendanceView> {
       }
 
       if (_statusFilter != 'ALL') {
-        final rec = widget.records.where((r) => r.rollNumber == s.rollNumber).firstOrNull;
-        if (_statusFilter == 'PRESENT' && rec?.status != AttendanceStatus.present) return false;
-        if (_statusFilter == 'ABSENT' && rec?.status != AttendanceStatus.absent) return false;
-        if (_statusFilter == 'LATE' && rec?.status != AttendanceStatus.late) return false;
-      }
+      final rec = widget.records.where((r) => r.rollNumber == s.rollNumber).firstOrNull;
+      if (_statusFilter == 'NOT_YET' && rec?.status != AttendanceStatus.notYet) return false;
+      if (_statusFilter == 'PRESENT' && rec?.status != AttendanceStatus.present) return false;
+      if (_statusFilter == 'ABSENT' && rec?.status != AttendanceStatus.absent) return false;
+    }
 
-      return true;
-    }).toList();
+    return true;
+  }).toList();
 
-    final presentCount = widget.records.where((r) => r.status == AttendanceStatus.present).length;
-    final absentCount = widget.records.where((r) => r.status == AttendanceStatus.absent).length;
-    final lateCount = widget.records.where((r) => r.status == AttendanceStatus.late).length;
-    final pendingCount = widget.students.length - (presentCount + absentCount + lateCount);
+  final notYetCount = widget.records.where((r) => r.status == AttendanceStatus.notYet).length;
+  final presentCount = widget.records.where((r) => r.status == AttendanceStatus.present).length;
+  final absentCount = widget.records.where((r) => r.status == AttendanceStatus.absent).length;
 
-    final dateStr = DateFormat('MMMM d, y').format(widget.currentDate);
+  final dateStr = DateFormat('MMMM d, y').format(widget.currentDate);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Section 12 Header
-          Row(
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section 12 Header
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
+              SizedBox(
+                width: 320,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Attendance', style: BirdleTypography.pageTitle),
                     const SizedBox(height: 4),
                     Text(
-                      '${widget.currentClass} · Slot ${widget.currentSlot} (${ClassSession.getSlotTime(widget.currentSlot)}) · $dateStr',
+                      '${widget.currentClass} · Slot ${widget.currentSlot} (${ClassSession.getSlotTime(widget.currentSlot)}) · Buổi ${widget.currentSessionNumber}/20 · $dateStr',
                       style: BirdleTypography.metadata,
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
               // Session Selectors
               _buildSessionPickers(),
               const SizedBox(width: 16),
               // Action Buttons (Section 12 design.md)
-              BirdleSecondaryButton(
-                icon: Icons.file_upload_outlined,
-                label: 'Import from FAP',
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (_) => ImportFapDialog(
-                      currentClass: widget.currentClass,
-                      onImport: widget.onImportStudents,
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(width: 8),
-              BirdleSecondaryButton(
-                icon: Icons.save_outlined,
-                label: 'Save to Sheet',
-                onPressed: () {
-                  FocusScope.of(context).unfocus();
-                  widget.onSaveToSheet();
-                },
-              ),
-              const SizedBox(width: 8),
               BirdlePrimaryButton(
-                icon: Icons.bolt,
-                label: 'Sync to FAP',
-                onPressed: () {
-                  FocusScope.of(context).unfocus();
-                  showDialog(
-                    context: context,
-                    builder: (_) => FapSyncDialog(
-                      records: widget.records,
-                      className: widget.currentClass,
-                      slot: widget.currentSlot,
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
+                icon: Icons.qr_code_scanner,
+                label: 'Điểm danh QR',
+                onPressed: isLocked
+                    ? () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Buổi học ngày ${DateFormat('dd/MM/yyyy').format(widget.currentDate)} chưa diễn ra! Chỉ mở sau 00:00 ngày học.'),
+                            backgroundColor: BirdleColors.warning,
+                          ),
+                        );
+                      }
+                    : () {
+                        if (widget.onStartQrAttendance != null) {
+                          final session = widget.onStartQrAttendance!();
+                          if (session == null) return;
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (_) => QrAttendanceDialog(
+                              session: session,
+                              students: widget.students,
+                              onFinishAttendance: () {
+                                if (widget.onFinishQrAttendance != null) {
+                                  widget.onFinishQrAttendance!();
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('✓ Đã kết thúc điểm danh QR: Sinh viên chưa quét mã được đánh Vắng. Vui lòng kiểm tra lại trước khi bấm "Save to Sheet".'),
+                                    backgroundColor: BirdleColors.success,
+                                  ),
+                                );
+                              },
+                              onCancelAttendance: () {
+                                if (widget.onCancelQrAttendance != null) {
+                                  widget.onCancelQrAttendance!();
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Đã đóng phiên QR (giữ nguyên trạng thái sinh viên).'),
+                                    backgroundColor: BirdleColors.surfaceSecondary,
+                                  ),
+                                );
+                              },
+                              onPollStatus: widget.onPollQrStatus,
+                            ),
+                          );
+                      }
+                    },
+            ),
+            const SizedBox(width: 8),
+            BirdleSecondaryButton(
+              icon: Icons.file_upload_outlined,
+              label: 'Import from FAP',
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => ImportFapDialog(
+                    currentClass: widget.currentClass,
+                    onImport: widget.onImportStudents,
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 8),
+            BirdleSecondaryButton(
+              icon: Icons.save_outlined,
+              label: 'Save to Sheet',
+              onPressed: isLocked
+                  ? () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Buổi học ngày ${DateFormat('dd/MM/yyyy').format(widget.currentDate)} chưa diễn ra! Chỉ mở sau 00:00 ngày học.'),
+                          backgroundColor: BirdleColors.warning,
+                        ),
+                      );
+                    }
+                  : () {
+                      FocusScope.of(context).unfocus();
+                      widget.onSaveToSheet();
+                    },
+            ),
+            const SizedBox(width: 8),
+            BirdlePrimaryButton(
+              icon: Icons.bolt,
+              label: 'Sync to FAP',
+              onPressed: () {
+                FocusScope.of(context).unfocus();
+                showDialog(
+                  context: context,
+                  builder: (_) => FapSyncDialog(
+                    records: widget.records,
+                    className: widget.currentClass,
+                    slot: widget.currentSlot,
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+        const SizedBox(height: 18),
 
-          // Summary & Filter Bar
-          BirdleCard(
+        // Date Lock Banner cảnh báo khi buổi học chưa đến lịch
+        if (isLocked) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: BirdleColors.surfaceSecondary,
+              borderRadius: BirdleRadius.smBorder,
+              border: Border.all(color: BirdleColors.warning.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lock_clock_outlined, size: 20, color: BirdleColors.warning),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Buổi học bị khóa ngày (Date Lock)',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: BirdleColors.textPrimary),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Buổi học ngày ${DateFormat('dd/MM/yyyy').format(widget.currentDate)} chưa diễn ra. Hệ thống chỉ cho phép điểm danh sau 00:00 ngày học.',
+                        style: const TextStyle(fontSize: 12, color: BirdleColors.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        // Summary & Filter Bar
+        BirdleCard(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
             child: Row(
               children: [
                 // Quick Summary
                 Text('${widget.students.length} Students', style: BirdleTypography.bodyMedium),
                 _buildDotSeparator(),
+                _buildSummaryBadge('All', BirdleColors.brand, () => setState(() => _statusFilter = 'ALL')),
+                const SizedBox(width: 8),
+                _buildSummaryBadge('$notYetCount Not yet', BirdleColors.textMuted, () => setState(() => _statusFilter = 'NOT_YET')),
+                const SizedBox(width: 8),
                 _buildSummaryBadge('$presentCount Present', BirdleColors.success, () => setState(() => _statusFilter = 'PRESENT')),
                 const SizedBox(width: 8),
                 _buildSummaryBadge('$absentCount Absent', BirdleColors.danger, () => setState(() => _statusFilter = 'ABSENT')),
-                const SizedBox(width: 8),
-                _buildSummaryBadge('$lateCount Late', BirdleColors.warning, () => setState(() => _statusFilter = 'LATE')),
-                if (pendingCount > 0) ...[
-                  const SizedBox(width: 8),
-                  _buildSummaryBadge('$pendingCount Pending', BirdleColors.pending, () => setState(() => _statusFilter = 'ALL')),
-                ],
 
-                const Spacer(),
+                const SizedBox(width: 24),
 
                 // Batch Actions (Section 12 design.md)
                 BirdleGhostButton(
@@ -232,7 +349,8 @@ class _AttendanceViewState extends State<AttendanceView> {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+        ),
+        const SizedBox(height: 14),
 
           // Main Data Table (Section 12 dominant component)
           Expanded(
@@ -353,9 +471,9 @@ class _AttendanceViewState extends State<AttendanceView> {
                                   SizedBox(width: 44, child: Text('#', style: BirdleTypography.caption)),
                                   SizedBox(width: 120, child: Text('STUDENT ID', style: BirdleTypography.caption)),
                                   Expanded(flex: 3, child: Text('STUDENT NAME', style: BirdleTypography.caption)),
-                                  SizedBox(width: 220, child: Text('STATUS (PRESENT / ABSENT / LATE)', style: BirdleTypography.caption)),
+                                  SizedBox(width: 205, child: Text('STATUS (PRESENT / ABSENT / NOT YET)', style: BirdleTypography.caption)),
                                   Expanded(flex: 2, child: Text('NOTE', style: BirdleTypography.caption)),
-                                  SizedBox(width: 130, child: Text('ATTENDANCE RATE', style: BirdleTypography.caption)),
+                                  SizedBox(width: 140, child: Text('ATTENDANCE RATE', style: BirdleTypography.caption)),
                                 ],
                               ),
                             ),
@@ -457,13 +575,13 @@ class _AttendanceViewState extends State<AttendanceView> {
             ),
           Container(width: 1, height: 16, color: BirdleColors.border, margin: const EdgeInsets.symmetric(horizontal: 8)),
 
-          // Slot Dropdown
+          // Slot Dropdown (Chuẩn 4 slot FPT)
           DropdownButton<int>(
             value: widget.currentSlot,
             underline: const SizedBox(),
             isDense: true,
             style: const TextStyle(fontWeight: FontWeight.w600, color: BirdleColors.textPrimary, fontSize: 13),
-            items: List.generate(6, (i) => i + 1)
+            items: List.generate(widget.currentSlot > 4 ? widget.currentSlot : 4, (i) => i + 1)
                 .map((s) => DropdownMenuItem(value: s, child: Text('Slot $s')))
                 .toList(),
             onChanged: (val) {
