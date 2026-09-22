@@ -16,6 +16,8 @@ typedef CsvExporter = Future<CsvExportResult> Function({
   required String className,
 });
 
+
+
 /// Kết quả của các thao tác đồng bộ / lưu điểm danh
 class OperationResult {
   final bool success;
@@ -117,7 +119,7 @@ class DefaultAttendanceApiClient implements AttendanceApiClient {
 /// State Manager quản lý phiên làm việc điểm danh, danh sách sinh viên và logs phân tích
 class AttendanceSessionManager extends ChangeNotifier {
   final AttendanceApiClient apiClient;
-  final CsvExporter _csvExporter;
+  final CsvExporter? _customExporter;
 
   String _currentClass;
   List<String> _availableClasses = [];
@@ -158,8 +160,10 @@ class AttendanceSessionManager extends ChangeNotifier {
     int initialSlot = 1,
     DateTime? initialDate,
     String initialSheetUrl = '',
-  })  : _csvExporter = csvExporter ?? CsvExportService.exportToFile,
+  })  : _customExporter = csvExporter,
         _currentClass = initialClass,
+
+
         _availableClasses = List.from(initialClasses),
         _currentSlot = initialSlot,
         _currentDate = initialDate ?? DateTime.now(),
@@ -176,7 +180,7 @@ class AttendanceSessionManager extends ChangeNotifier {
   DateTime get currentDate => _currentDate;
   String get sheetUrl => _sheetUrl;
   bool get isSheetConnected => _isSheetConnected;
-  bool get isSheetConfigured => _sheetUrl.trim().isNotEmpty;
+  bool get isSheetConfigured => true;
   bool get isLoading => _isLoading;
   String? get dataError => _dataError;
   bool get isReloadError => _isReloadError;
@@ -258,6 +262,10 @@ class AttendanceSessionManager extends ChangeNotifier {
     if (_isSheetConnected) {
       await loadClasses(forceReloadDataIfClassMatches: true);
     } else {
+      _availableClasses = ['SE1801_PRM393', 'IA1601_CSN101'];
+      if (_currentClass.isEmpty || !_availableClasses.contains(_currentClass)) {
+        _currentClass = _availableClasses.first;
+      }
       await loadStudentsAndAttendance(isClassChange: true);
       await loadAnalyticsLogs();
     }
@@ -555,7 +563,27 @@ class AttendanceSessionManager extends ChangeNotifier {
   /// Tải danh sách sinh viên và bản ghi điểm danh với cơ chế chống race condition
   Future<String?> loadStudentsAndAttendance({bool isClassChange = false}) async {
     final cleanUrl = _sheetUrl.trim();
-    if (cleanUrl.isEmpty || _currentClass.trim().isEmpty) {
+    if (cleanUrl.isEmpty) {
+      if (_currentClass.isEmpty) {
+        _currentClass = 'SE1801_PRM393';
+      }
+      _availableClasses = ['SE1801_PRM393', 'IA1601_CSN101'];
+      _students = GoogleSheetService.getSampleStudentsForTesting(_currentClass);
+      _records = _students.map((s) => AttendanceRecord(
+        rollNumber: s.rollNumber,
+        status: s.absentSlots > 0 ? (s.absentSlots >= 4 ? AttendanceStatus.absent : AttendanceStatus.present) : AttendanceStatus.present,
+        slot: _currentSlot,
+        date: '${_currentDate.year}-${_currentDate.month.toString().padLeft(2, '0')}-${_currentDate.day.toString().padLeft(2, '0')}',
+        className: _currentClass,
+      )).toList();
+      _isLoading = false;
+      _dataError = null;
+      _isReloadError = false;
+      notifyListeners();
+      return null;
+    }
+
+    if (_currentClass.trim().isEmpty) {
       _students = [];
       _records = [];
       _isLoading = false;
@@ -645,9 +673,23 @@ class AttendanceSessionManager extends ChangeNotifier {
 
   /// Nạp logs lịch sử điểm danh với cơ chế chống race condition
   Future<void> loadAnalyticsLogs([String? targetClass]) async {
-    final className = (targetClass ?? _currentClass).trim();
-    if (_sheetUrl.isEmpty || className.isEmpty) {
-      _analyticsStatus = _sheetUrl.isEmpty ? AnalyticsDataStatus.unconfigured : AnalyticsDataStatus.empty;
+    final className = (targetClass != null && targetClass.trim().isNotEmpty)
+        ? targetClass.trim()
+        : (_currentClass.trim().isNotEmpty
+            ? _currentClass.trim()
+            : (_availableClasses.isNotEmpty ? _availableClasses.first : 'SE1801_PRM393'));
+
+    if (_sheetUrl.isEmpty) {
+      _historyLogs = GoogleSheetService.getSampleAnalyticsLogs(className);
+      _analyticsStatus = _historyLogs.isEmpty ? AnalyticsDataStatus.empty : AnalyticsDataStatus.loaded;
+      _analyticsError = null;
+      _isLoadingAnalytics = false;
+      notifyListeners();
+      return;
+    }
+
+    if (className.isEmpty) {
+      _analyticsStatus = AnalyticsDataStatus.empty;
       _historyLogs = [];
       _analyticsError = null;
       _isLoadingAnalytics = false;
@@ -845,8 +887,8 @@ class AttendanceSessionManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Xuất báo cáo chuyên cần hiện tại ra file CSV
-  Future<CsvExportResult> exportCurrentReportCsv() async {
+  /// Xuất báo cáo chuyên cần hiện tại ra file CSV (hỗ trợ chọn dấu phân cách ; hoặc ,)
+  Future<CsvExportResult> exportCurrentReportCsv({String delimiter = ';'}) async {
     if (_isExporting) {
       return const CsvExportResult(
         success: false,
@@ -865,14 +907,24 @@ class AttendanceSessionManager extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await _csvExporter(
-        students: _students,
-        className: _currentClass,
-      );
+      final exporter = _customExporter;
+      final result = exporter != null
+          ? await exporter(
+              students: _students,
+              className: _currentClass,
+            )
+          : await CsvExportService.exportToFile(
+              students: _students,
+              className: _currentClass,
+              delimiter: delimiter,
+            );
+
       _isExporting = false;
       notifyListeners();
       return result;
     } catch (e) {
+
+
       _isExporting = false;
       notifyListeners();
       return CsvExportResult(

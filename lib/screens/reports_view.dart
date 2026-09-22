@@ -6,7 +6,9 @@ import '../theme/app_theme.dart';
 import '../widgets/birdle_components.dart';
 import '../widgets/status_badge.dart';
 import '../widgets/student_slots_dialog.dart';
+import '../widgets/report_preview_dialog.dart';
 import '../services/storage_service.dart';
+import '../services/csv_export_service.dart';
 
 class ReportsView extends StatefulWidget {
   final List<Student> students;
@@ -139,7 +141,44 @@ class _ReportsViewState extends State<ReportsView> {
                 icon: Icons.download_outlined,
                 label: widget.isExporting ? 'Đang xuất CSV...' : 'Export CSV',
                 isLoading: widget.isExporting,
-                onPressed: widget.onExportCsv,
+                onPressed: widget.onExportCsv ??
+                    () async {
+                      if (widget.students.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Chưa có dữ liệu sinh viên để xuất báo cáo.'),
+                            backgroundColor: BirdleColors.warning,
+                          ),
+                        );
+                        return;
+                      }
+
+                      final scaffoldMessenger = ScaffoldMessenger.of(context);
+                      final res = await ReportSummaryPreviewDialog.show(
+                        context: context,
+                        className: widget.currentClass,
+                        students: widget.students,
+                        onConfirmExport: (delimiter) => CsvExportService.exportToFile(
+                          students: widget.students,
+                          className: widget.currentClass,
+                          delimiter: delimiter,
+                        ),
+                      );
+
+                      if (!mounted || res == null) return;
+
+                      final msg = res.success && res.filePath != null
+                          ? '${res.message} (${res.filePath})'
+                          : res.message;
+
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Text(msg),
+                          backgroundColor: res.success ? BirdleColors.brand : BirdleColors.danger,
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                    },
               ),
 
 
