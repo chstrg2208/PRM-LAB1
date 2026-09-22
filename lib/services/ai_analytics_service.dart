@@ -36,6 +36,13 @@ class DayStat {
   });
 }
 
+enum AnalyticsDataStatus {
+  unconfigured,
+  empty,
+  loaded,
+  error,
+}
+
 class AiAttendanceReport {
   final SlotStat worstSlot;
   final DayStat worstDay;
@@ -46,6 +53,9 @@ class AiAttendanceReport {
   final double overallAttendanceRate;
   final String aiSummary;
   final List<String> aiRecommendations;
+  final bool hasHistory;
+  final AnalyticsDataStatus status;
+  final String? errorMessage;
 
   AiAttendanceReport({
     required this.worstSlot,
@@ -57,15 +67,20 @@ class AiAttendanceReport {
     required this.overallAttendanceRate,
     required this.aiSummary,
     required this.aiRecommendations,
+    this.hasHistory = true,
+    this.status = AnalyticsDataStatus.loaded,
+    this.errorMessage,
   });
 }
 
 class AiAnalyticsService {
-  /// Phân tích toàn diện dữ liệu điểm danh
+  /// Phân tích toàn diện dữ liệu điểm danh (chỉ dựa trên dữ liệu thật)
   static AiAttendanceReport analyzeAttendance({
     required List<Student> students,
     required List<AttendanceRecord> currentRecords,
     List<Map<String, dynamic>>? historyLogs,
+    AnalyticsDataStatus? status,
+    String? errorMessage,
   }) {
     // 1. Phân tích theo Slot (Slot 1 -> Slot 6)
     final Map<int, int> slotAbsents = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0};
@@ -75,45 +90,72 @@ class AiAnalyticsService {
     final Map<int, int> dayAbsents = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0};
     final Map<int, int> dayTotals = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0};
 
-    // Nạp dữ liệu từ currentRecords
-    for (final r in currentRecords) {
-      final s = r.slot;
-      slotTotals[s] = (slotTotals[s] ?? 0) + 1;
-      if (r.status == AttendanceStatus.absent) {
-        slotAbsents[s] = (slotAbsents[s] ?? 0) + 1;
-      }
+    bool hasHistory = false;
+    AnalyticsDataStatus effectiveStatus = status ?? AnalyticsDataStatus.loaded;
 
-      final date = DateTime.tryParse(r.date) ?? DateTime.now();
-      final day = date.weekday;
-      dayTotals[day] = (dayTotals[day] ?? 0) + 1;
-      if (r.status == AttendanceStatus.absent) {
-        dayAbsents[day] = (dayAbsents[day] ?? 0) + 1;
-      }
-    }
+    if (effectiveStatus == AnalyticsDataStatus.unconfigured) {
+      hasHistory = false;
+    } else if (effectiveStatus == AnalyticsDataStatus.error) {
+      hasHistory = false;
+    } else if (historyLogs != null) {
+      if (historyLogs.isNotEmpty) {
+        hasHistory = true;
+        effectiveStatus = AnalyticsDataStatus.loaded;
+        for (final log in historyLogs) {
+          final slot = int.tryParse(log['slot']?.toString() ?? '1') ?? 1;
+          if (slot >= 1 && slot <= 6) {
+            final statusStr = (log['status'] ?? '').toString().toLowerCase().trim();
+            final isAbsent = statusStr == 'absent' || statusStr == 'vắng';
 
-    // Nạp thêm từ historyLogs (nếu có từ Google Sheet)
-    if (historyLogs != null && historyLogs.isNotEmpty) {
-      for (final log in historyLogs) {
-        final slot = int.tryParse(log['slot']?.toString() ?? '1') ?? 1;
-        final status = (log['status'] ?? '').toString().toLowerCase();
-        final isAbsent = status == 'absent' || status == 'vắng';
+            slotTotals[slot] = (slotTotals[slot] ?? 0) + 1;
+            if (isAbsent) {
+              slotAbsents[slot] = (slotAbsents[slot] ?? 0) + 1;
+            }
 
-        slotTotals[slot] = (slotTotals[slot] ?? 0) + 1;
-        if (isAbsent) {
-          slotAbsents[slot] = (slotAbsents[slot] ?? 0) + 1;
+            final dStr = (log['date'] ?? '').toString().trim();
+            final dt = DateTime.tryParse(dStr);
+            if (dt != null) {
+              final wd = dt.weekday;
+              if (wd >= 1 && wd <= 7) {
+                dayTotals[wd] = (dayTotals[wd] ?? 0) + 1;
+                if (isAbsent) {
+                  dayAbsents[wd] = (dayAbsents[wd] ?? 0) + 1;
+                }
+              }
+            }
+          }
         }
+      } else {
+        hasHistory = false;
+        effectiveStatus = AnalyticsDataStatus.empty;
+      }
+    } else if (currentRecords.isNotEmpty) {
+      // Fallback chỉ dùng khi historyLogs không được truyền nhưng có currentRecords
+      hasHistory = true;
+      effectiveStatus = AnalyticsDataStatus.loaded;
+      for (final r in currentRecords) {
+        final s = r.slot;
+        if (s >= 1 && s <= 6) {
+          slotTotals[s] = (slotTotals[s] ?? 0) + 1;
+          if (r.status == AttendanceStatus.absent) {
+            slotAbsents[s] = (slotAbsents[s] ?? 0) + 1;
+          }
 
-        final dStr = (log['date'] ?? '').toString();
-        final dt = DateTime.tryParse(dStr) ?? DateTime.now();
-        final wd = dt.weekday;
-        dayTotals[wd] = (dayTotals[wd] ?? 0) + 1;
-        if (isAbsent) {
-          dayAbsents[wd] = (dayAbsents[wd] ?? 0) + 1;
+          final date = DateTime.tryParse(r.date);
+          if (date != null) {
+            final day = date.weekday;
+            if (day >= 1 && day <= 7) {
+              dayTotals[day] = (dayTotals[day] ?? 0) + 1;
+              if (r.status == AttendanceStatus.absent) {
+                dayAbsents[day] = (dayAbsents[day] ?? 0) + 1;
+              }
+            }
+          }
         }
       }
     } else {
-      // Mock phân bố slot & thứ học kỳ nếu chưa có nhiều history
-      _injectRealisticPrmPatterns(slotAbsents, slotTotals, dayAbsents, dayTotals);
+      hasHistory = false;
+      effectiveStatus = AnalyticsDataStatus.empty;
     }
 
     // Tính toán Slot Stats
@@ -149,39 +191,75 @@ class AiAnalyticsService {
       ));
     }
 
-    // Tìm Slot có tỷ lệ nghỉ cao nhất
-    slotStats.sort((a, b) => b.absentRate.compareTo(a.absentRate));
-    final worstSlot = slotStats.first;
+    // Sắp xếp tìm worstSlot và worstDay
+    final sortedSlots = List<SlotStat>.from(slotStats);
+    sortedSlots.sort((a, b) {
+      final cmp = b.absentRate.compareTo(a.absentRate);
+      if (cmp != 0) return cmp;
+      return b.absentCount.compareTo(a.absentCount);
+    });
+    final worstSlot = sortedSlots.first;
 
-    // Tìm Thứ trong tuần có tỷ lệ nghỉ cao nhất
-    dayStats.sort((a, b) => b.absentRate.compareTo(a.absentRate));
-    final worstDay = dayStats.first;
+    final sortedDays = List<DayStat>.from(dayStats);
+    sortedDays.sort((a, b) {
+      final cmp = b.absentRate.compareTo(a.absentRate);
+      if (cmp != 0) return cmp;
+      return b.absentCount.compareTo(a.absentCount);
+    });
+    final worstDay = sortedDays.first;
 
     // Lọc sinh viên Fail Attendance (>= 20%) và Warning (15% - 20%)
     final failedStudents = students.where((s) => s.isBanned).toList();
     final warningStudents = students.where((s) => s.isWarning).toList();
 
-    // Tỷ lệ chuyên cần chung
+    // Tỷ lệ chuyên cần chung từ sinh viên
     int totalAbsences = students.fold(0, (sum, s) => sum + s.absentSlots);
     int totalPossibleSlots = students.fold(0, (sum, s) => sum + s.totalSlots);
     final overallAttendanceRate = totalPossibleSlots > 0
         ? ((totalPossibleSlots - totalAbsences) / totalPossibleSlots) * 100
         : 100.0;
 
-    // Sinh bản tóm tắt tự nhiên từ AI
-    final aiSummary = _generateNaturalLanguageSummary(
-      worstSlot: worstSlot,
-      worstDay: worstDay,
-      failedCount: failedStudents.length,
-      warningCount: warningStudents.length,
-      overallRate: overallAttendanceRate,
-    );
+    // Sinh tóm tắt và khuyến nghị theo dữ liệu thật
+    String aiSummary;
+    List<String> recommendations;
 
-    final recommendations = [
-      '⚠️ Giảng viên nên gửi thông báo cảnh báo sớm cho ${warningStudents.length} sinh viên đang ngấp nghé ngưỡng 20% cấm thi.',
-      '⏰ Slot ${worstSlot.slot} (${worstSlot.slotTime}) có tỷ lệ vắng lên tới ${worstSlot.absentRate.toStringAsFixed(1)}%. Cân nhắc điểm danh đột xuất hoặc gửi nhắc nhở trước giờ học.',
-      '📅 ${worstDay.dayName} là ngày sinh viên có xu hướng vắng nhiều nhất (${worstDay.absentRate.toStringAsFixed(1)}%). Nên tăng cường tương tác hoặc chấm điểm bài tập nhỏ trong ngày này.',
-    ];
+    if (effectiveStatus == AnalyticsDataStatus.unconfigured) {
+      aiSummary = 'Chưa cấu hình URL Google Sheet / Apps Script. Vui lòng cấu hình URL trong mục Cài đặt để tải lịch sử điểm danh thực tế.';
+      recommendations = [
+        'Vui lòng cấu hình kết nối Google Apps Script để tải dữ liệu lịch sử điểm danh.',
+      ];
+    } else if (effectiveStatus == AnalyticsDataStatus.error) {
+      aiSummary = 'Lỗi tải dữ liệu lịch sử điểm danh: ${errorMessage ?? "Không thể kết nối cơ sở dữ liệu."}';
+      recommendations = [
+        'Kiểm tra lại kết nối mạng hoặc cấu hình URL Google Apps Script và thử lại.',
+      ];
+    } else if (!hasHistory || effectiveStatus == AnalyticsDataStatus.empty) {
+      aiSummary = 'Chưa đủ dữ liệu thống kê lịch sử.';
+      recommendations = [
+        'Chưa đủ dữ liệu thống kê lịch sử để phân tích xu hướng vắng theo slot hoặc thứ.',
+        if (warningStudents.isNotEmpty)
+          '⚠️ Giảng viên nên gửi thông báo cảnh báo sớm cho ${warningStudents.length} sinh viên đang ngấp nghé ngưỡng 20% cấm thi.',
+      ];
+    } else {
+      aiSummary = _generateNaturalLanguageSummary(
+        worstSlot: worstSlot,
+        worstDay: worstDay,
+        failedCount: failedStudents.length,
+        warningCount: warningStudents.length,
+        overallRate: overallAttendanceRate,
+      );
+      recommendations = [
+        if (warningStudents.isNotEmpty)
+          '⚠️ Giảng viên nên gửi thông báo cảnh báo sớm cho ${warningStudents.length} sinh viên đang ngấp nghé ngưỡng 20% cấm thi.',
+        if (worstSlot.absentCount > 0)
+          '⏰ Slot ${worstSlot.slot} (${worstSlot.slotTime}) có tỷ lệ vắng lên tới ${worstSlot.absentRate.toStringAsFixed(1)}% (${worstSlot.absentCount} lượt vắng). Cân nhắc điểm danh đột xuất hoặc gửi nhắc nhở trước giờ học.',
+        if (worstDay.absentCount > 0)
+          '📅 ${worstDay.dayName} là ngày sinh viên có xu hướng vắng nhiều nhất (${worstDay.absentRate.toStringAsFixed(1)}%, ${worstDay.absentCount} lượt vắng). Nên tăng cường tương tác hoặc chấm điểm bài tập nhỏ trong ngày này.',
+      ];
+      if (recommendations.isEmpty) {
+        recommendations = ['Lớp học có chuyên cần xuất sắc, chưa ghi nhận lượt vắng nào trong lịch sử.'];
+      }
+    }
 
     return AiAttendanceReport(
       worstSlot: worstSlot,
@@ -193,6 +271,9 @@ class AiAnalyticsService {
       overallAttendanceRate: overallAttendanceRate,
       aiSummary: aiSummary,
       aiRecommendations: recommendations,
+      hasHistory: hasHistory,
+      status: effectiveStatus,
+      errorMessage: errorMessage,
     );
   }
 
@@ -289,6 +370,9 @@ class AiAnalyticsService {
 
     // 7. Hỏi về Slot / Tiết học
     if (q.contains('slot') || q.contains('tiết') || RegExp(r'\bca\b').hasMatch(q) || q.contains('giờ')) {
+      if (!report.hasHistory || report.status == AnalyticsDataStatus.empty || report.worstSlot.totalCount == 0) {
+        return '⏰ **Phân tích Slot:** Chưa đủ dữ liệu thống kê lịch sử để phân tích xu hướng vắng theo Slot học.';
+      }
       return '⏰ **Phân tích Slot vắng nhiều nhất:**\n'
           'Sinh viên nghỉ nhiều nhất ở **Slot ${report.worstSlot.slot}** (${report.worstSlot.slotTime}) '
           'với tỷ lệ vắng lên đến **${report.worstSlot.absentRate.toStringAsFixed(1)}%** '
@@ -299,6 +383,9 @@ class AiAnalyticsService {
 
     // 8. Hỏi về Thứ / Ngày trong tuần
     if (q.contains('thứ') || q.contains('ngày') || q.contains('day') || q.contains('tuần')) {
+      if (!report.hasHistory || report.status == AnalyticsDataStatus.empty || report.worstDay.totalCount == 0) {
+        return '📅 **Phân tích Thứ trong tuần:** Chưa đủ dữ liệu thống kê lịch sử để phân tích xu hướng ngày vắng trong tuần.';
+      }
       return '📅 **Phân tích Thứ vắng nhiều nhất trong tuần:**\n'
           'Sinh viên nghỉ nhiều nhất vào **${report.worstDay.dayName}** '
           'với tỷ lệ vắng chiếm **${report.worstDay.absentRate.toStringAsFixed(1)}%** '
@@ -442,11 +529,16 @@ class AiAnalyticsService {
         return '- MSSV: ${s.member}, Họ tên: ${s.fullName} (Code: ${s.code}), Vắng: ${s.absentSlots}/${s.totalSlots} (${s.absentRate.toStringAsFixed(1)}%) -> $status';
       }).join('\n');
 
+      final historyStatusText = report.hasHistory && report.worstSlot.totalCount > 0
+          ? '- Slot vắng nhiều nhất: Slot ${report.worstSlot.slot} (${report.worstSlot.slotTime}) với ${report.worstSlot.absentCount} lượt vắng (${report.worstSlot.absentRate.toStringAsFixed(1)}%)\n'
+              '- Thứ vắng nhiều nhất trong tuần: ${report.worstDay.dayName} với ${report.worstDay.absentCount} lượt vắng (${report.worstDay.absentRate.toStringAsFixed(1)}%)'
+          : '- Phân tích theo Slot & Thứ: Chưa đủ dữ liệu thống kê lịch sử để xác định xu hướng.';
+
       final contextText = '''
 Dữ liệu điểm danh thực tế lớp học:
+- Trạng thái dữ liệu lịch sử: ${report.hasHistory ? "Đã nạp từ database Google Sheets" : "Chưa đủ dữ liệu thống kê lịch sử"}
 - Tỷ lệ chuyên cần trung bình toàn lớp: ${report.overallAttendanceRate.toStringAsFixed(1)}%
-- Slot vắng nhiều nhất: Slot ${report.worstSlot.slot} (${report.worstSlot.slotTime}) với ${report.worstSlot.absentCount} lượt vắng (${report.worstSlot.absentRate.toStringAsFixed(1)}%)
-- Thứ vắng nhiều nhất trong tuần: ${report.worstDay.dayName} với ${report.worstDay.absentCount} lượt vắng (${report.worstDay.absentRate.toStringAsFixed(1)}%)
+$historyStatusText
 - Số sinh viên bị cấm thi (>=20%): ${report.failedStudents.length} sinh viên
 - Số sinh viên cảnh báo (15-20%): ${report.warningStudents.length} sinh viên
 
@@ -457,12 +549,13 @@ $studentSummary
       final systemInstruction = '''
 Bạn là trợ lý AI chuyên môn cao cấp của hệ thống Quản lý Điểm danh FAP tại Đại học FPT.
 Bạn đang trò chuyện và hỗ trợ trực tiếp giảng viên.
-Quy tắc trả lời:
+Quy tắc trả lời bắt buộc:
 1. Nếu giảng viên chào hỏi (xin chào, hello...), hãy chào lại một cách lịch sự, thân thiện, xưng "em" gọi "Thầy/Cô", tóm tắt 1 câu hiện trạng chuyên cần của lớp và hỏi xem Thầy/Cô cần hỗ trợ phân tích điều gì.
 2. Nếu giảng viên hỏi bạn là ai, hãy giới thiệu bạn là Trợ lý AI FAP Attendance Assistant hỗ trợ điểm danh & phân tích chuyên cần ĐH FPT.
-3. Khi trả lời về dữ liệu điểm danh, luôn dùng số liệu thực tế được cung cấp dưới đây, tuyệt đối không bịa số liệu.
-4. Khi tư vấn giải pháp, hãy đưa ra các lời khuyên sư phạm thực tế, đúng quy chế đào tạo ĐH FPT (vắng >= 20% tổng số buổi sẽ bị cấm thi / fail attendance).
-5. Trình bày đẹp mắt, tự nhiên bằng định dạng Markdown (in đậm, bullet points).
+3. Khi trả lời về dữ liệu điểm danh, TUYỆT ĐỐI chỉ dùng số liệu thực tế được cung cấp trong context. Nghiêm cấm bịa đặt, giả định, hoặc suy diễn thêm bất kỳ số liệu định lượng nào ngoài nguồn dữ liệu.
+4. Nếu context ghi "Chưa đủ dữ liệu thống kê lịch sử", hãy thông báo trung thực rằng chưa có đủ dữ liệu lịch sử để phân tích xu hướng vắng theo buổi/thứ, không tự ý đưa ra phán đoán về slot hay ngày nghỉ.
+5. Khi tư vấn giải pháp, hãy đưa ra các lời khuyên sư phạm thực tế, đúng quy chế đào tạo ĐH FPT (vắng >= 20% tổng số buổi sẽ bị cấm thi / fail attendance).
+6. Trình bày đẹp mắt, tự nhiên bằng định dạng Markdown (in đậm, bullet points).
 ''';
 
       final discoveredModel = await _resolveAvailableGeminiModel(cleanKey);
@@ -544,28 +637,5 @@ Quy tắc trả lời:
         'với tỷ lệ vắng lên tới ${worstSlot.absentRate.toStringAsFixed(1)}%, và ngày vắng cao điểm là ${worstDay.dayName}. '
         'Về tình trạng học vụ, hệ thống phát hiện $failedCount sinh viên đã bị Fail Attendance (Cấm thi >= 20%) '
         'và $warningCount sinh viên đang nằm trong danh sách nguy cơ cao cần được nhắc nhở.';
-  }
-
-  static void _injectRealisticPrmPatterns(
-    Map<int, int> slotAbsents,
-    Map<int, int> slotTotals,
-    Map<int, int> dayAbsents,
-    Map<int, int> dayTotals,
-  ) {
-    // Slot 1 và Slot 5 thường nghỉ nhiều
-    slotTotals[1] = 40; slotAbsents[1] = 14; // 35%
-    slotTotals[2] = 40; slotAbsents[2] = 4;  // 10%
-    slotTotals[3] = 40; slotAbsents[3] = 5;  // 12.5%
-    slotTotals[4] = 40; slotAbsents[4] = 7;  // 17.5%
-    slotTotals[5] = 30; slotAbsents[5] = 9;  // 30%
-    slotTotals[6] = 20; slotAbsents[6] = 4;  // 20%
-
-    // Thứ Hai và Thứ Bảy thường nghỉ nhiều
-    dayTotals[1] = 45; dayAbsents[1] = 16; // Thứ Hai: 35.5%
-    dayTotals[2] = 40; dayAbsents[2] = 6;  // Thứ Ba: 15%
-    dayTotals[3] = 45; dayAbsents[3] = 7;  // Thứ Tư: 15.5%
-    dayTotals[4] = 40; dayAbsents[4] = 5;  // Thứ Năm: 12.5%
-    dayTotals[5] = 40; dayAbsents[5] = 8;  // Thứ Sáu: 20%
-    dayTotals[6] = 30; dayAbsents[6] = 10; // Thứ Bảy: 33.3%
   }
 }

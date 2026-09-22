@@ -3,6 +3,7 @@ import '../models/student.dart';
 import '../models/attendance_record.dart';
 import '../services/storage_service.dart';
 import '../services/google_sheet_service.dart';
+import '../services/ai_analytics_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/status_badge.dart';
 import '../widgets/birdle_components.dart';
@@ -32,6 +33,11 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
 
   List<Student> _students = [];
   List<AttendanceRecord> _records = [];
+  List<Map<String, dynamic>> _historyLogs = [];
+  AnalyticsDataStatus _analyticsStatus = AnalyticsDataStatus.unconfigured;
+  String? _analyticsError;
+  bool _isLoadingAnalytics = false;
+  int _analyticsRequestId = 0;
 
   @override
   void initState() {
@@ -56,10 +62,52 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     }
 
     await _loadStudentsAndAttendance();
+    _loadAnalyticsLogs();
 
     setState(() {
       _isLoading = false;
     });
+  }
+
+  Future<void> _loadAnalyticsLogs([String? targetClass]) async {
+    final className = targetClass ?? _currentClass;
+    if (_sheetUrl.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _analyticsStatus = AnalyticsDataStatus.unconfigured;
+          _historyLogs = [];
+          _analyticsError = null;
+          _isLoadingAnalytics = false;
+        });
+      }
+      return;
+    }
+
+    final currentRequestId = ++_analyticsRequestId;
+    setState(() {
+      _isLoadingAnalytics = true;
+      _analyticsError = null;
+    });
+
+    try {
+      final logs = await GoogleSheetService.fetchAnalyticsLogs(_sheetUrl, className);
+      if (!mounted || currentRequestId != _analyticsRequestId) return;
+
+      setState(() {
+        _historyLogs = logs;
+        _isLoadingAnalytics = false;
+        _analyticsStatus = logs.isEmpty ? AnalyticsDataStatus.empty : AnalyticsDataStatus.loaded;
+        _analyticsError = null;
+      });
+    } catch (e) {
+      if (!mounted || currentRequestId != _analyticsRequestId) return;
+      setState(() {
+        _historyLogs = [];
+        _isLoadingAnalytics = false;
+        _analyticsStatus = AnalyticsDataStatus.error;
+        _analyticsError = e.toString().replaceAll('Exception: ', '');
+      });
+    }
   }
 
   Future<void> _loadStudentsAndAttendance() async {
@@ -159,6 +207,10 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     );
     setState(() => _isLoading = false);
 
+    if (result['success'] == true) {
+      _loadAnalyticsLogs();
+    }
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -240,6 +292,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                           setState(() => _currentClass = val);
                           StorageService.setSelectedClass(val);
                           _loadStudentsAndAttendance();
+                          _loadAnalyticsLogs(val);
                         },
                         onSlotChanged: (val) {
                           setState(() => _currentSlot = val);
@@ -254,7 +307,10 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                         onMarkAllPresent: _markAllPresent,
                         onMarkAllAbsent: _markAllAbsent,
                         onSaveToSheet: _saveToGoogleSheet,
-                        onReloadFromSheet: _loadStudentsAndAttendance,
+                        onReloadFromSheet: () {
+                          _loadStudentsAndAttendance();
+                          _loadAnalyticsLogs();
+                        },
                         onGoToFapSync: () => setState(() => _selectedIndex = 5),
                         onImportStudents: (newStudents) {
                           setState(() {
@@ -282,6 +338,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                           setState(() => _currentClass = val);
                           StorageService.setSelectedClass(val);
                           _loadStudentsAndAttendance();
+                          _loadAnalyticsLogs(val);
                         },
                         onSyncToSheet: _syncStudentsToSheet,
                         onGoToImport: () => setState(() => _selectedIndex = 5),
@@ -297,6 +354,11 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                         students: _students,
                         records: _records,
                         currentClass: _currentClass,
+                        historyLogs: _historyLogs,
+                        analyticsStatus: _analyticsStatus,
+                        analyticsError: _analyticsError,
+                        isLoadingAnalytics: _isLoadingAnalytics,
+                        onRetryLoadAnalytics: () => _loadAnalyticsLogs(),
                         onConfigureByok: () => setState(() => _selectedIndex = 6),
                       ),
                       // 5: FAP Sync & Import Center
@@ -330,6 +392,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             _isSheetConnected = true;
                           });
                           StorageService.setGoogleSheetUrl(url);
+                          _loadAnalyticsLogs();
                         },
                       ),
                     ],

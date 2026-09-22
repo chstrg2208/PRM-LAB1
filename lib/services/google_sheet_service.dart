@@ -189,23 +189,40 @@ class GoogleSheetService {
     }
   }
 
-  /// Lấy toàn bộ lịch sử điểm danh để phục vụ AI phân tích
-  static Future<List<Map<String, dynamic>>> fetchAnalyticsLogs(String webAppUrl, String className) async {
-    if (webAppUrl.trim().isEmpty) return [];
+  /// Lấy toàn bộ lịch sử điểm danh để phục vụ AI phân tích (thực tế từ Google Sheet)
+  static Future<List<Map<String, dynamic>>> fetchAnalyticsLogs(
+    String webAppUrl,
+    String className, {
+    http.Client? client,
+  }) async {
+    final cleanUrl = webAppUrl.trim();
+    if (cleanUrl.isEmpty) return [];
 
+    final httpClient = client ?? http.Client();
     try {
-      final uri = Uri.parse('$webAppUrl?action=getAnalyticsData&className=$className');
-      final response = await http.get(uri).timeout(const Duration(seconds: 12));
+      final uri = Uri.parse('$cleanUrl?action=getAnalyticsData&className=$className');
+      final response = await httpClient.get(uri).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-        if (decoded['status'] == 'success' && decoded['logs'] != null) {
-          return List<Map<String, dynamic>>.from(decoded['logs']);
+        if (decoded is Map<String, dynamic>) {
+          final isSuccess = decoded['status'] == 'success' || decoded['success'] == true;
+          final rawLogs = decoded['logs'] ?? decoded['data'];
+          if (isSuccess && rawLogs != null) {
+            return List<Map<String, dynamic>>.from(rawLogs);
+          }
+          final msg = decoded['message'] ?? decoded['error'];
+          throw Exception(msg ?? 'Dữ liệu trả về từ Google Apps Script không hợp lệ');
         }
+        throw Exception('Dữ liệu phản hồi không đúng định dạng JSON object');
+      } else {
+        throw Exception('Lỗi máy chủ Google Apps Script: HTTP ${response.statusCode}');
       }
-    } catch (_) {}
-
-    return [];
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
+    }
   }
 
   /// Danh sách mẫu chuẩn sinh viên FPT (Bao gồm CE190585 Lâm Quốc Minh từ ảnh yêu cầu)

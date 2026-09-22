@@ -11,6 +11,11 @@ class AiInsightsView extends StatefulWidget {
   final List<AttendanceRecord> records;
   final String currentClass;
   final VoidCallback onConfigureByok;
+  final List<Map<String, dynamic>>? historyLogs;
+  final AnalyticsDataStatus analyticsStatus;
+  final String? analyticsError;
+  final bool isLoadingAnalytics;
+  final VoidCallback? onRetryLoadAnalytics;
 
   const AiInsightsView({
     super.key,
@@ -18,6 +23,11 @@ class AiInsightsView extends StatefulWidget {
     required this.records,
     required this.currentClass,
     required this.onConfigureByok,
+    this.historyLogs,
+    this.analyticsStatus = AnalyticsDataStatus.loaded,
+    this.analyticsError,
+    this.isLoadingAnalytics = false,
+    this.onRetryLoadAnalytics,
   });
 
   @override
@@ -40,7 +50,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
   @override
   void didUpdateWidget(covariant AiInsightsView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.students != widget.students || oldWidget.records != widget.records) {
+    if (oldWidget.students != widget.students ||
+        oldWidget.records != widget.records ||
+        oldWidget.historyLogs != widget.historyLogs ||
+        oldWidget.analyticsStatus != widget.analyticsStatus ||
+        oldWidget.analyticsError != widget.analyticsError) {
       _refreshAnalysis();
     }
   }
@@ -49,6 +63,9 @@ class _AiInsightsViewState extends State<AiInsightsView> {
     _report = AiAnalyticsService.analyzeAttendance(
       students: widget.students,
       currentRecords: widget.records,
+      historyLogs: widget.historyLogs,
+      status: widget.analyticsStatus,
+      errorMessage: widget.analyticsError,
     );
   }
 
@@ -149,6 +166,90 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               ),
             ),
 
+          // Analytics Data Status Banner
+          if (widget.isLoadingAnalytics) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: BirdleColors.surfaceSecondary,
+                borderRadius: BirdleRadius.smBorder,
+                border: Border.all(color: BirdleColors.border),
+              ),
+              child: const Row(
+                children: [
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: BirdleColors.brand),
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Đang tải dữ liệu lịch sử điểm danh từ Google Sheets...',
+                      style: BirdleTypography.metadata,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (_report.status == AnalyticsDataStatus.unconfigured) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: BirdleColors.surfaceSecondary,
+                borderRadius: BirdleRadius.smBorder,
+                border: Border.all(color: BirdleColors.border),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.link_off, size: 16, color: BirdleColors.warning),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Chưa cấu hình URL Google Apps Script để tải dữ liệu lịch sử điểm danh từ Google Sheets.',
+                      style: BirdleTypography.metadata,
+                    ),
+                  ),
+                  BirdleGhostButton(
+                    label: 'Cấu hình ngay',
+                    color: BirdleColors.brand,
+                    onPressed: widget.onConfigureByok,
+                  ),
+                ],
+              ),
+            ),
+          ] else if (_report.status == AnalyticsDataStatus.error) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: BirdleColors.dangerLight,
+                borderRadius: BirdleRadius.smBorder,
+                border: Border.all(color: BirdleColors.danger),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline, size: 16, color: BirdleColors.danger),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Lỗi tải lịch sử điểm danh: ${_report.errorMessage ?? "Không thể kết nối đến Google Sheets."}',
+                      style: const TextStyle(fontSize: 12, color: BirdleColors.danger),
+                    ),
+                  ),
+                  if (widget.onRetryLoadAnalytics != null)
+                    BirdleGhostButton(
+                      label: 'Thử lại',
+                      color: BirdleColors.danger,
+                      onPressed: widget.onRetryLoadAnalytics,
+                    ),
+                ],
+              ),
+            ),
+          ],
+
           // Attendance Health & Key Observations (Section 18 design.md)
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,20 +320,62 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                     children: [
                       const Text('Key Observations', style: BirdleTypography.cardTitle),
                       const SizedBox(height: 12),
-                      _buildObservationItem(
-                        Icons.schedule,
-                        'Slot ${_report.worstSlot.slot} (${_report.worstSlot.slotTime}) có tỷ lệ nghỉ cao nhất (${_report.worstSlot.absentRate.toStringAsFixed(1)}% vắng). Cân nhắc điểm danh đột xuất đầu giờ.',
-                      ),
-                      const SizedBox(height: 10),
-                      _buildObservationItem(
-                        Icons.calendar_today_outlined,
-                        '${_report.worstDay.dayName} ghi nhận nhiều lượt vắng nhất (${_report.worstDay.absentRate.toStringAsFixed(1)}%). Nên gửi nhắc nhở hoặc chấm điểm quiz ngắn.',
-                      ),
-                      const SizedBox(height: 10),
-                      _buildObservationItem(
-                        Icons.warning_amber_outlined,
-                        '${_report.warningStudents.length} sinh viên đang tiệm cận mốc 20% cấm thi (15% - 20%). Cần gửi cảnh báo học vụ trước buổi học kế tiếp.',
-                      ),
+                      if (widget.isLoadingAnalytics) ...[
+                        const Row(
+                          children: [
+                            SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: BirdleColors.brand),
+                            ),
+                            SizedBox(width: 10),
+                            Text('Đang tải dữ liệu lịch sử điểm danh...', style: BirdleTypography.metadata),
+                          ],
+                        ),
+                      ] else if (_report.status == AnalyticsDataStatus.unconfigured) ...[
+                        _buildObservationItem(
+                          Icons.link_off,
+                          'Chưa cấu hình Google Sheet để đồng bộ lịch sử điểm danh.',
+                        ),
+                      ] else if (_report.status == AnalyticsDataStatus.error) ...[
+                        _buildObservationItem(
+                          Icons.error_outline,
+                          'Lỗi tải lịch sử điểm danh: ${_report.errorMessage ?? "Không thể kết nối Google Sheet"}.',
+                        ),
+                        if (widget.onRetryLoadAnalytics != null) ...[
+                          const SizedBox(height: 8),
+                          BirdleGhostButton(
+                            label: 'Thử lại (Retry)',
+                            color: BirdleColors.brand,
+                            onPressed: widget.onRetryLoadAnalytics,
+                          ),
+                        ],
+                      ] else if (_report.status == AnalyticsDataStatus.empty) ...[
+                        _buildObservationItem(
+                          Icons.info_outline,
+                          'Chưa đủ dữ liệu thống kê lịch sử.',
+                        ),
+                        const SizedBox(height: 10),
+                        _buildObservationItem(
+                          Icons.warning_amber_outlined,
+                          '${_report.warningStudents.length} sinh viên đang tiệm cận mốc 20% cấm thi (15% - 20%). Cần gửi cảnh báo học vụ trước buổi học kế tiếp.',
+                        ),
+                      ] else ...[
+                        _buildObservationItem(
+                          Icons.schedule,
+                          'Slot ${_report.worstSlot.slot} (${_report.worstSlot.slotTime}) có tỷ lệ nghỉ cao nhất (${_report.worstSlot.absentRate.toStringAsFixed(1)}% vắng). Cân nhắc điểm danh đột xuất đầu giờ.',
+                        ),
+                        const SizedBox(height: 10),
+                        _buildObservationItem(
+                          Icons.calendar_today_outlined,
+                          '${_report.worstDay.dayName} ghi nhận nhiều lượt vắng nhất (${_report.worstDay.absentRate.toStringAsFixed(1)}%). Nên gửi nhắc nhở hoặc chấm điểm quiz ngắn.',
+                        ),
+                        const SizedBox(height: 10),
+                        _buildObservationItem(
+                          Icons.warning_amber_outlined,
+                          '${_report.warningStudents.length} sinh viên đang tiệm cận mốc 20% cấm thi (15% - 20%). Cần gửi cảnh báo học vụ trước buổi học kế tiếp.',
+                        ),
+                      ],
                     ],
                   ),
                 ),
