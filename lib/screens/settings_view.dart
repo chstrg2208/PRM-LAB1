@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../services/google_sheet_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/apps_script_template_card.dart';
 import '../widgets/birdle_components.dart';
 import '../widgets/status_badge.dart';
 
 class SettingsView extends StatefulWidget {
   final String initialSheetUrl;
   final Function(String) onSaveSheetUrl;
+  final AssetBundle? scriptAssetBundle;
 
   const SettingsView({
     super.key,
     required this.initialSheetUrl,
     required this.onSaveSheetUrl,
+    this.scriptAssetBundle,
   });
 
   @override
@@ -89,75 +91,6 @@ class _SettingsViewState extends State<SettingsView> {
     });
   }
 
-  static const String sampleScript = '''
-// === GOOGLE APPS SCRIPT FOR BIRDLE ATTENDANCE DB ===
-// Hướng dẫn triển khai (1 phút):
-// 1. Mở https://sheet.new > Extensions > Apps Script
-// 2. Dán toàn bộ mã này vào > Bấm Deploy > New deployment
-// 3. Type: Web app > Execute as: Me > Who has access: Anyone
-// 4. Copy Web app URL và dán vào ô bên dưới!
-
-function doGet(e) {
-  var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : 'test';
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  if (action === 'test') {
-    return ContentService.createTextOutput(JSON.stringify({
-      status: 'success',
-      message: 'Kết nối thành công đến Google Sheet Database!'
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
-
-  if (action === 'getStudents') {
-    var className = e.parameter.className || 'SE1801';
-    var sheet = ss.getSheetByName(className) || ss.getActiveSheet();
-    var data = sheet.getDataRange().getValues();
-    var students = [];
-
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0]) {
-        students.push({
-          member: data[i][0],
-          fullName: data[i][1] || '',
-          email: data[i][2] || '',
-          className: className,
-          totalSlots: 20,
-          absentSlots: 0
-        });
-      }
-    }
-
-    return ContentService.createTextOutput(JSON.stringify({
-      status: 'success',
-      data: students
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
-
-  return ContentService.createTextOutput(JSON.stringify({status: 'unknown'})).setMimeType(ContentService.MimeType.JSON);
-}
-
-function doPost(e) {
-  var data = JSON.parse(e.postData.contents);
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var logSheet = ss.getSheetByName('Attendance_Logs');
-  if (!logSheet) {
-    logSheet = ss.insertSheet('Attendance_Logs');
-    logSheet.appendRow(['Timestamp', 'Class', 'Date', 'Slot', 'RollNumber', 'Status', 'Note']);
-  }
-
-  if (data.action === 'saveAttendance') {
-    var records = data.records || [];
-    records.forEach(function(r) {
-      logSheet.appendRow([new Date(), data.className, data.date, data.slot, r.rollNumber, r.status, r.note || '']);
-    });
-
-    return ContentService.createTextOutput(JSON.stringify({status: 'success'})).setMimeType(ContentService.MimeType.JSON);
-  }
-
-  return ContentService.createTextOutput(JSON.stringify({status: 'unknown'})).setMimeType(ContentService.MimeType.JSON);
-}
-''';
-
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -196,18 +129,20 @@ function doPost(e) {
                       child: const Icon(Icons.table_chart_outlined, color: BirdleColors.brand, size: 18),
                     ),
                     const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Google Sheets Database', style: BirdleTypography.cardTitle),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Kết nối miễn phí thông qua Google Apps Script Web App REST API',
-                          style: BirdleTypography.metadata,
-                        ),
-                      ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Google Sheets Database', style: BirdleTypography.cardTitle),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Kết nối miễn phí thông qua Google Apps Script Web App REST API',
+                            style: BirdleTypography.metadata,
+                          ),
+                        ],
+                      ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 12),
                     ConnectionStatusChip(
                       label: _isSheetSuccess ? 'Connected' : 'Disconnected',
                       isConnected: _isSheetSuccess,
@@ -296,18 +231,20 @@ function doPost(e) {
                       child: const Icon(Icons.key_outlined, color: BirdleColors.textPrimary, size: 18),
                     ),
                     const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('AI Provider (Bring Your Own Key - BYOK)', style: BirdleTypography.cardTitle),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Your API key is provided by you. Birdle does not use a shared developer API key.',
-                          style: BirdleTypography.metadata,
-                        ),
-                      ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('AI Provider (Bring Your Own Key - BYOK)', style: BirdleTypography.cardTitle),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Your API key is provided by you. Birdle does not use a shared developer API key.',
+                            style: BirdleTypography.metadata,
+                          ),
+                        ],
+                      ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 12),
                     ConnectionStatusChip(
                       label: _isGeminiSuccess ? 'BYOK Active' : 'Offline Mode',
                       isConnected: _isGeminiSuccess,
@@ -390,49 +327,7 @@ function doPost(e) {
           const SizedBox(height: 24),
 
           // Section 3: Google Apps Script Backend Code & Instructions (Section 20 design.md)
-          BirdleCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Text('Mã Nguồn Backend Google Apps Script (Code.gs)', style: BirdleTypography.cardTitle),
-                    const Spacer(),
-                    BirdleSecondaryButton(
-                      icon: Icons.copy,
-                      label: 'Sao chép mã',
-                      onPressed: () {
-                        Clipboard.setData(const ClipboardData(text: sampleScript));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('✓ Đã sao chép toàn bộ mã nguồn Google Apps Script!'),
-                            backgroundColor: BirdleColors.brand,
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  height: 180,
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: BirdleColors.surfaceSecondary,
-                    borderRadius: BirdleRadius.smBorder,
-                    border: Border.all(color: BirdleColors.border),
-                  ),
-                  child: const SingleChildScrollView(
-                    child: Text(
-                      sampleScript,
-                      style: TextStyle(fontSize: 11.5, fontFamily: 'Consolas, monospace', color: BirdleColors.textPrimary, height: 1.4),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          AppsScriptTemplateCard(bundle: widget.scriptAssetBundle),
         ],
       ),
     );
