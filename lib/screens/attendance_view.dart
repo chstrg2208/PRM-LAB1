@@ -7,6 +7,7 @@ import '../models/qr_attendance_session.dart';
 import '../theme/app_theme.dart';
 import '../widgets/birdle_components.dart';
 import '../widgets/attendance_student_row.dart';
+import '../widgets/attendance_matrix_view.dart';
 import '../widgets/fap_sync_dialog.dart';
 import '../widgets/import_fap_dialog.dart';
 import '../widgets/qr_attendance_dialog.dart';
@@ -94,6 +95,9 @@ class _AttendanceViewState extends State<AttendanceView> {
 
   // Task 7: Success banner sau khi lưu thành công
   String? _lastSaveBanner;
+
+  // Task 8: Toggle giữa Table View và Matrix View
+  bool _isMatrixView = false;
 
   @override
   void dispose() {
@@ -246,6 +250,33 @@ class _AttendanceViewState extends State<AttendanceView> {
                 );
               },
             ),
+            const SizedBox(width: 16),
+            // Task 8: View Toggle — Table / Matrix
+            Container(
+              decoration: BoxDecoration(
+                color: BirdleColors.surfaceSecondary,
+                borderRadius: BirdleRadius.smBorder,
+                border: Border.all(color: BirdleColors.border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildViewToggle(
+                    icon: Icons.table_rows_outlined,
+                    label: 'Bảng',
+                    isSelected: !_isMatrixView,
+                    onTap: () => setState(() => _isMatrixView = false),
+                  ),
+                  Container(width: 1, height: 24, color: BirdleColors.border),
+                  _buildViewToggle(
+                    icon: Icons.grid_view_rounded,
+                    label: 'Matrix',
+                    isSelected: _isMatrixView,
+                    onTap: () => setState(() => _isMatrixView = true),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -285,6 +316,25 @@ class _AttendanceViewState extends State<AttendanceView> {
             ),
           ),
         ],
+
+        // Task 8: Swap giữa Matrix View và Table View
+        if (_isMatrixView) ...[
+          Expanded(
+            child: BirdleCard(
+              padding: const EdgeInsets.all(16),
+              child: widget.students.isEmpty
+                  ? const Center(
+                      child: Text('Chưa có sinh viên. Hãy tải dữ liệu lớp trước.',
+                          style: TextStyle(color: BirdleColors.textMuted)),
+                    )
+                  : AttendanceMatrixView(
+                      students: widget.students,
+                      currentSessionNumber: widget.currentSessionNumber,
+                      currentClass: widget.currentClass,
+                    ),
+            ),
+          ),
+        ] else ...[
 
         // Summary & Filter Bar
         BirdleCard(
@@ -597,17 +647,53 @@ class _AttendanceViewState extends State<AttendanceView> {
                                     index: index + 1,
                                     student: student,
                                     record: record,
-                                    onStatusChanged: widget.onStatusChanged,
-                                    onNoteChanged: widget.onNoteChanged,
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-            ),
+                                     onStatusChanged: widget.onStatusChanged,
+                                     onNoteChanged: widget.onNoteChanged,
+                                   );
+                                 },
+                               ),
+                             ),
+                           ],
+                         ),
+             ),
           ),
-        ],
+        ], // end else (Table View)
+      ],
+      ),
+    );
+  }
+
+  // Task 8: Toggle button helper
+  Widget _buildViewToggle({
+    required IconData icon,
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BirdleRadius.smBorder,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? BirdleColors.brand.withValues(alpha: 0.1) : Colors.transparent,
+          borderRadius: BirdleRadius.smBorder,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: isSelected ? BirdleColors.brand : BirdleColors.textMuted),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                color: isSelected ? BirdleColors.brand : BirdleColors.textMuted,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
