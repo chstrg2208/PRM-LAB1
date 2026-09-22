@@ -153,54 +153,140 @@ function doGet(e) {
 
 // Xử lý yêu cầu HTTP POST
 function doPost(e) {
+  var lock = LockService.getScriptLock();
+  var hasLock = false;
+
   try {
+    // 1. Chống xung đột đồng thời bằng ScriptLock (timeout 30 giây)
+    hasLock = lock.tryLock(30000);
+    if (!hasLock) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        message: 'Hệ thống đang bận xử lý yêu cầu khác, vui lòng thử lại sau giây lát!'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (!e || !e.postData || !e.postData.contents) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        message: 'Dữ liệu yêu cầu rỗng!'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     var contents = e.postData.contents;
     var body = JSON.parse(contents);
     var action = body.action;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // 1. Lưu điểm danh vào bảng Attendance_Logs
+    // 1. Lưu điểm danh vào bảng Attendance_Logs (Idempotent theo className + date + slot)
     if (action === 'saveAttendance') {
-      var className = body.className || 'SE1801';
-      var date = body.date;
-      var slot = body.slot;
-      var records = body.records || [];
+      var className = (body.className || '').toString().trim();
+      var date = (body.date || '').toString().trim();
+      var slot = parseInt(body.slot, 10);
+      var records = body.records;
+
+      // Validation các trường bắt buộc
+      if (!className) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          message: 'Thiếu thông tin lớp học (className)!'
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      if (!date) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          message: 'Thiếu thông tin ngày học (date)!'
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      if (isNaN(slot) || slot < 1 || slot > 6) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          message: 'Slot học không hợp lệ (phải từ 1 đến 6)!'
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      if (!records || !Array.isArray(records)) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          message: 'Danh sách bản ghi điểm danh không hợp lệ (records)!'
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
 
       var logSheet = ss.getSheetByName('Attendance_Logs');
+      var headerRow = ['Thời gian ghi nhận', 'Lớp', 'Ngày học', 'Slot', 'Mã Sinh Viên (MEMBER)', 'Trạng thái', 'Ghi chú'];
       if (!logSheet) {
         logSheet = ss.insertSheet('Attendance_Logs');
-        logSheet.appendRow(['Thời gian ghi nhận', 'Lớp', 'Ngày học', 'Slot', 'Mã Sinh Viên (MEMBER)', 'Trạng thái', 'Ghi chú']);
+        logSheet.appendRow(headerRow);
         var headerRange = logSheet.getRange(1, 1, 1, 7);
         headerRange.setBackground('#F36F21');
         headerRange.setFontColor('#FFFFFF');
         headerRange.setFontWeight('bold');
       }
 
+      // Đọc toàn bộ dữ liệu hiện tại để loại bỏ các bản ghi cũ của đúng buổi học này (Idempotent)
+      var existingData = logSheet.getDataRange().getValues();
+      var preservedRows = [];
+
+      if (existingData.length > 0) {
+        headerRow = existingData[0];
+        for (var i = 1; i < existingData.length; i++) {
+          var row = existingData[i];
+          var rClass = (row[1] || '').toString().trim().toUpperCase();
+          var rDate = (row[2] || '').toString().trim();
+          var rSlot = parseInt(row[3], 10);
+
+          // Nếu cùng className, date, slot thì BỎ QUA dòng cũ này để thay thế bằng dòng mới
+          if (rClass === className.toUpperCase() && rDate === date && rSlot === slot) {
+            continue;
+          }
+          preservedRows.push(row);
+        }
+      }
+
+      // Chuẩn bị dữ liệu log mới
       var now = new Date();
       var newRows = [];
-      for (var i = 0; i < records.length; i++) {
-        var rec = records[i];
+      for (var j = 0; j < records.length; j++) {
+        var rec = records[j];
+        var member = (rec.rollNumber || rec.member || '').toString().trim().toUpperCase();
+        if (!member) continue;
+
+        var status = (rec.status || 'present').toString().trim().toLowerCase();
+        var note = (rec.note || '').toString().trim();
+
         newRows.push([
           now,
           className,
           date,
           slot,
-          rec.rollNumber || rec.member,
-          rec.status,
-          rec.note || ''
+          member,
+          status,
+          note
         ]);
       }
 
-      if (newRows.length > 0) {
-        logSheet.getRange(logSheet.getLastRow() + 1, 1, newRows.length, 7).setValues(newRows);
+      // Ghi đè lại Attendance_Logs một cách an toàn
+      var allRows = [headerRow].concat(preservedRows).concat(newRows);
+      logSheet.clearContents();
+      if (allRows.length > 0) {
+        logSheet.getRange(1, 1, allRows.length, 7).setValues(allRows);
       }
 
-      // Cập nhật số buổi vắng vào sheet lớp
-      _updateStudentAbsentCount(ss, className, records);
+      // Cập nhật lại format header sau khi clearContents
+      var hRange = logSheet.getRange(1, 1, 1, 7);
+      hRange.setBackground('#F36F21');
+      hRange.setFontColor('#FFFFFF');
+      hRange.setFontWeight('bold');
+
+      // Tính lại chính xác số buổi vắng (ABSENT) từ Attendance_Logs cho sheet lớp
+      _recalculateClassAbsentCount(ss, className, logSheet);
 
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Đã lưu ' + records.length + ' bản ghi điểm danh vào Google Sheet!'
+        message: 'Đã lưu ' + newRows.length + ' bản ghi điểm danh vào Google Sheet!',
+        className: className,
+        date: date,
+        slot: slot,
+        recordsCount: newRows.length
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -256,30 +342,79 @@ function doPost(e) {
       status: 'error',
       message: 'Lỗi xử lý POST: ' + err.toString()
     })).setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    if (hasLock) {
+      try {
+        lock.releaseLock();
+      } catch (_) {}
+    }
   }
 }
 
-// Cập nhật số buổi vắng vào sheet lớp
-function _updateStudentAbsentCount(ss, className, records) {
+// Tính lại chính xác số buổi vắng (ABSENT) từ bảng Attendance_Logs cho từng sinh viên của lớp
+function _recalculateClassAbsentCount(ss, className, logSheet) {
   try {
-    var sheet = ss.getSheetByName(className);
-    if (!sheet) return;
+    var classSheet = ss.getSheetByName(className);
+    if (!classSheet) return;
 
-    var data = sheet.getDataRange().getValues();
-    for (var i = 0; i < records.length; i++) {
-      var r = records[i];
-      if (r.status === 'absent') {
-        var roll = (r.rollNumber || r.member || '').toUpperCase();
-        for (var row = 1; row < data.length; row++) {
-          if (data[row][0] && data[row][0].toString().toUpperCase() === roll) {
-            var currentAbsent = parseInt(data[row][6]) || 0;
-            sheet.getRange(row + 1, 7).setValue(currentAbsent + 1);
-            break;
+    if (!logSheet) {
+      logSheet = ss.getSheetByName('Attendance_Logs');
+    }
+    if (!logSheet) return;
+
+    // 1. Đếm số buổi vắng thực tế từ Attendance_Logs cho lớp này
+    var logData = logSheet.getDataRange().getValues();
+    var absentCountsByMember = {};
+
+    for (var i = 1; i < logData.length; i++) {
+      var row = logData[i];
+      var rClass = (row[1] || '').toString().trim().toUpperCase();
+      if (rClass === className.toUpperCase()) {
+        var status = (row[5] || '').toString().trim().toLowerCase();
+        if (status === 'absent' || status === 'vắng') {
+          var member = (row[4] || '').toString().trim().toUpperCase();
+          if (member) {
+            absentCountsByMember[member] = (absentCountsByMember[member] || 0) + 1;
           }
         }
       }
     }
+
+    // 2. Cập nhật cột ABSENT trong sheet lớp tương ứng
+    var classData = classSheet.getDataRange().getValues();
+    if (classData.length <= 1) return;
+
+    var header = classData[0];
+    var memberColIdx = 0;
+    var absentColIdx = 6; // Mặc định cột 7 (index 6: ABSENT)
+
+    for (var h = 0; h < header.length; h++) {
+      var colName = (header[h] || '').toString().trim().toUpperCase();
+      if (colName === 'MEMBER' || colName === 'ROLLNUMBER') {
+        memberColIdx = h;
+      }
+      if (colName === 'ABSENT' || colName === 'VẮNG') {
+        absentColIdx = h;
+      }
+    }
+
+    var absentValues = [];
+    for (var s = 1; s < classData.length; s++) {
+      var sMember = (classData[s][memberColIdx] || '').toString().trim().toUpperCase();
+      var realAbsent = sMember ? (absentCountsByMember[sMember] || 0) : 0;
+      absentValues.push([realAbsent]);
+    }
+
+    if (absentValues.length > 0) {
+      classSheet.getRange(2, absentColIdx + 1, absentValues.length, 1).setValues(absentValues);
+    }
   } catch (_) {}
+}
+
+// Giữ lại để tương thích ngược nếu có lời gọi ngoài
+function _updateStudentAbsentCount(ss, className, records) {
+  var logSheet = ss.getSheetByName('Attendance_Logs');
+  _recalculateClassAbsentCount(ss, className, logSheet);
 }
 
 // Tự tạo sheet mẫu cho lớp với cấu trúc theo đúng ảnh
