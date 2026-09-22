@@ -33,7 +33,7 @@ class StudentSlotsDialog extends StatelessWidget {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        width: 620,
+        width: 680,
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -99,6 +99,7 @@ class StudentSlotsDialog extends StatelessWidget {
                   _buildMetricItem('Số buổi vắng', '${student.absentSlots}', BirdleColors.danger),
                   Container(width: 1, height: 28, color: BirdleColors.border),
                   Expanded(
+                    flex: 2,
                     child: Padding(
                       padding: const EdgeInsets.only(left: 12),
                       child: Column(
@@ -106,10 +107,14 @@ class StudentSlotsDialog extends StatelessWidget {
                         children: [
                           const Text('Quy chế đào tạo', style: TextStyle(fontSize: 11, color: BirdleColors.textMuted)),
                           const SizedBox(height: 3),
-                          AbsentRateBadge(
-                            rate: student.absentRate,
-                            student: student,
-                            showPercent: true,
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: AbsentRateBadge(
+                              rate: student.absentRate,
+                              student: student,
+                              showPercent: true,
+                            ),
                           ),
                         ],
                       ),
