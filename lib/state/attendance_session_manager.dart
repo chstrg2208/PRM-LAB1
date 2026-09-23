@@ -4,7 +4,10 @@ import '../models/student.dart';
 import '../models/attendance_record.dart';
 import '../models/class_schedule.dart';
 import '../models/class_session.dart';
+import '../models/class_overview_item.dart';
 import '../models/qr_attendance_session.dart';
+
+export '../models/class_overview_item.dart';
 import '../services/google_sheet_service.dart';
 import '../services/storage_service.dart';
 import '../services/ai_analytics_service.dart';
@@ -51,6 +54,8 @@ abstract class AttendanceApiClient {
   });
   Future<List<Map<String, dynamic>>> fetchAnalyticsLogs(String sheetUrl, String className);
   Future<List<Map<String, dynamic>>> fetchTodayClasses(String sheetUrl, {DateTime? date});
+  Future<AttendanceOverview> fetchAttendanceOverview(String sheetUrl) async =>
+      const AttendanceOverview();
 }
 
 /// Default Client chuyển tiếp sang GoogleSheetService
@@ -112,6 +117,10 @@ class DefaultAttendanceApiClient implements AttendanceApiClient {
   @override
   Future<List<Map<String, dynamic>>> fetchTodayClasses(String sheetUrl, {DateTime? date}) =>
       GoogleSheetService.fetchTodayClasses(sheetUrl, date: date);
+
+  @override
+  Future<AttendanceOverview> fetchAttendanceOverview(String sheetUrl) =>
+      GoogleSheetService.fetchAttendanceOverview(sheetUrl);
 }
 
 /// State Manager quản lý phiên làm việc điểm danh, danh sách sinh viên và logs phân tích
@@ -152,6 +161,10 @@ class AttendanceSessionManager extends ChangeNotifier {
   bool _isQrCompleted = false;
   bool _isReopenedQr = false;
   String _sheetSessionStatus = '';
+
+  AttendanceOverview? _attendanceOverview;
+  bool _isLoadingOverview = false;
+  String? _overviewError;
 
   AttendanceSessionManager({
     this.apiClient = const DefaultAttendanceApiClient(),
@@ -244,6 +257,10 @@ class AttendanceSessionManager extends ChangeNotifier {
   String? get analyticsError => _analyticsError;
   bool get isLoadingAnalytics => _isLoadingAnalytics;
 
+  AttendanceOverview? get attendanceOverview => _attendanceOverview;
+  bool get isLoadingOverview => _isLoadingOverview;
+  String? get overviewError => _overviewError;
+
   @override
   void dispose() {
     _disposed = true;
@@ -287,7 +304,10 @@ class AttendanceSessionManager extends ChangeNotifier {
       await loadStudentsAndAttendance(isClassChange: true);
       await loadAnalyticsLogs();
     }
-    await loadTodayClasses();
+    await Future.wait([
+      loadTodayClasses(),
+      loadAttendanceOverview(),
+    ]);
 
     _isLoading = false;
     notifyListeners();
@@ -381,6 +401,30 @@ class AttendanceSessionManager extends ChangeNotifier {
       loadStudentsAndAttendance(isClassChange: true),
       loadAnalyticsLogs(trimmed),
     ]);
+  }
+
+  /// ATD-05: Nạp dữ liệu Hub tổng quan lớp học
+  Future<void> loadAttendanceOverview({bool force = false}) async {
+    final cleanUrl = _sheetUrl.trim();
+    if (cleanUrl.isEmpty) {
+      _attendanceOverview = null;
+      _isLoadingOverview = false;
+      _overviewError = null;
+      notifyListeners();
+      return;
+    }
+    if (_isLoadingOverview && !force) return;
+    _isLoadingOverview = true;
+    _overviewError = null;
+    notifyListeners();
+    try {
+      _attendanceOverview = await apiClient.fetchAttendanceOverview(cleanUrl);
+    } catch (e) {
+      _overviewError = e.toString();
+    } finally {
+      _isLoadingOverview = false;
+      notifyListeners();
+    }
   }
 
   /// Chuyển slot học đang chọn
@@ -822,7 +866,10 @@ class AttendanceSessionManager extends ChangeNotifier {
   /// Tải lại toàn bộ dữ liệu hiện tại
   Future<String?> reload() async {
     final err = await loadStudentsAndAttendance(isClassChange: false);
-    await loadAnalyticsLogs();
+    await Future.wait([
+      loadAnalyticsLogs(),
+      loadAttendanceOverview(force: true),
+    ]);
     return err;
   }
 

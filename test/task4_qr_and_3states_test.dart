@@ -50,6 +50,9 @@ class MockTask4ApiClient implements AttendanceApiClient {
     required String className,
     required List<Student> students,
   }) async => {'success': true};
+
+  @override
+  Future<AttendanceOverview> fetchAttendanceOverview(String sheetUrl) async => const AttendanceOverview();
 }
 
 void main() {

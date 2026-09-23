@@ -136,6 +136,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                           // 0: Overview Hub
                           AttendanceOverviewView(
                             sheetUrl: _sessionManager.sheetUrl,
+                            initialOverview: _sessionManager.attendanceOverview,
+                            onLoadOverview: () => _sessionManager.apiClient.fetchAttendanceOverview(_sessionManager.sheetUrl),
                             onSelectClass: _openClassFromOverview,
                             onGoToSettings: () => setState(() => _selectedIndex = 5),
                           ),

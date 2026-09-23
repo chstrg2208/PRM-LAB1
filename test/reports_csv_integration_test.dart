@@ -42,6 +42,9 @@ class FakeAttendanceApiClient implements AttendanceApiClient {
 
   @override
   Future<List<Map<String, dynamic>>> fetchTodayClasses(String sheetUrl, {DateTime? date}) async => [];
+
+  @override
+  Future<AttendanceOverview> fetchAttendanceOverview(String sheetUrl) async => const AttendanceOverview();
 }
 
 void main() {

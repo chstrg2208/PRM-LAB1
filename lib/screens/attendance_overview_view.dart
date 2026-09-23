@@ -3,14 +3,15 @@ import 'package:intl/intl.dart';
 import '../models/class_overview_item.dart';
 import '../services/google_sheet_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/attendance_class_card.dart';
 
-/// ATD-04: Màn hình Hub tổng quan điểm danh.
+/// ATD-05: Màn hình Hub tổng quan điểm danh (Attendance Overview Hub).
 ///
-/// Hiển thị danh sách tất cả lớp học được phân chia thành 2 nhóm:
-/// - **Lớp hôm nay**: lớp có lịch học khớp với ngày hiện tại
-/// - **Các lớp khác**: lớp học không có buổi hôm nay
+/// Hiển thị danh sách tất cả lớp học được phân chia thành 2 khu vực:
+/// - **LỚP HỌC HÔM NAY**: Các lớp có lịch học khớp với ngày hiện tại (hoặc nextDate)
+/// - **CÁC LỚP KHÁC**: Các lớp học không có lịch hôm nay (xem/sửa lịch sử các buổi đã qua)
 ///
-/// Click vào một card lớp sẽ gọi [onSelectClass] để điều hướng vào [AttendanceView].
+/// Hỗ trợ Dependency Injection cho `onLoadOverview` và `initialOverview` phục vụ testing độc lập.
 class AttendanceOverviewView extends StatefulWidget {
   /// URL Google Apps Script đã cấu hình
   final String sheetUrl;
@@ -21,11 +22,19 @@ class AttendanceOverviewView extends StatefulWidget {
   /// Callback điều hướng tới màn hình Settings
   final VoidCallback? onGoToSettings;
 
+  /// Dữ liệu khởi tạo (tùy chọn, phục vụ kiểm thử)
+  final AttendanceOverview? initialOverview;
+
+  /// Callback nạp dữ liệu tùy biến (tùy chọn, phục vụ Dependency Injection / Test)
+  final Future<AttendanceOverview> Function()? onLoadOverview;
+
   const AttendanceOverviewView({
     super.key,
     required this.sheetUrl,
     required this.onSelectClass,
     this.onGoToSettings,
+    this.initialOverview,
+    this.onLoadOverview,
   });
 
   @override
@@ -40,11 +49,18 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.initialOverview != null) {
+      _overview = widget.initialOverview;
+      _isLoading = false;
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _load();
+      });
+    }
   }
 
   Future<void> _load() async {
-    if (widget.sheetUrl.isEmpty) {
+    if (widget.onLoadOverview == null && widget.sheetUrl.isEmpty) {
       setState(() {
         _isLoading = false;
         _error = null;
@@ -57,7 +73,12 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
       _error = null;
     });
     try {
-      final overview = await GoogleSheetService.fetchAttendanceOverview(widget.sheetUrl);
+      final AttendanceOverview overview;
+      if (widget.onLoadOverview != null) {
+        overview = await widget.onLoadOverview!();
+      } else {
+        overview = await GoogleSheetService.fetchAttendanceOverview(widget.sheetUrl);
+      }
       if (mounted) {
         setState(() {
           _overview = overview;
@@ -137,8 +158,8 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
   }
 
   Widget _buildBody() {
-    // Chưa cấu hình Sheet URL
-    if (widget.sheetUrl.isEmpty) {
+    // Chưa cấu hình Sheet URL và không có custom loader
+    if (widget.onLoadOverview == null && widget.sheetUrl.isEmpty && widget.initialOverview == null) {
       return _buildEmptyState(
         icon: Icons.link_off_outlined,
         title: 'Chưa kết nối Google Sheet',
@@ -154,16 +175,7 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
     }
 
     if (_isLoading) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: BirdleColors.brand),
-            SizedBox(height: 16),
-            Text('Đang tải danh sách lớp học...', style: BirdleTypography.metadata),
-          ],
-        ),
-      );
+      return _buildSkeletonGrid();
     }
 
     if (_error != null) {
@@ -196,7 +208,7 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Lớp hôm nay ──────────────────────────────────────────────────
+          // ── Khu vực 1: Lớp hôm nay ───────────────────────────────────────
           if (_overview!.todayClasses.isNotEmpty) ...[
             _buildSectionHeader(
               'LỚP HÔM NAY',
@@ -208,7 +220,7 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
             const SizedBox(height: 28),
           ],
 
-          // ── Các lớp khác ─────────────────────────────────────────────────
+          // ── Khu vực 2: Các lớp khác ──────────────────────────────────────
           if (_overview!.otherClasses.isNotEmpty) ...[
             _buildSectionHeader(
               'CÁC LỚP KHÁC',
@@ -223,11 +235,42 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
     );
   }
 
+  Widget _buildSkeletonGrid() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader('LỚP HÔM NAY', color: BirdleColors.brand),
+          const SizedBox(height: 12),
+          const Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              AttendanceClassCardSkeleton(),
+              AttendanceClassCardSkeleton(),
+            ],
+          ),
+          const SizedBox(height: 28),
+          _buildSectionHeader('CÁC LỚP KHÁC', color: BirdleColors.textMuted),
+          const SizedBox(height: 12),
+          const Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              AttendanceClassCardSkeleton(),
+              AttendanceClassCardSkeleton(),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSectionHeader(String label, {int? count, Color color = BirdleColors.textMuted}) {
     return Row(
       children: [
         Container(
-          width: 3,
+          width: 3.5,
           height: 16,
           decoration: BoxDecoration(
             color: color,
@@ -238,7 +281,7 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
         Text(
           label,
           style: TextStyle(
-            fontSize: 11,
+            fontSize: 11.5,
             fontWeight: FontWeight.w700,
             color: color,
             letterSpacing: 0.8,
@@ -272,10 +315,11 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
     return Wrap(
       spacing: 16,
       runSpacing: 16,
-      children: items.map((item) => _ClassCard(
+      children: items.map((item) => AttendanceClassCard(
         item: item,
         isToday: isToday,
         onTap: () => widget.onSelectClass(item.className),
+        onActionPressed: () => widget.onSelectClass(item.className),
       )).toList(),
     );
   }
@@ -299,297 +343,6 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
           if (action != null) ...[const SizedBox(height: 16), action],
         ],
       ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-/// Card hiển thị thông tin tổng quan một lớp học
-// ─────────────────────────────────────────────────────────────────────────────
-class _ClassCard extends StatefulWidget {
-  final ClassOverviewItem item;
-  final bool isToday;
-  final VoidCallback onTap;
-
-  const _ClassCard({
-    required this.item,
-    required this.isToday,
-    required this.onTap,
-  });
-
-  @override
-  State<_ClassCard> createState() => _ClassCardState();
-}
-
-class _ClassCardState extends State<_ClassCard> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final item = widget.item;
-
-    // Màu accent theo trạng thái
-    final Color accentColor = widget.isToday
-        ? (item.isAttendanceDone ? BirdleColors.success : BirdleColors.brand)
-        : BirdleColors.textMuted;
-    final Color accentLight = widget.isToday
-        ? (item.isAttendanceDone ? BirdleColors.successLight : BirdleColors.brandLight)
-        : BirdleColors.surfaceSecondary;
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          width: 300,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: BirdleColors.surface,
-            borderRadius: BirdleRadius.mdBorder,
-            border: Border.all(
-              color: _hovered
-                  ? accentColor.withValues(alpha: 0.5)
-                  : BirdleColors.border,
-              width: _hovered ? 1.5 : 1,
-            ),
-            boxShadow: _hovered
-                ? [BoxShadow(color: accentColor.withValues(alpha: 0.08), blurRadius: 12, offset: const Offset(0, 4))]
-                : [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Top row: class badge + status badge ──
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      item.className,
-                      style: BirdleTypography.cardTitle,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _StatusBadge(item: item, isToday: widget.isToday),
-                ],
-              ),
-              const SizedBox(height: 6),
-
-              // Subject
-              Text(
-                item.subject.isNotEmpty ? item.subject : item.subjectCode,
-                style: BirdleTypography.metadata,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 14),
-
-              // ── Info row ──────────────────────────────────────────────────
-              Row(
-                children: [
-                  _InfoChip(icon: Icons.schedule_outlined, label: 'Slot ${item.slot} · ${item.slotTime}'),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  _InfoChip(icon: Icons.calendar_today_outlined, label: item.daysOfWeek),
-                  const SizedBox(width: 12),
-                  _InfoChip(icon: Icons.room_outlined, label: item.room),
-                ],
-              ),
-              const SizedBox(height: 14),
-
-              // ── Progress bar ──────────────────────────────────────────────
-              Row(
-                children: [
-                  Text(
-                    'Buổi ${item.currentSession}/${item.totalSessions}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: accentColor,
-                      fontFamily: BirdleTypography.fontFamily,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${(item.progressRatio * 100).toStringAsFixed(0)}%',
-                    style: BirdleTypography.metadata,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  value: item.progressRatio,
-                  minHeight: 5,
-                  backgroundColor: accentLight,
-                  valueColor: AlwaysStoppedAnimation<Color>(accentColor),
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // ── Bottom row: last attendance / next date ───────────────────
-              if (widget.isToday)
-                _TodayActionRow(item: item, onTap: widget.onTap, accentColor: accentColor)
-              else
-                _OtherClassFooter(item: item),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Status badge (Hôm nay / Đã điểm danh / Các lớp khác / Buổi X)
-class _StatusBadge extends StatelessWidget {
-  final ClassOverviewItem item;
-  final bool isToday;
-
-  const _StatusBadge({required this.item, required this.isToday});
-
-  @override
-  Widget build(BuildContext context) {
-    final String label;
-    final Color bg;
-    final Color fg;
-
-    if (!isToday) {
-      if (item.lastSession != null && item.lastSession! > 0) {
-        label = 'Buổi ${item.lastSession}';
-        bg = BirdleColors.pendingLight;
-        fg = BirdleColors.pending;
-      } else {
-        label = 'Khác';
-        bg = BirdleColors.pendingLight;
-        fg = BirdleColors.pending;
-      }
-    } else if (item.isAttendanceDone) {
-      label = '✓ Đã điểm danh';
-      bg = BirdleColors.successLight;
-      fg = BirdleColors.success;
-    } else {
-      label = 'Hôm nay';
-      bg = BirdleColors.brandLight;
-      fg = BirdleColors.brand;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: fg,
-          fontFamily: BirdleTypography.fontFamily,
-        ),
-      ),
-    );
-  }
-}
-
-/// Chip icon + label nhỏ
-class _InfoChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _InfoChip({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 13, color: BirdleColors.textMuted),
-        const SizedBox(width: 4),
-        Text(label, style: BirdleTypography.metadata),
-      ],
-    );
-  }
-}
-
-/// Footer cho lớp học hôm nay: nút "Mở điểm danh"
-class _TodayActionRow extends StatelessWidget {
-  final ClassOverviewItem item;
-  final VoidCallback onTap;
-  final Color accentColor;
-
-  const _TodayActionRow({required this.item, required this.onTap, required this.accentColor});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: onTap,
-        icon: Icon(
-          item.isAttendanceDone ? Icons.visibility_outlined : Icons.fact_check_outlined,
-          size: 15,
-          color: accentColor,
-        ),
-        label: Text(
-          item.isAttendanceDone ? 'Xem điểm danh' : 'Mở điểm danh',
-          style: TextStyle(fontSize: 13, color: accentColor, fontFamily: BirdleTypography.fontFamily),
-        ),
-        style: OutlinedButton.styleFrom(
-          side: BorderSide(color: accentColor.withValues(alpha: 0.4)),
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          shape: RoundedRectangleBorder(borderRadius: BirdleRadius.smBorder),
-        ),
-      ),
-    );
-  }
-}
-
-/// Footer cho lớp khác: hiển thị buổi điểm danh gần nhất + ngày học tiếp theo
-class _OtherClassFooter extends StatelessWidget {
-  final ClassOverviewItem item;
-
-  const _OtherClassFooter({required this.item});
-
-  @override
-  Widget build(BuildContext context) {
-    final lastDateStr = item.lastDate != null
-        ? DateFormat('dd/MM/yyyy').format(item.lastDate!)
-        : '—';
-    final nextDateStr = item.nextDate != null
-        ? DateFormat('dd/MM/yyyy').format(item.nextDate!)
-        : '—';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.history, size: 13, color: BirdleColors.textMuted),
-            const SizedBox(width: 4),
-            Text(
-              'Gần nhất: ${item.lastSession != null ? "Buổi ${item.lastSession}" : "—"} · $lastDateStr',
-              style: BirdleTypography.metadata,
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            const Icon(Icons.arrow_forward_outlined, size: 13, color: BirdleColors.textMuted),
-            const SizedBox(width: 4),
-            Text(
-              'Học tiếp: $nextDateStr',
-              style: BirdleTypography.metadata,
-            ),
-          ],
-        ),
-      ],
     );
   }
 }

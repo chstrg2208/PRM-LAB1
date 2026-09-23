@@ -154,8 +154,8 @@ class AttendanceOverview {
   final List<ClassOverviewItem> otherClasses;
 
   const AttendanceOverview({
-    required this.todayClasses,
-    required this.otherClasses,
+    this.todayClasses = const [],
+    this.otherClasses = const [],
   });
 
   /// Tất cả lớp học
