@@ -234,6 +234,40 @@ class AttendanceSessionManager extends ChangeNotifier {
   QrAttendanceSession? get activeQrSession => _activeQrSession;
   int get currentSessionNumber => _currentSessionNumber;
 
+  /// Buổi học tối đa cho phép chọn/điểm danh (Buổi hiện tại của lớp)
+  /// Tuyệt đối không cho phép chọn các buổi trong tương lai (> maxAllowedSession)
+  int get maxAllowedSession {
+    // 1. Kiểm tra từ Overview nếu đã nạp
+    if (_attendanceOverview != null) {
+      final clean = _currentClass.trim().toUpperCase();
+      for (final c in _attendanceOverview!.todayClasses) {
+        if (c.className.trim().toUpperCase() == clean && c.currentSession > 0) {
+          return c.currentSession.clamp(1, 20);
+        }
+      }
+      for (final c in _attendanceOverview!.otherClasses) {
+        if (c.className.trim().toUpperCase() == clean && c.currentSession > 0) {
+          return c.currentSession.clamp(1, 20);
+        }
+      }
+    }
+
+    // 2. Metadata từ Sheet (Dòng 1-4)
+    final metaSession = GoogleSheetService.lastClassMetadata['currentSession'];
+    if (metaSession is int && metaSession >= 1 && metaSession <= 20) {
+      return metaSession;
+    }
+
+    // 3. Tính toán theo lịch học chuẩn FPT tính đến ngày hiện tại
+    final schedToday = currentSchedule.currentSessionAsOfToday(DateTime.now());
+    if (schedToday > 0) {
+      return (schedToday >= _currentSessionNumber ? schedToday : _currentSessionNumber).clamp(1, 20);
+    }
+
+    // 4. Fallback tối thiểu là 1 hoặc session hiện tại
+    return _currentSessionNumber > 0 ? _currentSessionNumber.clamp(1, 20) : 1;
+  }
+
   /// Thông tin lịch học chuẩn FPT của lớp hiện tại
   ClassSchedule get currentSchedule {
     final clean = _currentClass.trim().toUpperCase();
@@ -244,7 +278,7 @@ class AttendanceSessionManager extends ChangeNotifier {
       slot: _currentSlot,
       daysOfWeek: isIA ? 'T3-T6' : 'T2-T5',
       room: isIA ? 'NVH-603' : 'NVH-611',
-      startDate: DateTime(2026, 9, 7),
+      startDate: DateTime(2026, 9, 1),
       currentSession: _currentSessionNumber > 0 ? _currentSessionNumber : 1,
       totalSessions: 20,
     );
@@ -447,9 +481,9 @@ class AttendanceSessionManager extends ChangeNotifier {
     ]);
   }
 
-  /// Đổi buổi học (Session number 1..20) và đồng bộ trạng thái sinh viên theo cột buổi học đó
+  /// Đổi buổi học (Session number 1..maxAllowedSession) và đồng bộ trạng thái sinh viên theo cột buổi học đó
   void selectSessionNumber(int newSession) {
-    if (newSession < 1 || newSession > 20) return;
+    if (newSession < 1 || newSession > maxAllowedSession) return;
     _currentSessionNumber = newSession;
     final dateStr = '${_currentDate.year}-${_currentDate.month.toString().padLeft(2, '0')}-${_currentDate.day.toString().padLeft(2, '0')}';
     _records = _students.map((s) {
@@ -929,6 +963,13 @@ class AttendanceSessionManager extends ChangeNotifier {
       return OperationResult(
         success: false,
         message: 'Buổi học ngày ${_currentDate.day.toString().padLeft(2, '0')}/${_currentDate.month.toString().padLeft(2, '0')}/${_currentDate.year} chưa diễn ra! Chỉ được phép điểm danh sau 00:00 ngày học.',
+      );
+    }
+
+    if (!bypassDateLock && _currentSessionNumber > maxAllowedSession) {
+      return OperationResult(
+        success: false,
+        message: 'Không thể lưu điểm danh cho buổi học tương lai (Buổi $_currentSessionNumber > Buổi hiện tại $maxAllowedSession).',
       );
     }
 

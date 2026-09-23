@@ -61,9 +61,31 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
   }
 
   /// Được gọi khi giảng viên click vào card lớp học trên màn hình Overview.
-  /// Tự động select lớp đó rồi navigate sang Attendance (index 1).
-  Future<void> _openClassFromOverview(String className) async {
+  /// Tự động select lớp đó, nạp đúng slot & buổi học hiện tại rồi navigate sang Attendance (index 1).
+  Future<void> _openClassFromOverview(String className, {ClassOverviewItem? item, bool isToday = false}) async {
     await _sessionManager.selectClass(className);
+    if (item != null) {
+      if (item.slot > 0) {
+        await _sessionManager.selectSlot(item.slot);
+      }
+      if (isToday) {
+        await _sessionManager.selectDate(DateTime.now());
+      }
+      if (item.currentSession > 0) {
+        _sessionManager.selectSessionNumber(item.currentSession);
+      }
+    } else {
+      final overview = _sessionManager.attendanceOverview;
+      if (overview != null) {
+        final found = overview.todayClasses.where((c) => c.className.trim().toUpperCase() == className.trim().toUpperCase()).firstOrNull ??
+                      overview.otherClasses.where((c) => c.className.trim().toUpperCase() == className.trim().toUpperCase()).firstOrNull;
+        if (found != null) {
+          if (found.slot > 0) await _sessionManager.selectSlot(found.slot);
+          if (isToday) await _sessionManager.selectDate(DateTime.now());
+          if (found.currentSession > 0) _sessionManager.selectSessionNumber(found.currentSession);
+        }
+      }
+    }
     if (mounted) setState(() => _selectedIndex = 1);
   }
 
@@ -139,6 +161,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             initialOverview: _sessionManager.attendanceOverview,
                             onLoadOverview: () => _sessionManager.apiClient.fetchAttendanceOverview(_sessionManager.sheetUrl),
                             onSelectClass: _openClassFromOverview,
+                            onSelectClassItem: (item, isToday) => _openClassFromOverview(item.className, item: item, isToday: isToday),
                             onGoToSettings: () => setState(() => _selectedIndex = 5),
                           ),
                           // 1: Attendance
@@ -165,7 +188,9 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             onMarkAllPresent: _sessionManager.markAllPresent,
                             onMarkAllAbsent: _sessionManager.markAllAbsent,
                             currentSessionNumber: _sessionManager.currentSessionNumber,
+                            maxAllowedSession: _sessionManager.maxAllowedSession,
                             onSessionChanged: _sessionManager.selectSessionNumber,
+                            onBackToOverview: () => setState(() => _selectedIndex = 0),
                             onStartQrAttendance: () => _sessionManager.startQrAttendanceSession(),
                             onFinishQrAttendance: () => _sessionManager.finishQrAttendance(),
                             onCancelQrAttendance: () => _sessionManager.cancelQrAttendance(),

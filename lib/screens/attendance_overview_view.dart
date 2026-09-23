@@ -28,10 +28,14 @@ class AttendanceOverviewView extends StatefulWidget {
   /// Callback nạp dữ liệu tùy biến (tùy chọn, phục vụ Dependency Injection / Test)
   final Future<AttendanceOverview> Function()? onLoadOverview;
 
+  /// Callback nâng cao khi giảng viên chọn lớp kèm metadata và cờ hôm nay
+  final void Function(ClassOverviewItem item, bool isToday)? onSelectClassItem;
+
   const AttendanceOverviewView({
     super.key,
     required this.sheetUrl,
     required this.onSelectClass,
+    this.onSelectClassItem,
     this.onGoToSettings,
     this.initialOverview,
     this.onLoadOverview,
@@ -318,8 +322,14 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
       children: items.map((item) => AttendanceClassCard(
         item: item,
         isToday: isToday,
-        onTap: () => widget.onSelectClass(item.className),
-        onActionPressed: () => widget.onSelectClass(item.className),
+        onTap: () {
+          widget.onSelectClass(item.className);
+          widget.onSelectClassItem?.call(item, isToday);
+        },
+        onActionPressed: () {
+          widget.onSelectClass(item.className);
+          widget.onSelectClassItem?.call(item, isToday);
+        },
       )).toList(),
     );
   }

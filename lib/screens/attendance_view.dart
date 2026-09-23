@@ -48,6 +48,8 @@ class AttendanceView extends StatefulWidget {
   final bool isQrAttendanceLocked;
   final bool isSessionCompleted;
   final QrAttendanceSession? Function()? onReopenQrAttendance;
+  final VoidCallback? onBackToOverview;
+  final int maxAllowedSession;
 
   const AttendanceView({
     super.key,
@@ -85,6 +87,8 @@ class AttendanceView extends StatefulWidget {
     this.isQrAttendanceLocked = false,
     this.isSessionCompleted = false,
     this.onReopenQrAttendance,
+    this.onBackToOverview,
+    this.maxAllowedSession = 20,
   });
 
   @override
@@ -154,6 +158,17 @@ class _AttendanceViewState extends State<AttendanceView> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (widget.onBackToOverview != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, right: 12),
+                  child: BirdleGhostButton(
+                    key: const Key('btnBackToOverview'),
+                    icon: Icons.arrow_back,
+                    label: 'Quay lại danh sách lớp',
+                    onPressed: widget.onBackToOverview,
+                  ),
+                ),
+              ],
               SizedBox(
                 width: 320,
                 child: Column(
@@ -775,19 +790,24 @@ class _AttendanceViewState extends State<AttendanceView> {
           ),
           Container(width: 1, height: 16, color: BirdleColors.border, margin: const EdgeInsets.symmetric(horizontal: 8)),
 
-          // Buổi Dropdown (Buổi 1..20)
-          DropdownButton<int>(
-            value: widget.currentSessionNumber >= 1 && widget.currentSessionNumber <= 20
-                ? widget.currentSessionNumber
-                : 1,
-            underline: const SizedBox(),
-            isDense: true,
-            style: const TextStyle(fontWeight: FontWeight.w600, color: BirdleColors.brand, fontSize: 13),
-            items: List.generate(20, (i) => i + 1)
-                .map((s) => DropdownMenuItem(value: s, child: Text('Buổi $s')))
-                .toList(),
-            onChanged: (val) {
-              if (val != null) widget.onSessionChanged?.call(val);
+          // Buổi Dropdown (Giới hạn từ Buổi 1 đến maxAllowedSession)
+          Builder(
+            builder: (context) {
+              final maxSess = widget.maxAllowedSession.clamp(1, 20);
+              final currentSessVal = widget.currentSessionNumber.clamp(1, maxSess);
+              return DropdownButton<int>(
+                key: const Key('dropdownSessionNumber'),
+                value: currentSessVal,
+                underline: const SizedBox(),
+                isDense: true,
+                style: const TextStyle(fontWeight: FontWeight.w600, color: BirdleColors.brand, fontSize: 13),
+                items: List.generate(maxSess, (i) => i + 1)
+                    .map((s) => DropdownMenuItem(value: s, child: Text('Buổi $s')))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) widget.onSessionChanged?.call(val);
+                },
+              );
             },
           ),
           Container(width: 1, height: 16, color: BirdleColors.border, margin: const EdgeInsets.symmetric(horizontal: 8)),
