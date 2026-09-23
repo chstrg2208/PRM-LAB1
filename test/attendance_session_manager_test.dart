@@ -383,7 +383,18 @@ void main() {
 
       expect(find.text('BIRDLE'), findsOneWidget);
       expect(find.text('Sheets: Connected'), findsOneWidget);
-      expect(find.text('Overview / Dashboard'), findsOneWidget);
+      expect(find.text('Attendance / Workspace'), findsOneWidget);
+
+      // Verify sidebar contains only the 5 required navigation items
+      expect(find.text('Attendance'), findsWidgets);
+      expect(find.text('Reports'), findsOneWidget);
+      expect(find.text('AI Insights'), findsOneWidget);
+      expect(find.text('FAP Sync'), findsOneWidget);
+      expect(find.text('Settings'), findsOneWidget);
+
+      // Verify Dashboard and Students are decoupled from navigation
+      expect(find.text('Dashboard'), findsNothing);
+      expect(find.text('Students'), findsNothing);
 
       manager.dispose();
     });

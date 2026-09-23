@@ -4,9 +4,7 @@ import '../state/attendance_session_manager.dart';
 import '../theme/app_theme.dart';
 import '../widgets/status_badge.dart';
 import '../widgets/birdle_components.dart';
-import 'dashboard_view.dart';
 import 'attendance_view.dart';
-import 'students_view.dart';
 import 'reports_view.dart';
 import 'ai_insights_view.dart';
 import 'fap_sync_view.dart';
@@ -48,22 +46,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     if (!mounted) return;
 
     if (result.requiresConfiguration) {
-      setState(() => _selectedIndex = 6);
+      setState(() => _selectedIndex = 4);
     }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(result.message),
-        backgroundColor: result.requiresConfiguration
-            ? BirdleColors.warning
-            : (result.success ? BirdleColors.brand : BirdleColors.danger),
-      ),
-    );
-  }
-
-  Future<void> _syncStudentsToSheet() async {
-    final result = await _sessionManager.syncStudents();
-    if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -141,26 +125,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                       child: IndexedStack(
                         index: _selectedIndex,
                         children: [
-                          // 0: Dashboard
-                          DashboardView(
-                            students: _sessionManager.students,
-                            records: _sessionManager.records,
-                            currentClass: _sessionManager.currentClass,
-                            availableClasses: _sessionManager.availableClasses,
-                            onClassChanged: _sessionManager.selectClass,
-                            currentSlot: _sessionManager.currentSlot,
-                            currentDate: _sessionManager.currentDate,
-                            isSheetConnected: _sessionManager.isSheetConnected,
-                            todayClasses: _sessionManager.todayClasses,
-                            onSelectClassAndSlot: (cName, slot) {
-                              _sessionManager.selectClass(cName);
-                              _sessionManager.selectSlot(slot);
-                            },
-                            onGoToAttendance: () => setState(() => _selectedIndex = 1),
-                            onGoToFapSync: () => setState(() => _selectedIndex = 5),
-                            onGoToSettings: () => setState(() => _selectedIndex = 6),
-                          ),
-                          // 1: Attendance
+                          // 0: Attendance
                           AttendanceView(
                             students: _sessionManager.students,
                             records: _sessionManager.records,
@@ -175,7 +140,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             isLoading: _sessionManager.isLoading,
                             errorMessage: _sessionManager.dataError,
                             isSheetConfigured: _sessionManager.isSheetConfigured,
-                            onGoToSettings: () => setState(() => _selectedIndex = 6),
+                            onGoToSettings: () => setState(() => _selectedIndex = 4),
                             onClassChanged: _sessionManager.selectClass,
                             onSlotChanged: _sessionManager.selectSlot,
                             onDateChanged: _sessionManager.selectDate,
@@ -194,28 +159,10 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             onReopenQrAttendance: () => _sessionManager.reopenQrAttendanceSession(),
                             onSaveToSheet: _saveToGoogleSheet,
                             onReloadFromSheet: _reloadFromSheet,
-                            onGoToFapSync: () => setState(() => _selectedIndex = 5),
+                            onGoToFapSync: () => setState(() => _selectedIndex = 3),
                             onImportStudents: _sessionManager.importStudents,
                           ),
-                          // 2: Students
-                          StudentsView(
-                            students: _sessionManager.students,
-                            currentClass: _sessionManager.currentClass,
-                            availableClasses: _sessionManager.availableClasses,
-                            isLoadingClasses: _sessionManager.isLoadingClasses,
-                            classesError: _sessionManager.classesError,
-                            onRetryLoadClasses: () => _sessionManager.loadClasses(),
-                            isLoading: _sessionManager.isLoading,
-                            errorMessage: _sessionManager.dataError,
-                            isSheetConfigured: _sessionManager.isSheetConfigured,
-                            onReload: _reloadFromSheet,
-                            onGoToSettings: () => setState(() => _selectedIndex = 6),
-                            onUpdateStudents: _sessionManager.updateStudents,
-                            onClassChanged: _sessionManager.selectClass,
-                            onSyncToSheet: _syncStudentsToSheet,
-                            onGoToImport: () => setState(() => _selectedIndex = 5),
-                          ),
-                          // 3: Reports
+                          // 1: Reports
                           ReportsView(
                             students: _sessionManager.students,
                             currentClass: _sessionManager.currentClass,
@@ -230,7 +177,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             currentSlot: _sessionManager.currentSlot,
                             currentDate: _sessionManager.currentDate,
                           ),
-                          // 4: AI Insights
+                          // 2: AI Insights
                           AiInsightsView(
                             students: _sessionManager.students,
                             records: _sessionManager.records,
@@ -242,10 +189,10 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             analyticsError: _sessionManager.analyticsError,
                             isLoadingAnalytics: _sessionManager.isLoadingAnalytics,
                             onRetryLoadAnalytics: () => _sessionManager.loadAnalyticsLogs(),
-                            onConfigureByok: () => setState(() => _selectedIndex = 6),
+                            onConfigureByok: () => setState(() => _selectedIndex = 4),
                             schedule: _sessionManager.currentSchedule,
                           ),
-                          // 5: FAP Sync & Import Center
+                          // 3: FAP Sync & Import Center
                           FapSyncView(
                             students: _sessionManager.students,
                             records: _sessionManager.records,
@@ -254,7 +201,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             onImportStudents: _sessionManager.importStudents,
                             onSaveToSheet: _saveToGoogleSheet,
                           ),
-                          // 6: Settings
+                          // 4: Settings
                           SettingsView(
                             initialSheetUrl: _sessionManager.sheetUrl,
                             onSaveSheetUrl: _sessionManager.setSheetUrl,
@@ -345,26 +292,21 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               children: [
-                _buildSectionHeader('OVERVIEW'),
-                _buildNavItem(0, 'Dashboard', Icons.space_dashboard_outlined),
-
-                const SizedBox(height: 16),
                 _buildSectionHeader('ATTENDANCE'),
-                _buildNavItem(1, 'Attendance', Icons.fact_check_outlined),
-                _buildNavItem(2, 'Students', Icons.people_outline),
-                _buildNavItem(3, 'Reports', Icons.insert_chart_outlined),
+                _buildNavItem(0, 'Attendance', Icons.fact_check_outlined),
+                _buildNavItem(1, 'Reports', Icons.insert_chart_outlined),
 
                 const SizedBox(height: 16),
                 _buildSectionHeader('INTELLIGENCE'),
-                _buildNavItem(4, 'AI Insights', Icons.insights_outlined),
+                _buildNavItem(2, 'AI Insights', Icons.insights_outlined),
 
                 const SizedBox(height: 16),
                 _buildSectionHeader('INTEGRATION'),
-                _buildNavItem(5, 'FAP Sync', Icons.sync),
+                _buildNavItem(3, 'FAP Sync', Icons.sync),
 
                 const SizedBox(height: 16),
                 _buildSectionHeader('SYSTEM'),
-                _buildNavItem(6, 'Settings', Icons.settings_outlined),
+                _buildNavItem(4, 'Settings', Icons.settings_outlined),
               ],
             ),
           ),
@@ -524,9 +466,15 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
           ],
           const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 18, color: BirdleColors.textSecondary),
-            tooltip: 'Làm mới dữ liệu',
-            onPressed: _reloadFromSheet,
+            icon: _sessionManager.isLoading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: BirdleColors.brand),
+                  )
+                : const Icon(Icons.refresh, size: 18, color: BirdleColors.textSecondary),
+            tooltip: 'Làm mới dữ liệu từ Google Sheets',
+            onPressed: _sessionManager.isLoading ? null : _reloadFromSheet,
           ),
         ],
       ),
@@ -536,18 +484,14 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
   String _getScreenTitle() {
     switch (_selectedIndex) {
       case 0:
-        return 'Overview / Dashboard';
-      case 1:
         return 'Attendance / Workspace';
-      case 2:
-        return 'Attendance / Students';
-      case 3:
+      case 1:
         return 'Attendance / Reports';
-      case 4:
+      case 2:
         return 'Intelligence / AI Insights';
-      case 5:
+      case 3:
         return 'Integration / FAP Sync & Import';
-      case 6:
+      case 4:
         return 'System / Settings';
       default:
         return 'Birdle';
