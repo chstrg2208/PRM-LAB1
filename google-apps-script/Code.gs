@@ -432,8 +432,6 @@ function doGet(e) {
       var targetDate = targetDateStr ? new Date(targetDateStr) : new Date();
       var weekday = targetDate.getDay(); // 0 = Chủ Nhật, 1 = Thứ Hai ... 6 = Thứ Bảy
 
-      var scheduleSheet = _getOrCreateSchedulesSheet(ss);
-      var schedData = scheduleSheet.getDataRange().getValues();
       var logSheet = ss.getSheetByName('Attendance_Logs');
       var logValues = logSheet ? logSheet.getDataRange().getValues() : [];
 
@@ -873,20 +871,57 @@ function doGet(e) {
   // 6. Lấy toàn bộ danh sách cấu hình lịch học
   if (action === 'getClassSchedules') {
     try {
-      var sSheet = _getOrCreateSchedulesSheet(ss);
-      var sData = sSheet.getDataRange().getValues();
+      var sSheet = ss.getSheetByName('_Class_Schedules');
       var schedules = [];
-      for (var k = 1; k < sData.length; k++) {
-        var r = sData[k];
-        if (r[0] && r[0].toString().trim() !== '') {
+      if (sSheet) {
+        var sData = sSheet.getDataRange().getValues();
+        for (var k = 1; k < sData.length; k++) {
+          var r = sData[k];
+          if (r[0] && r[0].toString().trim() !== '') {
+            schedules.push({
+              className: r[0].toString().trim(),
+              subjectCode: r[1] ? r[1].toString().trim() : 'PRM393',
+              slot: r[2] ? parseInt(r[2]) : 1,
+              daysOfWeek: r[3] ? r[3].toString().trim() : 'T2-T5',
+              room: r[4] ? r[4].toString().trim() : 'BE-302',
+              startDate: r[5] ? r[5].toString().trim() : '2026-09-01',
+              totalSessions: r[6] ? parseInt(r[6]) : 20
+            });
+          }
+        }
+      } else {
+        // Quét trực tiếp các Sheet lớp để lấy cấu hình từ Dòng 1-4 (không tự tạo sheet _Class_Schedules)
+        var allSheets = ss.getSheets();
+        for (var sh = 0; sh < allSheets.length; sh++) {
+          var aSheet = allSheets[sh];
+          if (typeof aSheet.isSheetHidden === 'function' && aSheet.isSheetHidden()) continue;
+          var sName = aSheet.getName() ? aSheet.getName().trim() : '';
+          if (!sName || sName.indexOf('_') === 0 || sName.indexOf('.') === 0 || sName.toLowerCase() === 'attendance_logs') continue;
+          var sData = aSheet.getDataRange().getValues();
+          if (sData.length < 4) continue;
+          var metaDays = 'T2-T5', metaSlot = 1, metaRoom = 'NVH-601', metaStart = '2026-09-01', metaTotal = 20, metaSub = 'PRM393';
+          for (var mr = 0; mr < Math.min(sData.length, 4); mr++) {
+            for (var mc = 0; mc < sData[mr].length; mc++) {
+              var lbl = (sData[mr][mc] || '').toString().trim().toUpperCase();
+              var val = (sData[mr][mc + 1] !== undefined) ? sData[mr][mc + 1].toString().trim() : '';
+              if (lbl.indexOf('LỊCH') >= 0 || lbl.indexOf('SLOT') >= 0) {
+                var dm = val.match(/(T[2-7]-T[2-7])/i);
+                if (dm) metaDays = dm[1].toUpperCase();
+                var sm = val.match(/Slot\s*([1-6])/i);
+                if (sm) metaSlot = parseInt(sm[1]);
+              } else if (lbl.indexOf('PHÒNG') >= 0) metaRoom = val;
+              else if (lbl.indexOf('NGÀY BẮT ĐẦU') >= 0) metaStart = val;
+              else if (lbl.indexOf('TỔNG SỐ BUỔI') >= 0) metaTotal = parseInt(val) || 20;
+            }
+          }
           schedules.push({
-            className: r[0].toString().trim(),
-            subjectCode: r[1] ? r[1].toString().trim() : 'PRM393',
-            slot: r[2] ? parseInt(r[2]) : 1,
-            daysOfWeek: r[3] ? r[3].toString().trim() : 'T2-T5',
-            room: r[4] ? r[4].toString().trim() : 'BE-302',
-            startDate: r[5] ? r[5].toString().trim() : '2026-09-01',
-            totalSessions: r[6] ? parseInt(r[6]) : 20
+            className: sName,
+            subjectCode: sName.split('_')[1] || metaSub,
+            slot: metaSlot,
+            daysOfWeek: metaDays,
+            room: metaRoom,
+            startDate: metaStart,
+            totalSessions: metaTotal
           });
         }
       }
@@ -1650,25 +1685,9 @@ function _calcCurrentSessionFromToday(startDateStr, targetDate, daysOfWeek, tota
   }
 }
 
-// Quản lý hoặc tự tạo sheet cấu hình lịch học _Class_Schedules
+// Quản lý sheet cấu hình lịch học _Class_Schedules (không tự tiện tạo sheet nếu không có)
 function _getOrCreateSchedulesSheet(ss) {
-  var sheet = ss.getSheetByName('_Class_Schedules');
-  if (!sheet) {
-    sheet = ss.insertSheet('_Class_Schedules');
-    var headers = ['CLASS_NAME', 'SUBJECT_CODE', 'SLOT', 'DAYS_OF_WEEK', 'ROOM', 'START_DATE', 'TOTAL_SESSIONS'];
-    sheet.appendRow(headers);
-    var hRange = sheet.getRange(1, 1, 1, headers.length);
-    hRange.setBackground('#0D9488');
-    hRange.setFontColor('#FFFFFF');
-    hRange.setFontWeight('bold');
-
-    var sampleRows = [
-      ['SE1801', 'PRM393', 1, 'T2-T5', 'BE-302', '2026-09-01', 20],
-      ['IA1601', 'PRM393', 2, 'T3-T6', 'BE-304', '2026-09-01', 20]
-    ];
-    sheet.getRange(2, 1, sampleRows.length, headers.length).setValues(sampleRows);
-  }
-  return sheet;
+  return ss.getSheetByName('_Class_Schedules');
 }
 
 // Quản lý hoặc tự tạo sheet lưu check-in QR tạm thời _Qr_CheckIns
