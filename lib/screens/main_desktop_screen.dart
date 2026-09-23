@@ -11,6 +11,7 @@ import 'reports_view.dart';
 import 'ai_insights_view.dart';
 import 'fap_sync_view.dart';
 import 'settings_view.dart';
+import '../widgets/report_preview_dialog.dart';
 
 class MainDesktopScreen extends StatefulWidget {
   final AttendanceSessionManager? sessionManager;
@@ -87,8 +88,24 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
   }
 
   Future<void> _exportReportCsv() async {
-    final result = await _sessionManager.exportCurrentReportCsv();
-    if (!mounted) return;
+    if (_sessionManager.students.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Chưa có dữ liệu sinh viên để xuất báo cáo.'),
+          backgroundColor: BirdleColors.warning,
+        ),
+      );
+      return;
+    }
+
+    final result = await ReportSummaryPreviewDialog.show(
+      context: context,
+      className: _sessionManager.currentClass,
+      students: _sessionManager.students,
+      onConfirmExport: (delimiter) => _sessionManager.exportCurrentReportCsv(delimiter: delimiter),
+    );
+
+    if (!mounted || result == null) return;
 
     final message = result.success && result.filePath != null
         ? '${result.message} (${result.filePath})'
@@ -129,6 +146,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             students: _sessionManager.students,
                             records: _sessionManager.records,
                             currentClass: _sessionManager.currentClass,
+                            availableClasses: _sessionManager.availableClasses,
+                            onClassChanged: _sessionManager.selectClass,
                             currentSlot: _sessionManager.currentSlot,
                             currentDate: _sessionManager.currentDate,
                             isSheetConnected: _sessionManager.isSheetConnected,
@@ -215,6 +234,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             students: _sessionManager.students,
                             records: _sessionManager.records,
                             currentClass: _sessionManager.currentClass,
+                            availableClasses: _sessionManager.availableClasses,
+                            onClassChanged: _sessionManager.selectClass,
                             historyLogs: _sessionManager.historyLogs,
                             analyticsStatus: _sessionManager.analyticsStatus,
                             analyticsError: _sessionManager.analyticsError,

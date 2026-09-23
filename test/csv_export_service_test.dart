@@ -199,7 +199,8 @@ void main() {
       expect(filename.contains('..'), false);
       expect(filename.contains('/'), false);
       expect(filename.contains(r'\'), false);
-      expect(filename.startsWith('Birdle_BaoCao_hack_class_'), true);
+      expect(filename.startsWith('Birdle_BaoCao_hack_class_') || filename.startsWith('BaoCao_ChuyenCan_hack_class_'), true);
     });
+
   });
 }

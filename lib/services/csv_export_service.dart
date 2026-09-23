@@ -1,5 +1,5 @@
-import 'dart:io';
 import '../models/student.dart';
+import 'platform_helper.dart';
 
 /// Kết quả xuất file CSV
 class CsvExportResult {
@@ -17,49 +17,61 @@ class CsvExportResult {
   String toString() => 'CsvExportResult(success: $success, filePath: $filePath, message: $message)';
 }
 
-/// Service tạo nội dung CSV và ghi file báo cáo chuyên cần
+/// Service tạo nội dung CSV và ghi file báo cáo chuyên cần (Pure Dart cross-platform)
 class CsvExportService {
   static const String utf8Bom = '\uFEFF';
   static const String csvHeader = 'Mã SV,Họ và tên,Lớp,Email,Tổng số buổi,Vắng,Có mặt,Tỷ lệ vắng,Trạng thái';
 
-  /// Sanitize className để tránh path traversal và ký tự không hợp lệ cho filename
+  /// Sanitize className để tránh path traversal và ký tự không hợp lệ trên Windows/macOS/Linux
   static String sanitizeClassName(String className) {
-    var sanitized = className.trim().replaceAll(RegExp(r'[\/\\:*?"<>|]'), '_');
+    var sanitized = className.trim().replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
     sanitized = sanitized.replaceAll('..', '_');
     sanitized = sanitized.replaceAll(RegExp(r'_+'), '_');
     sanitized = sanitized.replaceAll(RegExp(r'^[._]+|[._]+$'), '');
     return sanitized.isEmpty ? 'UnknownClass' : sanitized;
   }
 
-  /// Escape chuẩn CSV RFC 4180: quote khi chứa dấu phẩy, nháy kép hoặc newline; nhân đôi nháy kép
-  static String escapeCsvField(String field) {
-    if (field.contains(',') || field.contains('"') || field.contains('\n') || field.contains('\r')) {
+  /// Escape chuẩn CSV RFC 4180: quote khi chứa ký tự phân cách, nháy kép hoặc newline; nhân đôi nháy kép
+  static String escapeCsvField(String field, {String delimiter = ','}) {
+    if (field.contains(delimiter) || field.contains('"') || field.contains('\n') || field.contains('\r')) {
       return '"${field.replaceAll('"', '""')}"';
     }
     return field;
   }
 
-  /// Sinh chuỗi nội dung CSV hoàn chỉnh với BOM UTF-8
+  /// Sinh chuỗi nội dung CSV cơ bản hoàn chỉnh với BOM UTF-8
   static String generateCsvContent({
     required List<Student> students,
     String? className,
+    String delimiter = ',',
   }) {
     final buffer = StringBuffer();
     buffer.write(utf8Bom);
-    buffer.writeln(csvHeader);
+    final headers = [
+      'Mã SV',
+      'Họ và tên',
+      'Lớp',
+      'Email',
+      'Tổng số buổi',
+      'Vắng',
+      'Có mặt',
+      'Tỷ lệ vắng',
+      'Trạng thái',
+    ];
+    buffer.writeln(headers.join(delimiter));
 
     for (final s in students) {
-      final rollNumber = escapeCsvField(s.rollNumber);
-      final fullName = escapeCsvField(s.fullName);
-      final cName = escapeCsvField(s.className.isNotEmpty ? s.className : (className ?? ''));
-      final email = escapeCsvField(s.email);
+      final rollNumber = escapeCsvField(s.rollNumber, delimiter: delimiter);
+      final fullName = escapeCsvField(s.fullName, delimiter: delimiter);
+      final cName = escapeCsvField(s.className.isNotEmpty ? s.className : (className ?? ''), delimiter: delimiter);
+      final email = escapeCsvField(s.email, delimiter: delimiter);
       final totalSlots = s.totalSlots;
       final absentSlots = s.absentSlots;
       final presentSlots = (totalSlots - absentSlots) > 0 ? (totalSlots - absentSlots) : 0;
       final absentRate = '${s.absentRate.toStringAsFixed(1)}%';
-      final status = escapeCsvField(s.trainingStatusLabel);
+      final status = escapeCsvField(s.trainingStatusLabel, delimiter: delimiter);
 
-      buffer.writeln('$rollNumber,$fullName,$cName,$email,$totalSlots,$absentSlots,$presentSlots,$absentRate,$status');
+      buffer.writeln('$rollNumber$delimiter$fullName$delimiter$cName$delimiter$email$delimiter$totalSlots$delimiter$absentSlots$delimiter$presentSlots$delimiter$absentRate$delimiter$status');
     }
 
     return buffer.toString();
@@ -73,130 +85,100 @@ class CsvExportService {
   static String generateDetailedCsvContent({
     required List<Student> students,
     String? className,
+    String delimiter = ',',
   }) {
     final buffer = StringBuffer();
     buffer.write(utf8Bom);
-    buffer.writeln(detailedCsvHeader);
+
+    final headers = [
+      'Mã SV',
+      'Họ và tên',
+      'Lớp',
+      'Email',
+      'Tổng số buổi',
+      'Vắng',
+      'Có mặt',
+      'Tỷ lệ vắng',
+      'Trạng thái',
+      ...List.generate(20, (idx) => 'B${idx + 1}'),
+    ];
+    buffer.writeln(headers.join(delimiter));
 
     for (final s in students) {
-      final rollNumber = escapeCsvField(s.rollNumber);
-      final fullName = escapeCsvField(s.fullName);
-      final cName = escapeCsvField(s.className.isNotEmpty ? s.className : (className ?? ''));
-      final email = escapeCsvField(s.email);
+      final rollNumber = escapeCsvField(s.rollNumber, delimiter: delimiter);
+      final fullName = escapeCsvField(s.fullName, delimiter: delimiter);
+      final cName = escapeCsvField(s.className.isNotEmpty ? s.className : (className ?? ''), delimiter: delimiter);
+      final email = escapeCsvField(s.email, delimiter: delimiter);
       final totalSlots = s.totalSlots;
       final absentSlots = s.absentSlots;
       final presentSlots = (totalSlots - absentSlots) > 0 ? (totalSlots - absentSlots) : 0;
       final absentRate = '${s.absentRate.toStringAsFixed(1)}%';
-      final status = escapeCsvField(s.trainingStatusLabel);
-      final slotCols = List.generate(20, (idx) => escapeCsvField(s.getSlot20Status(idx + 1))).join(',');
+      final status = escapeCsvField(s.trainingStatusLabel, delimiter: delimiter);
+      final slotCols = List.generate(20, (idx) => escapeCsvField(s.getSlot20Status(idx + 1), delimiter: delimiter)).join(delimiter);
 
-      buffer.writeln('$rollNumber,$fullName,$cName,$email,$totalSlots,$absentSlots,$presentSlots,$absentRate,$status,$slotCols');
+      buffer.writeln('$rollNumber$delimiter$fullName$delimiter$cName$delimiter$email$delimiter$totalSlots$delimiter$absentSlots$delimiter$presentSlots$delimiter$absentRate$delimiter$status$delimiter$slotCols');
     }
 
     return buffer.toString();
   }
 
-  /// Tạo tên file an toàn cho báo cáo chuyên cần
+  /// Tạo tên file chuẩn hóa an toàn cho báo cáo chuyên cần
   static String generateFileName({
     required String className,
     DateTime? timestamp,
+    String? customPrefix,
   }) {
     final cleanClass = sanitizeClassName(className);
-    final dt = timestamp ?? DateTime.now();
-    final y = dt.year.toString();
-    final m = dt.month.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    final h = dt.hour.toString().padLeft(2, '0');
-    final min = dt.minute.toString().padLeft(2, '0');
-    final s = dt.second.toString().padLeft(2, '0');
-    final timeStr = '$y$m${d}_$h$min$s';
-    return 'Birdle_BaoCao_${cleanClass}_$timeStr.csv';
+    if (timestamp != null) {
+      final y = timestamp.year.toString();
+      final m = timestamp.month.toString().padLeft(2, '0');
+      final d = timestamp.day.toString().padLeft(2, '0');
+      final h = timestamp.hour.toString().padLeft(2, '0');
+      final min = timestamp.minute.toString().padLeft(2, '0');
+      final s = timestamp.second.toString().padLeft(2, '0');
+      final timeStr = '$y$m${d}_$h$min$s';
+      return '${customPrefix ?? "Birdle_BaoCao"}_${cleanClass}_$timeStr.csv';
+    }
+    final prefix = customPrefix ?? 'BaoCao_ChuyenCan';
+    final timeEpoch = DateTime.now().millisecondsSinceEpoch;
+    return '${prefix}_${cleanClass}_$timeEpoch.csv';
   }
 
-  /// Xác định thư mục Downloads mặc định an toàn trên hệ điều hành
-  static Directory? resolveDefaultDownloadDirectory({
-    Map<String, String>? environment,
-    bool? isWindows,
-  }) {
-    try {
-      final env = environment ?? Platform.environment;
-      final win = isWindows ?? Platform.isWindows;
-
-      if (win) {
-        final userProfile = env['USERPROFILE'];
-        if (userProfile != null && userProfile.trim().isNotEmpty) {
-          final downloadDir = Directory('$userProfile\\Downloads');
-          if (downloadDir.existsSync()) {
-            return downloadDir;
-          }
-        }
-      } else {
-        final home = env['HOME'];
-        if (home != null && home.trim().isNotEmpty) {
-          final downloadDir = Directory('$home/Downloads');
-          if (downloadDir.existsSync()) {
-            return downloadDir;
-          }
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  /// Ghi file CSV thật vào filesystem
+  /// Ghi file CSV thật hoặc kích hoạt tải xuống trình duyệt (hỗ trợ cross-platform)
   static Future<CsvExportResult> exportToFile({
     required List<Student> students,
     required String className,
-    Directory? targetDirectory,
+    String delimiter = ',',
+    dynamic targetDirectory,
     DateTime? timestamp,
   }) async {
-    final dir = targetDirectory ?? resolveDefaultDownloadDirectory();
-    if (dir == null) {
-      return const CsvExportResult(
-        success: false,
-        message: 'Không thể xác định thư mục tải xuống (Downloads). Vui lòng chọn đường dẫn thư mục đích hợp lệ.',
-      );
-    }
-
     try {
-      if (!dir.existsSync()) {
-        dir.createSync(recursive: true);
-      }
-    } catch (e) {
-      return CsvExportResult(
-        success: false,
-        message: 'Không có quyền ghi hoặc không thể tạo thư mục đích: ${dir.path} ($e)',
+      final filename = generateFileName(className: className, timestamp: timestamp);
+      final csvContent = generateDetailedCsvContent(
+        students: students,
+        className: className,
+        delimiter: delimiter,
       );
-    }
 
-    final filename = generateFileName(className: className, timestamp: timestamp);
-    final separator = Platform.pathSeparator;
-    var filePath = '${dir.path}$separator$filename';
 
-    // Đảm bảo không ghi đè nếu file đã tồn tại bằng cách thêm suffix
-    var targetFile = File(filePath);
-    int counter = 1;
-    final baseName = filename.substring(0, filename.length - 4); // drop .csv
-    while (targetFile.existsSync()) {
-      filePath = '${dir.path}$separator${baseName}_$counter.csv';
-      targetFile = File(filePath);
-      counter++;
-    }
 
-    try {
-      final csvContent = generateCsvContent(students: students, className: className);
-      await targetFile.writeAsString(csvContent, flush: true);
+      final platformResult = await PlatformHelper.instance.saveOrDownloadCsvFile(
+        fileName: filename,
+        csvContent: csvContent,
+        targetDirectory: targetDirectory,
+      );
 
       return CsvExportResult(
-        success: true,
-        filePath: targetFile.absolute.path,
-        message: 'Đã xuất báo cáo CSV chuyên cần thành công!',
+        success: platformResult.success,
+        filePath: platformResult.filePath,
+        message: platformResult.message,
       );
     } catch (e) {
       return CsvExportResult(
         success: false,
-        message: 'Lỗi trong quá trình ghi file CSV: $e',
+        message: 'Lỗi trong quá trình xuất file CSV: $e',
       );
     }
   }
 }
+

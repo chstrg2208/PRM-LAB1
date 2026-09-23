@@ -633,6 +633,85 @@ class GoogleSheetService {
 
   /// Danh sách mẫu sinh viên FPT phục vụ mục đích kiểm thử độc lập
   static List<Student> getSampleStudentsForTesting([String className = 'SE1801']) {
+    if (className.contains('IA1601')) {
+      // Lớp IA1601_CSN101: Chuyên cần rất tốt (0 ca vắng để test Zero Data / Safe State hoàn hảo)
+      return [
+        Student(
+          member: 'IA160012',
+          code: 'IA160012',
+          surname: 'Nguyễn',
+          middleName: 'Gia',
+          givenName: 'Bảo',
+          email: 'baongia160012@fpt.edu.vn',
+          className: className,
+          totalSlots: 20,
+          absentSlots: 0,
+          slots20: ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
+        ),
+        Student(
+          member: 'IA160045',
+          code: 'IA160045',
+          surname: 'Trần',
+          middleName: 'Đức',
+          givenName: 'Anh',
+          email: 'anhtdia160045@fpt.edu.vn',
+          className: className,
+          totalSlots: 20,
+          absentSlots: 0,
+          slots20: ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
+        ),
+        Student(
+          member: 'IA160088',
+          code: 'IA160088',
+          surname: 'Lê',
+          middleName: 'Thị',
+          givenName: 'Cúc',
+          email: 'cucltia160088@fpt.edu.vn',
+          className: className,
+          totalSlots: 20,
+          absentSlots: 0,
+          slots20: ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
+        ),
+        Student(
+          member: 'IA160102',
+          code: 'IA160102',
+          surname: 'Phạm',
+          middleName: 'Thế',
+          givenName: 'Dũng',
+          email: 'dungptia160102@fpt.edu.vn',
+          className: className,
+          totalSlots: 20,
+          absentSlots: 0,
+          slots20: ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
+        ),
+        Student(
+          member: 'IA160156',
+          code: 'IA160156',
+          surname: 'Vũ',
+          middleName: 'Bá',
+          givenName: 'Giang',
+          email: 'giangvbia160156@fpt.edu.vn',
+          className: className,
+          totalSlots: 20,
+          absentSlots: 0,
+          slots20: ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
+        ),
+        Student(
+          member: 'IA160199',
+          code: 'IA160199',
+          surname: 'Lưu',
+          middleName: 'Gia',
+          givenName: 'Huy',
+          email: 'huylgia160199@fpt.edu.vn',
+          className: className,
+          totalSlots: 20,
+          absentSlots: 0,
+          slots20: ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
+        ),
+      ];
+    }
+
+    // Lớp SE1801_PRM393: 9 sinh viên với đầy đủ kịch bản Cảnh báo & Cấm thi
     return [
       Student(
         member: 'CE190585',
@@ -644,6 +723,7 @@ class GoogleSheetService {
         className: className,
         totalSlots: 20,
         absentSlots: 1,
+        slots20: ['P', 'P', 'A', 'P', 'P', 'P', 'P', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
       ),
       Student(
         member: 'SE170123',
@@ -655,6 +735,7 @@ class GoogleSheetService {
         className: className,
         totalSlots: 20,
         absentSlots: 2,
+        slots20: ['P', 'A', 'P', 'P', 'A', 'P', 'P', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
       ),
       Student(
         member: 'SE170456',
@@ -666,6 +747,7 @@ class GoogleSheetService {
         className: className,
         totalSlots: 20,
         absentSlots: 0,
+        slots20: ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
       ),
       Student(
         member: 'SE170789',
@@ -676,7 +758,8 @@ class GoogleSheetService {
         email: 'cuonglhse170789@fpt.edu.vn',
         className: className,
         totalSlots: 20,
-        absentSlots: 3,
+        absentSlots: 3, // 15% -> CAN THIỆP SỚM (Chỉ còn 1 buổi vắng)
+        slots20: ['A', 'P', 'P', 'A', 'P', 'P', 'A', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
       ),
       Student(
         member: 'SE171012',
@@ -688,6 +771,7 @@ class GoogleSheetService {
         className: className,
         totalSlots: 20,
         absentSlots: 5, // 25% -> FAIL ATTENDANCE (CẤM THI)
+        slots20: ['A', 'P', 'A', 'P', 'A', 'A', 'A', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
       ),
       Student(
         member: 'SE171345',
@@ -698,7 +782,8 @@ class GoogleSheetService {
         email: 'dangvhse171345@fpt.edu.vn',
         className: className,
         totalSlots: 20,
-        absentSlots: 4, // 20% -> FAIL ATTENDANCE (CẤM THI)
+        absentSlots: 4, // 20% -> HẾT LƯỢT VẮNG / CAN THIỆP SỚM (Còn 0 buổi)
+        slots20: ['P', 'A', 'P', 'A', 'A', 'P', 'A', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
       ),
       Student(
         member: 'HE160234',
@@ -710,6 +795,7 @@ class GoogleSheetService {
         className: className,
         totalSlots: 20,
         absentSlots: 0,
+        slots20: ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
       ),
       Student(
         member: 'HE160567',
@@ -721,6 +807,7 @@ class GoogleSheetService {
         className: className,
         totalSlots: 20,
         absentSlots: 1,
+        slots20: ['P', 'P', 'P', 'P', 'P', 'A', 'P', 'P', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
       ),
       Student(
         member: 'IA160890',
@@ -731,8 +818,71 @@ class GoogleSheetService {
         email: 'phuonghmia160890@fpt.edu.vn',
         className: className,
         totalSlots: 20,
-        absentSlots: 6, // 30% -> FAIL ATTENDANCE
+        absentSlots: 6, // 30% -> FAIL ATTENDANCE (CẤM THI)
+        slots20: ['A', 'A', 'P', 'A', 'A', 'A', 'P', 'A', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'],
       ),
     ];
+  }
+
+  /// Dữ liệu log lịch sử mẫu cho chế độ demo offline theo đặc thù FPT (Deterministic Data)
+  static List<Map<String, dynamic>> getSampleAnalyticsLogs(String className) {
+    if (className.contains('IA1601')) {
+      // Lớp IA1601_CSN101: Chuyên cần rất tốt (0 ca vắng để test Zero Data / Safe State hoàn hảo)
+      return [
+        {'date': '2026-03-03', 'slot': 2, 'status': 'Present', 'className': className, 'member': 'IA160012'},
+        {'date': '2026-03-03', 'slot': 2, 'status': 'Present', 'className': className, 'member': 'IA160045'},
+        {'date': '2026-03-05', 'slot': 3, 'status': 'Present', 'className': className, 'member': 'IA160088'},
+        {'date': '2026-03-05', 'slot': 3, 'status': 'Present', 'className': className, 'member': 'IA160102'},
+        {'date': '2026-03-10', 'slot': 2, 'status': 'Present', 'className': className, 'member': 'IA160156'},
+        {'date': '2026-03-12', 'slot': 3, 'status': 'Present', 'className': className, 'member': 'IA160199'},
+      ];
+    }
+
+    // Lớp SE1801_PRM393: Tập trung vắng Slot 1 (07:00 - 09:15) và Thứ Hai (khớp đúng mã SV thực tế)
+    final List<Map<String, dynamic>> logs = [];
+
+    // Thứ Hai 2026-03-02: Slot 1 (Cao điểm vắng sáng sớm)
+    logs.addAll([
+      {'date': '2026-03-02', 'slot': 1, 'status': 'Absent', 'className': className, 'member': 'CE190585'},
+      {'date': '2026-03-02', 'slot': 1, 'status': 'Absent', 'className': className, 'member': 'SE170123'},
+      {'date': '2026-03-02', 'slot': 1, 'status': 'Absent', 'className': className, 'member': 'SE170789'},
+      {'date': '2026-03-02', 'slot': 1, 'status': 'Absent', 'className': className, 'member': 'SE171012'},
+      {'date': '2026-03-02', 'slot': 1, 'status': 'Present', 'className': className, 'member': 'SE170456'},
+      {'date': '2026-03-02', 'slot': 1, 'status': 'Present', 'className': className, 'member': 'HE160234'},
+      {'date': '2026-03-02', 'slot': 1, 'status': 'Present', 'className': className, 'member': 'HE160567'},
+      {'date': '2026-03-02', 'slot': 1, 'status': 'Present', 'className': className, 'member': 'SE171345'},
+    ]);
+
+    // Thứ Tư 2026-03-04: Slot 2 (09:30 - 11:45)
+    logs.addAll([
+      {'date': '2026-03-04', 'slot': 2, 'status': 'Absent', 'className': className, 'member': 'CE190585'},
+      {'date': '2026-03-04', 'slot': 2, 'status': 'Present', 'className': className, 'member': 'SE170123'},
+      {'date': '2026-03-04', 'slot': 2, 'status': 'Present', 'className': className, 'member': 'SE170789'},
+      {'date': '2026-03-04', 'slot': 2, 'status': 'Present', 'className': className, 'member': 'SE170456'},
+      {'date': '2026-03-04', 'slot': 2, 'status': 'Present', 'className': className, 'member': 'HE160234'},
+      {'date': '2026-03-04', 'slot': 2, 'status': 'Present', 'className': className, 'member': 'HE160567'},
+    ]);
+
+    // Thứ Sáu 2026-03-06: Slot 3 (12:30 - 14:45)
+    logs.addAll([
+      {'date': '2026-03-06', 'slot': 3, 'status': 'Absent', 'className': className, 'member': 'SE170789'},
+      {'date': '2026-03-06', 'slot': 3, 'status': 'Present', 'className': className, 'member': 'CE190585'},
+      {'date': '2026-03-06', 'slot': 3, 'status': 'Present', 'className': className, 'member': 'SE170123'},
+      {'date': '2026-03-06', 'slot': 3, 'status': 'Present', 'className': className, 'member': 'SE170456'},
+      {'date': '2026-03-06', 'slot': 3, 'status': 'Present', 'className': className, 'member': 'HE160234'},
+    ]);
+
+    // Thứ Hai 2026-03-09: Slot 1 (Tiếp tục vắng sáng sớm đầu tuần)
+    logs.addAll([
+      {'date': '2026-03-09', 'slot': 1, 'status': 'Absent', 'className': className, 'member': 'CE190585'},
+      {'date': '2026-03-09', 'slot': 1, 'status': 'Absent', 'className': className, 'member': 'SE170789'},
+      {'date': '2026-03-09', 'slot': 1, 'status': 'Absent', 'className': className, 'member': 'SE171012'},
+      {'date': '2026-03-09', 'slot': 1, 'status': 'Present', 'className': className, 'member': 'SE170123'},
+      {'date': '2026-03-09', 'slot': 1, 'status': 'Present', 'className': className, 'member': 'SE170456'},
+      {'date': '2026-03-09', 'slot': 1, 'status': 'Present', 'className': className, 'member': 'HE160234'},
+      {'date': '2026-03-09', 'slot': 1, 'status': 'Present', 'className': className, 'member': 'HE160567'},
+    ]);
+
+    return logs;
   }
 }
