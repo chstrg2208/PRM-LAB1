@@ -1012,6 +1012,7 @@ class AttendanceSessionManager extends ChangeNotifier {
         await Future.wait([
           loadAnalyticsLogs(),
           loadTodayClasses(),
+          loadAttendanceOverview(force: true),
         ]);
       }
 

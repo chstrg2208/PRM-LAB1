@@ -87,11 +87,28 @@ class ClassOverviewItem {
     // Parse sessionStatus
     final rawStatus = json['sessionStatus']?.toString().toLowerCase().trim() ?? 'notyet';
     final isDoneRaw = json['isAttendanceDone'];
+    final currentSessionVal = int.tryParse(json['currentSession']?.toString() ?? '1') ?? 1;
+    final lastSessionVal = json['lastSession'] != null
+        ? int.tryParse(json['lastSession'].toString())
+        : null;
+    final lastStatusVal = json['lastStatus']?.toString().toLowerCase().trim() ?? '';
+
+    // Nếu buổi điểm danh gần nhất >= buổi hiện tại và trạng thái là đã điểm danh,
+    // hoặc buổi học này đã có dữ liệu điểm danh trong sheet:
+    final bool isDoneByHistory = lastSessionVal != null &&
+        lastSessionVal >= currentSessionVal &&
+        (lastStatusVal.contains('đã điểm danh') ||
+            lastStatusVal == 'done' ||
+            lastStatusVal == 'completed' ||
+            lastStatusVal.contains('present') ||
+            lastStatusVal.contains('có mặt'));
+
     final bool isDone = isDoneRaw == true ||
         isDoneRaw?.toString().toLowerCase() == 'true' ||
         rawStatus == 'done' ||
         rawStatus == 'completed' ||
-        rawStatus.contains('đã điểm danh');
+        rawStatus.contains('đã điểm danh') ||
+        isDoneByHistory;
 
     final SessionStatus status;
     if (isDone) {

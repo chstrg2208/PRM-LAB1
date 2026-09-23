@@ -774,6 +774,37 @@ function doGet(e) {
           }
         }
 
+        // Kiểm tra xem cột của buổi hiện tại (currentSession) đã có dữ liệu điểm danh thực tế chưa
+        var currColIdx = colSlots[sMeta.currentSession];
+        var currSessionHasData = false;
+        if (currColIdx !== undefined) {
+          for (var r = hRowIdx + 1; r < sData.length; r++) {
+            var valStr = (sData[r][currColIdx] || '').toString().trim().toUpperCase();
+            if (valStr === 'P' || valStr === 'A' || valStr === 'CM' || valStr === 'V' || valStr === 'L') {
+              currSessionHasData = true;
+              break;
+            }
+          }
+        }
+
+        // Nếu cột buổi hiện tại đã có dữ liệu P/A/L hoặc buổi điểm danh gần nhất >= buổi hiện tại:
+        if (currSessionHasData || (lastSession > 0 && lastSession >= sMeta.currentSession)) {
+          isDoneToday = true;
+          sMeta.sessionStatus = 'Đã điểm danh';
+          // Đồng bộ lại ô "Trạng thái buổi" trên sheet nếu ô đó chưa cập nhật
+          try {
+            for (var mr = 0; mr < Math.min(sData.length, 4); mr++) {
+              for (var mc = 0; mc < sData[mr].length; mc++) {
+                var lbl = (sData[mr][mc] || '').toString().trim().toUpperCase();
+                if (lbl.indexOf('TRẠNG THÁI') >= 0 || lbl.indexOf('STATUS') >= 0) {
+                  aSheet.getRange(mr + 1, mc + 2).setValue('Đã điểm danh');
+                  break;
+                }
+              }
+            }
+          } catch (_) {}
+        }
+
         // Phân loại: Lớp hôm nay vs Các lớp khác
         var isMatch = false;
         var days = sMeta.days || 'T2-T5';

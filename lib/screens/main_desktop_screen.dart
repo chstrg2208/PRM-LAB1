@@ -199,7 +199,10 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                                 currentSessionNumber: _sessionManager.currentSessionNumber,
                                 maxAllowedSession: _sessionManager.maxAllowedSession,
                                 onSessionChanged: _sessionManager.selectSessionNumber,
-                                onBackToOverview: () => setState(() => _isViewingAttendanceDetail = false),
+                                onBackToOverview: () {
+                                  setState(() => _isViewingAttendanceDetail = false);
+                                  _sessionManager.loadAttendanceOverview(force: true);
+                                },
                                 onStartQrAttendance: () => _sessionManager.startQrAttendanceSession(),
                                 onFinishQrAttendance: () => _sessionManager.finishQrAttendance(),
                                 onCancelQrAttendance: () => _sessionManager.cancelQrAttendance(),

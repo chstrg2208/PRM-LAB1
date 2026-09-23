@@ -63,6 +63,16 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
     }
   }
 
+  @override
+  void didUpdateWidget(covariant AttendanceOverviewView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialOverview != oldWidget.initialOverview && widget.initialOverview != null) {
+      setState(() {
+        _overview = widget.initialOverview;
+      });
+    }
+  }
+
   Future<void> _load() async {
     if (widget.onLoadOverview == null && widget.sheetUrl.isEmpty) {
       setState(() {
