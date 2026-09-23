@@ -110,21 +110,22 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
     super.dispose();
   }
 
-  // Màu nền row dựa trên tỉ lệ vắng
+  // Màu nền row: Chưa điểm danh → trắng, có mặt → xanh, vắng → vàng
   Color _rowBgColor() {
-    final s = widget.student;
-    if (s.totalSlots <= 0) return Colors.white;
-    if (s.isBanned) return BirdleColors.dangerLight;         // >20% → đỏ
-    if (s.absentSlots > 0) return BirdleColors.warningLight; // >0% đến ≤20% → vàng
-    return BirdleColors.successLight;                         // 0 buổi vắng → xanh
+    switch (widget.record.status) {
+      case AttendanceStatus.present:
+        return BirdleColors.successLight;
+      case AttendanceStatus.absent:
+        return BirdleColors.warningLight;
+      case AttendanceStatus.notYet:
+      default:
+        return Colors.white;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final student = widget.student;
-    final isBanned = student.isBanned;
-    final isAtLimit = student.hasExhaustedAbsenceAllowance || student.isExactlyAtAbsenceLimit;
-    final isWarning = student.isWarning;
 
     return Container(
       height: 52,
@@ -152,58 +153,16 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
             ),
           ),
 
-          // Student Name & Code + Warning Badge
+          // Student Name & Code
           Expanded(
             flex: 3,
-            child: Row(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Flexible(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(student.fullName, style: BirdleTypography.bodyMedium),
-                      if (student.email.isNotEmpty)
-                        Text(student.email, style: const TextStyle(fontSize: 11, color: BirdleColors.textMuted)),
-                    ],
-                  ),
-                ),
-                if (isBanned || isAtLimit || isWarning) ...[
-                  const SizedBox(width: 6),
-                  Tooltip(
-                    message: student.absenceStatusMessage,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: isBanned || isAtLimit ? BirdleColors.dangerLight : BirdleColors.warningLight,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color: (isBanned || isAtLimit ? BirdleColors.danger : BirdleColors.warning).withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            isBanned ? Icons.block_rounded : (isAtLimit ? Icons.warning_rounded : Icons.warning_amber_rounded),
-                            size: 10,
-                            color: isBanned || isAtLimit ? BirdleColors.danger : BirdleColors.warning,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            isBanned ? 'Cấm thi' : (isAtLimit ? 'Hết lượt' : '−${student.remainingAllowedAbsences}'),
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                              color: isBanned || isAtLimit ? BirdleColors.danger : BirdleColors.warning,
-                              fontFamily: BirdleTypography.fontFamily,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                Text(student.fullName, style: BirdleTypography.bodyMedium),
+                if (student.email.isNotEmpty)
+                  Text(student.email, style: const TextStyle(fontSize: 11, color: BirdleColors.textMuted)),
               ],
             ),
           ),

@@ -52,9 +52,9 @@ void main() {
       expect(s.trainingStatusLabel, 'ĐỦ ĐIỀU KIỆN');
     });
 
-    // ─── Widget Test: AttendanceStudentRow warning badge & row color ───
+    // ─── Widget Test: AttendanceStudentRow row color theo status & không có icon cạnh tên ───
 
-    testWidgets('6. AttendanceStudentRow hiển thị badge "Cấm thi" và nền đỏ khi isBanned', (tester) async {
+    testWidgets('6. AttendanceStudentRow hiển thị nền vàng khi vắng và không còn icon cảnh báo cạnh tên SV', (tester) async {
       tester.view.physicalSize = const Size(1600, 200);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -91,13 +91,15 @@ void main() {
         ),
       ));
 
-      // Badge 'Cấm thi' phải hiện
-      expect(find.text('Cấm thi'), findsOneWidget);
-      // Tên sinh viên phải hiện
+      // Không còn badge nhỏ cạnh tên SV
+      expect(find.text('Cấm thi'), findsNothing);
+      expect(find.text('−1'), findsNothing);
+      expect(find.text('Hết lượt'), findsNothing);
+      // Tên sinh viên vẫn hiện
       expect(find.text('Sinh viên Cấm thi'), findsOneWidget);
     });
 
-    testWidgets('7. AttendanceStudentRow hiển thị badge "−1" khi isWarning (còn 1 buổi)', (tester) async {
+    testWidgets('7. AttendanceStudentRow hiển thị nền xanh khi có mặt (present)', (tester) async {
       tester.view.physicalSize = const Size(1600, 200);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -115,7 +117,7 @@ void main() {
         className: 'SE1801',
         date: '2026-09-22',
         slot: 1,
-        status: AttendanceStatus.absent,
+        status: AttendanceStatus.present,
       );
 
       await tester.pumpWidget(MaterialApp(
@@ -134,11 +136,11 @@ void main() {
         ),
       ));
 
-      // Badge '−1' phải hiện (còn được vắng 1 buổi)
-      expect(find.text('−1'), findsOneWidget);
+      // Không có badge '−1' cạnh tên SV
+      expect(find.text('−1'), findsNothing);
     });
 
-    testWidgets('8. AttendanceStudentRow KHÔNG hiển thị badge và nền xanh khi chưa vắng buổi nào', (tester) async {
+    testWidgets('8. AttendanceStudentRow hiển thị nền trắng khi chưa điểm danh (notYet)', (tester) async {
       tester.view.physicalSize = const Size(1600, 200);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -156,7 +158,7 @@ void main() {
         className: 'SE1801',
         date: '2026-09-22',
         slot: 1,
-        status: AttendanceStatus.present,
+        status: AttendanceStatus.notYet,
       );
 
       await tester.pumpWidget(MaterialApp(
@@ -175,9 +177,10 @@ void main() {
         ),
       ));
 
-      // Không có badge nào (không phải cảnh báo)
+      // Không có badge nào cạnh tên
       expect(find.text('Cấm thi'), findsNothing);
       expect(find.text('Hết lượt'), findsNothing);
+      expect(find.text('−1'), findsNothing);
     });
   });
 }
