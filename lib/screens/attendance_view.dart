@@ -617,7 +617,7 @@ class _AttendanceViewState extends State<AttendanceView> {
                                   SizedBox(width: 44, child: Text('#', style: BirdleTypography.caption)),
                                   SizedBox(width: 120, child: Text('STUDENT ID', style: BirdleTypography.caption)),
                                   Expanded(flex: 3, child: Text('STUDENT NAME', style: BirdleTypography.caption)),
-                                  SizedBox(width: 205, child: Text('STATUS (PRESENT / ABSENT / NOT YET)', style: BirdleTypography.caption)),
+                                  SizedBox(width: 150, child: Text('ĐIỂM DANH (CÓ MẶT / VẮNG)', style: BirdleTypography.caption)),
                                   Expanded(flex: 2, child: Text('NOTE', style: BirdleTypography.caption)),
                                   SizedBox(width: 140, child: Text('ATTENDANCE RATE', style: BirdleTypography.caption)),
                                 ],

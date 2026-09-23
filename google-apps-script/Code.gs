@@ -146,28 +146,23 @@ function doGet(e) {
       var colName = (headerRow[colIdx] || '').toString().trim().toUpperCase();
       if (!colName) continue;
 
-      if (colMap.code === -1 && (colName === 'CODE' || colName === 'STUDENTCODE' || colName === 'STUDENT CODE')) {
-        colMap.code = colIdx;
-      }
-      if (colMap.member === -1 && (colName === 'MEMBER' || colName === 'ROLLNUMBER' || colName === 'ROLL NUMBER')) {
-        colMap.member = colIdx;
-      }
-
-      if (colMap.mssv === -1 && (colName === 'MSSV' || colName === 'MÃ SINH VIÊN' || colName === 'MÃ SV' || colName === 'ROLLNUMBER' || colName === 'MEMBER' || colName === 'CODE' || colName === 'STUDENT ID' || colName === 'STUDENTCODE')) {
-        colMap.mssv = colIdx;
-      } else if (colMap.surname === -1 && (colName === 'HỌ' || colName === 'SURNAME' || colName === 'HO' || colName === 'LAST NAME')) {
+      if (colName === 'MSSV' || colName === 'MÃ SINH VIÊN' || colName === 'MÃ SV' || colName === 'ROLLNUMBER' || colName === 'MEMBER' || colName === 'STUDENT ID' || colName === 'STUDENTCODE' || colName === 'CODE') {
+        if (colMap.mssv === -1) colMap.mssv = colIdx;
+        if (colMap.member === -1) colMap.member = colIdx;
+        if (colMap.code === -1) colMap.code = colIdx;
+      } else if (colName === 'HỌ' || colName === 'SURNAME' || colName === 'HO' || colName === 'LAST NAME') {
         colMap.surname = colIdx;
-      } else if (colMap.middleName === -1 && (colName === 'TÊN ĐỆM' || colName === 'MIDDLE NAME' || colName === 'TEN DEM' || colName === 'MIDDLENAME')) {
+      } else if (colName === 'TÊN ĐỆM' || colName === 'MIDDLE NAME' || colName === 'TEN DEM' || colName === 'MIDDLENAME') {
         colMap.middleName = colIdx;
-      } else if (colMap.givenName === -1 && (colName === 'TÊN' || colName === 'GIVEN NAME' || colName === 'FIRST NAME' || colName === 'TEN' || colName === 'GIVENNAME') && colName !== 'TÊN ĐỆM') {
+      } else if ((colName === 'TÊN' || colName === 'GIVEN NAME' || colName === 'FIRST NAME' || colName === 'TEN' || colName === 'GIVENNAME') && colName !== 'TÊN ĐỆM') {
         colMap.givenName = colIdx;
-      } else if (colMap.fullName === -1 && (colName === 'HỌ VÀ TÊN' || colName === 'FULL NAME' || colName === 'FULLNAME' || colName === 'NAME')) {
+      } else if (colName === 'HỌ VÀ TÊN' || colName === 'FULL NAME' || colName === 'FULLNAME' || colName === 'NAME') {
         colMap.fullName = colIdx;
-      } else if (colMap.email === -1 && (colName === 'EMAIL' || colName === 'THƯ ĐIỆN TỬ' || colName === 'MAIL')) {
+      } else if (colName === 'EMAIL' || colName === 'THƯ ĐIỆN TỬ' || colName === 'MAIL') {
         colMap.email = colIdx;
-      } else if (colMap.totalSlots === -1 && (colName === 'TỔNG BUỔI' || colName === 'TOTAL SLOTS' || colName === 'TOTAL' || colName === 'TỔNG TIẾT')) {
+      } else if (colName === 'TỔNG BUỔI' || colName === 'TOTAL SLOTS' || colName === 'TOTAL' || colName === 'TỔNG TIẾT') {
         colMap.totalSlots = colIdx;
-      } else if (colMap.absentSlots === -1 && (colName === 'VẮNG' || colName === 'ABSENT' || colName === 'ABSENT SLOTS' || colName === 'SỐ BUỔI VẮNG')) {
+      } else if (colName === 'VẮNG' || colName === 'ABSENT' || colName === 'ABSENT SLOTS' || colName === 'SỐ BUỔI VẮNG') {
         colMap.absentSlots = colIdx;
       }
 
@@ -183,14 +178,24 @@ function doGet(e) {
       }
     }
 
-    if (colMap.mssv === -1) colMap.mssv = 0;
+    if (colMap.mssv === -1) {
+      // Nếu không tìm thấy cột MSSV rõ ràng, tìm cột đầu tiên chứa chuỗi dạng SE/IA/HE/CE/QE/SA/SS...
+      for (var cCheck = 0; cCheck < headerRow.length; cCheck++) {
+        var hName = (headerRow[cCheck] || '').toString().trim().toUpperCase();
+        if (hName !== 'STT') {
+          colMap.mssv = cCheck;
+          break;
+        }
+      }
+      if (colMap.mssv === -1) colMap.mssv = 1;
+    }
 
     // 4. Đọc từng dòng dữ liệu sinh viên
     for (var i = headerRowIdx + 1; i < data.length; i++) {
       var row = data[i];
-      var code = (colMap.code >= 0 && row[colMap.code] !== undefined) ? row[colMap.code].toString().trim() : '';
-      var member = (colMap.member >= 0 && row[colMap.member] !== undefined) ? row[colMap.member].toString().trim() : '';
       var mssv = (colMap.mssv >= 0 && row[colMap.mssv] !== undefined) ? row[colMap.mssv].toString().trim() : '';
+      var code = (colMap.code >= 0 && row[colMap.code] !== undefined) ? row[colMap.code].toString().trim() : mssv;
+      var member = (colMap.member >= 0 && row[colMap.member] !== undefined) ? row[colMap.member].toString().trim() : mssv;
       if (!mssv) mssv = code || member;
       if (!code) code = mssv;
       if (!member) member = mssv;
@@ -216,22 +221,54 @@ function doGet(e) {
         fullName = 'Sinh viên ' + mssv;
       }
 
-      var email = (colMap.email >= 0 && row[colMap.email] !== undefined && row[colMap.email].toString().trim() !== '')
-        ? row[colMap.email].toString().trim()
-        : (mssv.toLowerCase() + '@fpt.edu.vn');
+      // Xử lý Email: Chỉ nhận nếu là địa chỉ email hợp lệ có chứa '@'
+      var email = '';
+      if (colMap.email >= 0 && row[colMap.email] !== undefined) {
+        var rawEmail = row[colMap.email].toString().trim();
+        if (rawEmail.indexOf('@') >= 0) {
+          email = rawEmail.toLowerCase();
+        }
+      }
+      if (!email && mssv) {
+        email = mssv.toLowerCase() + '@fpt.edu.vn';
+      }
 
-      var totalSlots = (colMap.totalSlots >= 0 && row[colMap.totalSlots]) ? parseInt(row[colMap.totalSlots]) : (meta.totalSessions || 20);
-      var absentSlots = (colMap.absentSlots >= 0 && row[colMap.absentSlots]) ? parseInt(row[colMap.absentSlots]) : 0;
+      var totalSlots = 20;
+      if (colMap.totalSlots >= 0 && row[colMap.totalSlots] !== undefined && row[colMap.totalSlots] !== '') {
+        var parsedTot = parseInt(row[colMap.totalSlots]);
+        if (!isNaN(parsedTot) && parsedTot > 0) totalSlots = parsedTot;
+      } else if (meta.totalSessions && meta.totalSessions > 0) {
+        totalSlots = meta.totalSessions;
+      }
 
-      // Đọc trạng thái 20 slot (B1..B20)
+      // Đọc trạng thái 20 slot (B1..B20):
+      // A / V = Vắng, P / CM = Có mặt, khoảng trắng / rỗng = Chưa điểm danh (Not Yet)
       var slots20 = [];
+      var absentCountFromSlots = 0;
       for (var sn = 1; sn <= 20; sn++) {
         var sCol = colMap.slots20[sn];
         if (sCol !== undefined && sCol >= 0 && row[sCol] !== undefined) {
-          slots20.push(row[sCol].toString().trim());
+          var sVal = row[sCol].toString().trim().toUpperCase();
+          slots20.push(sVal);
+          if (sVal === 'A' || sVal === 'V' || sVal === 'ABSENT' || sVal === 'VẮNG') {
+            absentCountFromSlots++;
+          }
         } else {
           slots20.push('');
         }
+      }
+
+      var absentSlots = 0;
+      if (colMap.absentSlots >= 0 && row[colMap.absentSlots] !== undefined && row[colMap.absentSlots] !== '') {
+        var parsedAbs = parseInt(row[colMap.absentSlots]);
+        if (!isNaN(parsedAbs)) absentSlots = parsedAbs;
+        else absentSlots = absentCountFromSlots;
+      } else {
+        absentSlots = absentCountFromSlots;
+      }
+      // Nếu absentSlots bất thường (lớn hơn tổng số buổi học) nhưng có dữ liệu từ slots20
+      if (absentSlots > totalSlots && absentCountFromSlots <= totalSlots) {
+        absentSlots = absentCountFromSlots;
       }
 
       students.push({

@@ -218,6 +218,28 @@ class Student {
       parsedSlots20 = (json['slots20'] as List).map((e) => e?.toString().trim() ?? '').toList();
     }
 
+    int totalSlots = int.tryParse((json['totalSlots'] ?? json['TOTAL SLOTS'] ?? '20').toString()) ?? 20;
+    if (totalSlots <= 0) totalSlots = 20;
+
+    int absentSlots = int.tryParse((json['absentSlots'] ?? json['ABSENT'] ?? '0').toString()) ?? 0;
+
+    // Đếm số buổi vắng thực tế từ 20 slots (kí hiệu A hoặc V)
+    if (parsedSlots20 != null && parsedSlots20.isNotEmpty) {
+      final countA = parsedSlots20.where((s) {
+        final u = s.trim().toUpperCase();
+        return u == 'A' || u == 'V' || u == 'ABSENT' || u == 'VẮNG';
+      }).length;
+      // Nếu cột ABSENT bị sai lệch lớn hơn số buổi học hoặc ma trận có dữ liệu vắng
+      if (absentSlots > totalSlots || (countA > 0 && absentSlots == 0)) {
+        absentSlots = countA;
+      }
+    }
+
+    String resolvedEmail = (json['email'] ?? json['EMAIL'] ?? json['Email'] ?? '').toString().trim();
+    if (!resolvedEmail.contains('@') && rollNumber.isNotEmpty) {
+      resolvedEmail = '${rollNumber.toLowerCase()}@fpt.edu.vn';
+    }
+
     return Student(
       member: rollNumber,
       code: rollNumber,
@@ -225,11 +247,11 @@ class Student {
       middleName: middleName,
       givenName: givenName,
       customFullName: (surname.isEmpty && middleName.isEmpty && givenName.isEmpty && rawFullName.isNotEmpty) ? rawFullName : null,
-      email: (json['email'] ?? json['EMAIL'] ?? json['Email'] ?? '').toString().trim(),
+      email: resolvedEmail,
       className: (json['className'] ?? json['ClassName'] ?? json['class'] ?? 'SE1801').toString().trim(),
       avatarUrl: (json['avatarUrl'] ?? json['AvatarUrl'] ?? '').toString().trim(),
-      totalSlots: int.tryParse((json['totalSlots'] ?? json['TOTAL SLOTS'] ?? '20').toString()) ?? 20,
-      absentSlots: int.tryParse((json['absentSlots'] ?? json['ABSENT'] ?? '0').toString()) ?? 0,
+      totalSlots: totalSlots,
+      absentSlots: absentSlots,
       slots20: parsedSlots20,
     );
   }

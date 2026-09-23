@@ -208,22 +208,14 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
             ),
           ),
 
-          // Status Controls (Segmented / Inline Pills per Section 12)
+          // Status Controls (Chỉ hiển thị Có mặt và Vắng theo yêu cầu)
           SizedBox(
-            width: 205,
+            width: 150,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
               child: Row(
                 children: [
-                  _buildStatusPill(
-                    label: 'Chưa',
-                    isSelected: widget.record.status == AttendanceStatus.notYet,
-                    selectedBg: BirdleColors.surfaceSecondary,
-                    selectedFg: BirdleColors.textMuted,
-                    onTap: () => _handleStatusChanged(AttendanceStatus.notYet),
-                  ),
-                  const SizedBox(width: 4),
                   _buildStatusPill(
                     label: 'Có mặt',
                     isSelected: widget.record.status == AttendanceStatus.present,
@@ -231,7 +223,7 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
                     selectedFg: BirdleColors.success,
                     onTap: () => _handleStatusChanged(AttendanceStatus.present),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 8),
                   _buildStatusPill(
                     label: 'Vắng',
                     isSelected: widget.record.status == AttendanceStatus.absent,
