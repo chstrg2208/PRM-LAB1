@@ -432,6 +432,10 @@ class AttendanceSessionManager extends ChangeNotifier {
   }
 
   int _calculateSessionNumber(String className, DateTime date) {
+    final metaSession = GoogleSheetService.lastClassMetadata['currentSession'];
+    if (metaSession is int && metaSession >= 1 && metaSession <= 20) {
+      return metaSession;
+    }
     final clean = className.trim().toUpperCase();
     final sched = ClassSchedule(
       className: className,
@@ -566,7 +570,10 @@ class AttendanceSessionManager extends ChangeNotifier {
               if (s == null) return false;
               final sEmail = s.email.trim().toLowerCase();
               final sRoll = s.rollNumber.trim().toLowerCase();
-              return sEmail == email || sRoll == email || email.startsWith(sRoll);
+              return sEmail == email ||
+                  sRoll == email ||
+                  (sRoll.isNotEmpty && (email.contains(sRoll) || sRoll.contains(email))) ||
+                  (sEmail.isNotEmpty && (email.contains(sEmail) || sEmail.contains(email)));
             },
             orElse: () => null,
           );
@@ -596,7 +603,16 @@ class AttendanceSessionManager extends ChangeNotifier {
       final rollClean = s.rollNumber.trim().toLowerCase();
       final isPresent = checkedEmails.contains(emailClean) ||
           checkedEmails.contains(rollClean) ||
-          checkedEmails.any((e) => e == rollClean || e.startsWith(rollClean));
+          checkedEmails.any((e) {
+            if (e.isEmpty) return false;
+            if (rollClean.isNotEmpty && (e == rollClean || e.contains(rollClean) || rollClean.contains(e))) {
+              return true;
+            }
+            if (emailClean.isNotEmpty && (e == emailClean || e.contains(emailClean) || emailClean.contains(e))) {
+              return true;
+            }
+            return false;
+          });
 
       if (isPresent) {
         updateAttendanceStatus(s.rollNumber, AttendanceStatus.present);
@@ -658,25 +674,23 @@ class AttendanceSessionManager extends ChangeNotifier {
       final students = await apiClient.fetchStudents(cleanUrl, _currentClass);
 
       // Tự động nhận diện slot và currentSession từ Sheet nếu có
-      if (isClassChange) {
-        final metaSlot = GoogleSheetService.lastClassMetadata['slot'];
-        if (metaSlot is int && metaSlot >= 1 && metaSlot <= 6) {
-          _currentSlot = metaSlot;
-        }
-        final metaSession = GoogleSheetService.lastClassMetadata['currentSession'];
-        if (metaSession is int && metaSession >= 1 && metaSession <= 20) {
-          _currentSessionNumber = metaSession;
-        } else if (students.isNotEmpty) {
-          int nextSess = 1;
-          for (int sn = 0; sn < 20; sn++) {
-            final hasEmpty = students.any((s) => sn >= s.slots20.length || s.slots20[sn].isEmpty);
-            if (hasEmpty) {
-              nextSess = sn + 1;
-              break;
-            }
+      final metaSlot = GoogleSheetService.lastClassMetadata['slot'];
+      if (metaSlot is int && metaSlot >= 1 && metaSlot <= 6) {
+        _currentSlot = metaSlot;
+      }
+      final metaSession = GoogleSheetService.lastClassMetadata['currentSession'];
+      if (metaSession is int && metaSession >= 1 && metaSession <= 20) {
+        _currentSessionNumber = metaSession;
+      } else if (isClassChange && students.isNotEmpty) {
+        int nextSess = 1;
+        for (int sn = 0; sn < 20; sn++) {
+          final hasEmpty = students.any((s) => sn >= s.slots20.length || s.slots20[sn].isEmpty);
+          if (hasEmpty) {
+            nextSess = sn + 1;
+            break;
           }
-          _currentSessionNumber = nextSess;
         }
+        _currentSessionNumber = nextSess;
       }
 
       final dateStr = '${_currentDate.year}-${_currentDate.month.toString().padLeft(2, '0')}-${_currentDate.day.toString().padLeft(2, '0')}';

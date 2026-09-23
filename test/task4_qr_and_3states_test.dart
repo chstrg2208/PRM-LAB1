@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:birdle/models/attendance_record.dart';
 import 'package:birdle/models/qr_attendance_session.dart';
 import 'package:birdle/models/student.dart';
+import 'package:birdle/services/google_sheet_service.dart';
 import 'package:birdle/state/attendance_session_manager.dart';
 import 'package:birdle/widgets/attendance_student_row.dart';
 import 'package:birdle/widgets/qr_attendance_dialog.dart';
@@ -196,6 +197,70 @@ void main() {
       await tester.pumpAndSettle();
       expect(finishedCalled, true);
       expect(cancelCalled, false);
+    });
+
+    test('5. Vo Quang Tam check-in matching: FPT email containing rollNumber or personal email is marked Present', () async {
+      final mockApi = MockTask4ApiClient();
+      final manager = AttendanceSessionManager(
+        apiClient: mockApi,
+        initialSheetUrl: 'https://script.google.com/test',
+        initialClass: 'SE1919-PRM393',
+      );
+      await manager.initialize(loadStorage: false);
+
+      // Thêm thủ công sinh viên Võ Quang Tâm như trên ảnh Google Sheet thực tế của người dùng
+      final tamStudent = Student(
+        rollNumber: 'SE192621',
+        fullName: 'Võ Quang Tâm',
+        className: 'SE1919-PRM393',
+        email: 'quangtam2005.lttg@gmail.com',
+      );
+      final haiStudent = Student(
+        rollNumber: 'IA160002',
+        fullName: 'Dương Văn Hải',
+        className: 'SE1919-PRM393',
+        email: 'haidvia160002@fpt.edu.vn',
+      );
+
+      manager.importStudents([tamStudent, haiStudent]);
+
+      final qrSession = manager.startQrAttendanceSession(sessionNumber: 4, forceReopen: true);
+      expect(qrSession, isNotNull);
+
+      // Giả lập sinh viên Võ Quang Tâm check-in qua QR bằng email FPT chứa MSSV tamvqse192621@fpt.edu.vn
+      qrSession!.markCheckedIn('tamvqse192621@fpt.edu.vn');
+
+      // Giảng viên kết thúc điểm danh QR
+      manager.finishQrAttendance();
+
+      // Kiểm tra: Võ Quang Tâm PHẢI là Present, Dương Văn Hải chưa quét nên là Absent
+      final tamRecord = manager.records.firstWhere((r) => r.rollNumber == 'SE192621');
+      final haiRecord = manager.records.firstWhere((r) => r.rollNumber == 'IA160002');
+
+      expect(tamRecord.status, AttendanceStatus.present, reason: 'Võ Quang Tâm phải được ghi nhận Có mặt khi check-in bằng email FPT!');
+      expect(haiRecord.status, AttendanceStatus.absent);
+    });
+
+    test('6. Slot and session number sync properly from GoogleSheetService.lastClassMetadata', () async {
+      final mockApi = MockTask4ApiClient();
+      final manager = AttendanceSessionManager(
+        apiClient: mockApi,
+        initialSheetUrl: 'https://script.google.com/test',
+        initialClass: 'SE1919-PRM393',
+      );
+
+      // Giả lập metadata trả về từ sheet thực tế (Slot 2, Buổi hiện tại 5)
+      GoogleSheetService.lastClassMetadata = {
+        'className': 'SE1919-PRM393',
+        'slot': 2,
+        'currentSession': 5,
+        'sessionStatus': 'Chưa điểm danh',
+      };
+
+      await manager.initialize(loadStorage: false);
+
+      expect(manager.currentSlot, 2, reason: 'Slot phải được đồng bộ theo metadata của sheet (Slot 2)');
+      expect(manager.currentSessionNumber, 5, reason: 'Buổi học phải đồng bộ theo metadata của sheet (Buổi 5)');
     });
   });
 }

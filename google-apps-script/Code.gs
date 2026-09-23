@@ -614,6 +614,212 @@ function doGet(e) {
     }
   }
 
+  // 5.1. Lấy tổng quan điểm danh tất cả các lớp (Hub: Lớp hôm nay & Các lớp khác)
+  if (action === 'getAttendanceOverview') {
+    try {
+      var targetDateStr = (e.parameter.date || '').toString().trim();
+      var targetDate = targetDateStr ? new Date(targetDateStr) : new Date();
+      var weekday = targetDate.getDay(); // 0 = Chủ Nhật, 1 = Thứ Hai ... 6 = Thứ Bảy
+
+      var y = targetDate.getFullYear();
+      var m = ('0' + (targetDate.getMonth() + 1)).slice(-2);
+      var d = ('0' + targetDate.getDate()).slice(-2);
+      var isoDate = y + '-' + m + '-' + d;
+      var dmyDate = d + '/' + m + '/' + y;
+
+      var logSheet = ss.getSheetByName('Attendance_Logs');
+      var logValues = logSheet ? logSheet.getDataRange().getValues() : [];
+
+      var todayClasses = [];
+      var otherClasses = [];
+      var seenClasses = {};
+
+      var allSheets = ss.getSheets();
+      for (var sh = 0; sh < allSheets.length; sh++) {
+        var aSheet = allSheets[sh];
+        if (typeof aSheet.isSheetHidden === 'function' && aSheet.isSheetHidden()) continue;
+        var sName = aSheet.getName() ? aSheet.getName().trim() : '';
+        if (!sName || sName.indexOf('_') === 0 || sName.indexOf('.') === 0 || sName.toLowerCase() === 'attendance_logs') continue;
+
+        var sData = aSheet.getDataRange().getValues();
+        if (sData.length < 5) continue;
+
+        var sMeta = {
+          subject: '',
+          days: '',
+          slot: 1,
+          slotTime: '',
+          room: 'NVH-601',
+          startDate: '',
+          currentSession: 1,
+          totalSessions: 20,
+          nextDate: '',
+          sessionStatus: 'Chưa điểm danh'
+        };
+
+        for (var mr = 0; mr < Math.min(sData.length, 4); mr++) {
+          var rArr = sData[mr];
+          for (var mc = 0; mc < rArr.length; mc++) {
+            var lbl = (rArr[mc] || '').toString().trim().toUpperCase();
+            var val = (rArr[mc + 1] !== undefined) ? rArr[mc + 1].toString().trim() : '';
+            if (lbl.indexOf('MÔN HỌC') >= 0 || lbl.indexOf('SUBJECT') >= 0) sMeta.subject = val;
+            else if (lbl.indexOf('LỊCH') >= 0 || lbl.indexOf('SLOT') >= 0) {
+              var dm = val.match(/(T[2-7]-T[2-7])/i);
+              if (dm) sMeta.days = dm[1].toUpperCase();
+              var sm = val.match(/Slot\s*([1-6])/i);
+              if (sm) sMeta.slot = parseInt(sm[1]);
+              var tm = val.match(/\(([^)]+)\)/);
+              if (tm) sMeta.slotTime = tm[1];
+            } else if (lbl.indexOf('PHÒNG') >= 0 || lbl.indexOf('ROOM') >= 0) sMeta.room = val;
+            else if (lbl.indexOf('NGÀY BẮT ĐẦU') >= 0 || lbl.indexOf('START DATE') >= 0) sMeta.startDate = val;
+            else if (lbl.indexOf('BUỔI HIỆN TẠI') >= 0 || lbl.indexOf('CURRENT SESSION') >= 0) {
+              var csm = val.match(/(\d+)/);
+              if (csm) sMeta.currentSession = parseInt(csm[1]);
+            } else if (lbl.indexOf('TỔNG SỐ BUỔI') >= 0 || lbl.indexOf('TOTAL SESSIONS') >= 0) {
+              var tsm = val.match(/(\d+)/);
+              if (tsm) sMeta.totalSessions = parseInt(tsm[1]);
+            } else if (lbl.indexOf('NGÀY HỌC TIẾP THEO') >= 0 || lbl.indexOf('NEXT DATE') >= 0) sMeta.nextDate = val;
+            else if (lbl.indexOf('TRẠNG THÁI') >= 0 || lbl.indexOf('STATUS') >= 0) sMeta.sessionStatus = val;
+          }
+        }
+
+        if (!sMeta.slotTime) {
+          sMeta.slotTime = _getFptSlotTime(sMeta.slot);
+        }
+
+        var parts = sName.split('_');
+        var subCode = parts[1] || (sMeta.subject ? sMeta.subject.split(' - ')[0] : 'PRM393');
+        var stuCount = Math.max(0, sData.length - 5);
+
+        // Kiểm tra đã điểm danh buổi hôm nay chưa
+        var isDoneToday = (sMeta.sessionStatus === 'Đã điểm danh');
+        for (var lg = 1; lg < logValues.length; lg++) {
+          if (logValues[lg][1] === sName && logValues[lg][2] === isoDate && parseInt(logValues[lg][3]) === sMeta.slot) {
+            isDoneToday = true;
+            break;
+          }
+        }
+
+        // Quét tìm thông tin lần điểm danh gần nhất (lastSession, lastDate, lastStatus)
+        var lastSession = 0;
+        var lastDate = '';
+        var lastStatus = 'Chưa điểm danh';
+
+        var hRowIdx = 4;
+        for (var hr = 0; hr < Math.min(sData.length, 10); hr++) {
+          var rStr = sData[hr].join(' ').toUpperCase();
+          if (rStr.indexOf('MSSV') >= 0 || rStr.indexOf('MEMBER') >= 0 || rStr.indexOf('ROLLNUMBER') >= 0) {
+            hRowIdx = hr;
+            break;
+          }
+        }
+
+        var hRow = sData[hRowIdx] || [];
+        var colSlots = {};
+        for (var c = 0; c < hRow.length; c++) {
+          var hName = (hRow[c] || '').toString().trim().toUpperCase();
+          var bm = hName.match(/^B([1-9]|1[0-9]|20)$/);
+          if (bm) colSlots[parseInt(bm[1])] = c;
+          else {
+            var sm2 = hName.match(/^SLOT\s*([1-9]|1[0-9]|20)$/);
+            if (sm2) colSlots[parseInt(sm2[1])] = c;
+          }
+        }
+
+        // Quét lùi từ B20 về B1 xem buổi nào có dữ liệu
+        for (var b = 20; b >= 1; b--) {
+          var cIdx = colSlots[b];
+          if (cIdx !== undefined) {
+            var hasVal = false;
+            for (var r = hRowIdx + 1; r < sData.length; r++) {
+              var valStr = (sData[r][cIdx] || '').toString().trim().toUpperCase();
+              if (valStr === 'P' || valStr === 'A' || valStr === 'CM' || valStr === 'V') {
+                hasVal = true;
+                break;
+              }
+            }
+            if (hasVal) {
+              lastSession = b;
+              lastStatus = 'Đã điểm danh';
+              break;
+            }
+          }
+        }
+
+        if (lastSession > 0) {
+          for (var lg = logValues.length - 1; lg >= 1; lg--) {
+            if (logValues[lg][1] === sName) {
+              lastDate = logValues[lg][2] ? logValues[lg][2].toString().slice(0, 10) : '';
+              break;
+            }
+          }
+        }
+
+        // Phân loại: Lớp hôm nay vs Các lớp khác
+        var isMatch = false;
+        var days = sMeta.days || 'T2-T5';
+        if (days.indexOf('T2') >= 0 && days.indexOf('T5') >= 0 && (weekday === 1 || weekday === 4)) isMatch = true;
+        if (days.indexOf('T3') >= 0 && days.indexOf('T6') >= 0 && (weekday === 2 || weekday === 5)) isMatch = true;
+        if (days.indexOf('T4') >= 0 && days.indexOf('T7') >= 0 && (weekday === 3 || weekday === 6)) isMatch = true;
+
+        if (sMeta.nextDate) {
+          var ndParts = sMeta.nextDate.split(/[\/\-]/);
+          if (ndParts.length === 3) {
+            var ndIso = ndParts[2].length === 4 ? (ndParts[2] + '-' + ndParts[1] + '-' + ndParts[0]) : sMeta.nextDate;
+            if (ndIso === isoDate || sMeta.nextDate === dmyDate) {
+              isMatch = true;
+            }
+          }
+        }
+
+        var classItem = {
+          className: sName,
+          subject: sMeta.subject || (subCode + ' - Môn học'),
+          subjectCode: subCode,
+          slot: sMeta.slot,
+          slotTime: sMeta.slotTime,
+          daysOfWeek: days,
+          room: sMeta.room,
+          currentSession: sMeta.currentSession,
+          totalSessions: sMeta.totalSessions,
+          totalStudents: stuCount,
+          sessionStatus: sMeta.sessionStatus,
+          isAttendanceDone: isDoneToday,
+          date: isoDate,
+          nextDate: sMeta.nextDate,
+          lastSession: lastSession,
+          lastDate: lastDate,
+          lastStatus: lastStatus
+        };
+
+        seenClasses[sName] = true;
+
+        if (isMatch) {
+          todayClasses.push(classItem);
+        } else {
+          otherClasses.push(classItem);
+        }
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        status: 'success',
+        targetDate: isoDate,
+        totalClasses: todayClasses.length + otherClasses.length,
+        todayCount: todayClasses.length,
+        otherCount: otherClasses.length,
+        todayClasses: todayClasses,
+        otherClasses: otherClasses
+      })).setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        status: 'error',
+        message: 'Lỗi khi lấy tổng quan điểm danh: ' + err.toString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
   // 6. Lấy toàn bộ danh sách cấu hình lịch học
   if (action === 'getClassSchedules') {
     try {
@@ -1473,8 +1679,12 @@ function _handleStudentCheckIn(ss, params) {
       var rowEmail = (emailCol >= 0 && row[emailCol] !== undefined) ? row[emailCol].toString().trim().toLowerCase() : '';
       var mssv = (mssvCol >= 0 && row[mssvCol] !== undefined) ? row[mssvCol].toString().trim() : '';
       var defEmail = mssv ? (mssv.toLowerCase() + '@fpt.edu.vn') : '';
+      var mssvLower = mssv.toLowerCase();
+      var isMssvMatch = mssvLower && (email === mssvLower || email.indexOf(mssvLower) >= 0 || mssvLower.indexOf(email) >= 0);
 
-      if ((rowEmail && rowEmail === email) || (defEmail && defEmail === email)) {
+      if ((rowEmail && (rowEmail === email || email.indexOf(rowEmail) >= 0)) ||
+          (defEmail && defEmail === email) ||
+          isMssvMatch) {
         var fName = '';
         if (fullNameCol >= 0 && row[fullNameCol]) {
           fName = row[fullNameCol].toString().trim();
