@@ -354,11 +354,15 @@ class AiAnalyticsService {
                       : 'Sinh viên còn được phép vắng tối đa **$remaining buổi**.'));
 
           return '👤 **Hồ sơ chuyên cần sinh viên:**\n'
+              '━━━━━━━━━━━━━━━━━━━━━━━━\n'
               '• **Họ và tên:** ${s.fullName}\n'
               '• **Mã sinh viên:** ${s.member} (Code: ${s.code})\n'
               '• **Số buổi vắng:** ${s.absentSlots}/${s.totalSlots} buổi (**${s.absentRate.toStringAsFixed(1)}%**)\n'
+              '• **Hạn mức vắng tối đa:** ${s.maxAllowedAbsences} buổi (20% của ${s.totalSlots} buổi)\n'
+              '• **Còn được vắng:** ${s.remainingAllowedAbsences} buổi\n'
               '• **Trạng thái:** $status\n'
-              '• **Ghi chú học vụ:** $advice';
+              '━━━━━━━━━━━━━━━━━━━━━━━━\n'
+              '📋 **Lời khuyên học vụ:** $advice';
         }
       }
     }
