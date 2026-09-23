@@ -391,17 +391,17 @@ void main() {
       // ATD-04: Default screen is now Overview (index 0)
       expect(find.text('Attendance / Overview'), findsOneWidget);
 
-      // Verify sidebar contains the 6 required navigation items (Overview added)
-      expect(find.text('Overview'), findsOneWidget);
+      // Verify sidebar contains the 5 required navigation items (Attendance contains the Hub)
       expect(find.text('Attendance'), findsWidgets);
       expect(find.text('Reports'), findsOneWidget);
       expect(find.text('AI Insights'), findsOneWidget);
       expect(find.text('FAP Sync'), findsOneWidget);
       expect(find.text('Settings'), findsOneWidget);
 
-      // Verify Dashboard and Students are decoupled from navigation
+      // Verify Dashboard, Students, and separate Overview are not in sidebar
       expect(find.text('Dashboard'), findsNothing);
       expect(find.text('Students'), findsNothing);
+      expect(find.text('Overview'), findsNothing);
 
       manager.dispose();
     });

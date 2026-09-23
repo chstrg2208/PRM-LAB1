@@ -343,6 +343,20 @@ void main() {
       // Should return to Overview Hub (index 0)
       expect(find.text('Attendance / Overview'), findsOneWidget);
 
+      // Now tap into detail again
+      await tester.tap(find.text('Điểm danh ngay'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Attendance / Workspace'), findsOneWidget);
+
+      // Tap 'Attendance' in the sidebar
+      await tester.tap(find.widgetWithText(InkWell, 'Attendance').first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // Should return to Overview Hub
+      expect(find.text('Attendance / Overview'), findsOneWidget);
+
       manager.dispose();
     });
   });
