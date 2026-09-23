@@ -50,6 +50,18 @@ class Student {
     return '';
   }
 
+  /// Kiểm tra xem rollNumber có phải là dữ liệu sinh viên hợp lệ hay chỉ là tiêu đề/metadata rác từ Sheet
+  static bool isValidStudentId(String id) {
+    final clean = id.trim().toUpperCase();
+    if (clean.isEmpty) return false;
+    if (clean == 'STT' || clean == 'MSSV' || clean == 'MEMBER' || clean == 'CODE' || clean == 'STUDENT ID') return false;
+    if (clean.contains(':') || clean.contains('|') || clean.contains('(') || clean.contains(')')) return false;
+    if (clean.contains('SLOT') || clean.contains('PHÒNG') || clean.contains('NGÀY') || clean.contains('LỊCH') || clean.contains('TRẠNG THÁI')) return false;
+    if (clean.startsWith('T2-') || clean.startsWith('T3-') || clean.startsWith('T4-') || clean.startsWith('NVH-') || clean.startsWith('BE-') || clean.startsWith('DE-')) return false;
+    if (RegExp(r'^\d{2}/\d{2}/\d{4}').hasMatch(clean)) return false;
+    return true;
+  }
+
   // Alias rollNumber tương đương member và code theo FAP
   String get rollNumber => member.isNotEmpty ? member : code;
 
@@ -206,6 +218,44 @@ class Student {
       parsedSlots20 = (json['slots20'] as List).map((e) => e?.toString().trim() ?? '').toList();
     }
 
+    int totalSlots = int.tryParse((json['totalSlots'] ?? json['TOTAL SLOTS'] ?? '20').toString()) ?? 20;
+    if (totalSlots <= 0) totalSlots = 20;
+
+    int absentSlots = int.tryParse((json['absentSlots'] ?? json['ABSENT'] ?? '0').toString()) ?? 0;
+
+    // Đếm số buổi vắng thực tế từ 20 slots (kí hiệu A hoặc V)
+    if (parsedSlots20 != null && parsedSlots20.isNotEmpty) {
+      final countA = parsedSlots20.where((s) {
+        final u = s.trim().toUpperCase();
+        return u == 'A' || u == 'V' || u == 'ABSENT' || u == 'VẮNG';
+      }).length;
+      // Nếu cột ABSENT bị sai lệch lớn hơn số buổi học hoặc ma trận có dữ liệu vắng
+      if (absentSlots > totalSlots || (countA > 0 && absentSlots == 0)) {
+        absentSlots = countA;
+      }
+    }
+
+    String resolvedEmail = (json['email'] ?? json['EMAIL'] ?? json['Email'] ?? '').toString().trim();
+    // Phát hiện email bị sai hoặc bị lệch cột (ví dụ '1', '1@fpt.edu.vn', '3@fpt.edu.vn', số đếm vắng gán nhầm vào email)
+    final isInvalidEmail = !resolvedEmail.contains('@') ||
+        RegExp(r'^\d+(@|$)').hasMatch(resolvedEmail) ||
+        resolvedEmail.startsWith('@');
+    
+    // Nếu phát hiện bị lệch cột từ GAS cũ (absentSlots = 20 và email là '1@...', '3@...'):
+    if (parsedSlots20 == null && absentSlots >= totalSlots && RegExp(r'^\d+(@|$)').hasMatch(resolvedEmail)) {
+      final numMatch = RegExp(r'^(\d+)').firstMatch(resolvedEmail);
+      if (numMatch != null) {
+        final parsedFromEmail = int.tryParse(numMatch.group(1)!);
+        if (parsedFromEmail != null && parsedFromEmail < totalSlots) {
+          absentSlots = parsedFromEmail;
+        }
+      }
+    }
+
+    if (isInvalidEmail && rollNumber.isNotEmpty) {
+      resolvedEmail = '${rollNumber.toLowerCase()}@fpt.edu.vn';
+    }
+
     return Student(
       member: rollNumber,
       code: rollNumber,
@@ -213,11 +263,11 @@ class Student {
       middleName: middleName,
       givenName: givenName,
       customFullName: (surname.isEmpty && middleName.isEmpty && givenName.isEmpty && rawFullName.isNotEmpty) ? rawFullName : null,
-      email: (json['email'] ?? json['EMAIL'] ?? json['Email'] ?? '').toString().trim(),
+      email: resolvedEmail,
       className: (json['className'] ?? json['ClassName'] ?? json['class'] ?? 'SE1801').toString().trim(),
       avatarUrl: (json['avatarUrl'] ?? json['AvatarUrl'] ?? '').toString().trim(),
-      totalSlots: int.tryParse((json['totalSlots'] ?? json['TOTAL SLOTS'] ?? '20').toString()) ?? 20,
-      absentSlots: int.tryParse((json['absentSlots'] ?? json['ABSENT'] ?? '0').toString()) ?? 0,
+      totalSlots: totalSlots,
+      absentSlots: absentSlots,
       slots20: parsedSlots20,
     );
   }

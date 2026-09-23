@@ -198,8 +198,14 @@ class DashboardView extends StatelessWidget {
                   children: [
                     const Icon(Icons.health_and_safety_outlined, size: 17, color: BirdleColors.brand),
                     const SizedBox(width: 8),
-                    const Text('Sức khỏe chuyên cần lớp học (FPT Attendance Health)', style: BirdleTypography.cardTitle),
-                    const Spacer(),
+                    const Expanded(
+                      child: Text(
+                        'Sức khỏe chuyên cần lớp học (FPT Attendance Health)',
+                        style: BirdleTypography.cardTitle,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Text(
                       'Lớp $currentClass · Tổng $totalStudents sinh viên',
                       style: BirdleTypography.metadata,

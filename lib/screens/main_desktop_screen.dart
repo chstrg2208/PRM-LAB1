@@ -4,9 +4,8 @@ import '../state/attendance_session_manager.dart';
 import '../theme/app_theme.dart';
 import '../widgets/status_badge.dart';
 import '../widgets/birdle_components.dart';
-import 'dashboard_view.dart';
+import 'attendance_overview_view.dart';
 import 'attendance_view.dart';
-import 'students_view.dart';
 import 'reports_view.dart';
 import 'ai_insights_view.dart';
 import 'fap_sync_view.dart';
@@ -24,6 +23,7 @@ class MainDesktopScreen extends StatefulWidget {
 
 class _MainDesktopScreenState extends State<MainDesktopScreen> {
   int _selectedIndex = 0;
+  bool _isViewingAttendanceDetail = false;
   AttendanceSessionManager? _internalManager;
 
   AttendanceSessionManager get _sessionManager => widget.sessionManager ?? _internalManager!;
@@ -48,7 +48,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     if (!mounted) return;
 
     if (result.requiresConfiguration) {
-      setState(() => _selectedIndex = 6);
+      setState(() => _selectedIndex = 4); // Settings is index 4
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -61,18 +61,38 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     );
   }
 
-  Future<void> _syncStudentsToSheet() async {
-    final result = await _sessionManager.syncStudents();
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(result.message),
-        backgroundColor: result.requiresConfiguration
-            ? BirdleColors.warning
-            : (result.success ? BirdleColors.brand : BirdleColors.danger),
-      ),
-    );
+  /// Được gọi khi giảng viên click vào card lớp học trong mục Attendance.
+  /// Tự động select lớp đó, nạp đúng slot & buổi học hiện tại rồi chuyển sang bảng sinh viên của lớp.
+  Future<void> _openClassFromOverview(String className, {ClassOverviewItem? item, bool isToday = false}) async {
+    await _sessionManager.selectClass(className);
+    if (item != null) {
+      if (item.slot > 0) {
+        await _sessionManager.selectSlot(item.slot);
+      }
+      if (isToday) {
+        await _sessionManager.selectDate(DateTime.now());
+      }
+      if (item.currentSession > 0) {
+        _sessionManager.selectSessionNumber(item.currentSession);
+      }
+    } else {
+      final overview = _sessionManager.attendanceOverview;
+      if (overview != null) {
+        final found = overview.todayClasses.where((c) => c.className.trim().toUpperCase() == className.trim().toUpperCase()).firstOrNull ??
+                      overview.otherClasses.where((c) => c.className.trim().toUpperCase() == className.trim().toUpperCase()).firstOrNull;
+        if (found != null) {
+          if (found.slot > 0) await _sessionManager.selectSlot(found.slot);
+          if (isToday) await _sessionManager.selectDate(DateTime.now());
+          if (found.currentSession > 0) _sessionManager.selectSessionNumber(found.currentSession);
+        }
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _selectedIndex = 0;
+        _isViewingAttendanceDetail = true;
+      });
+    }
   }
 
   Future<void> _reloadFromSheet() async {
@@ -104,7 +124,6 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
       students: _sessionManager.students,
       onConfirmExport: (delimiter) => _sessionManager.exportCurrentReportCsv(delimiter: delimiter),
     );
-
 
     if (!mounted || result == null) return;
 
@@ -143,77 +162,59 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                       child: IndexedStack(
                         index: _selectedIndex,
                         children: [
-                          // 0: Dashboard
-                          DashboardView(
-                            students: _sessionManager.students,
-                            records: _sessionManager.records,
-                            currentClass: _sessionManager.currentClass,
-                            currentSlot: _sessionManager.currentSlot,
-                            currentDate: _sessionManager.currentDate,
-                            isSheetConnected: _sessionManager.isSheetConnected,
-                            todayClasses: _sessionManager.todayClasses,
-                            availableClasses: _sessionManager.availableClasses,
-                            onClassChanged: _sessionManager.selectClass,
-                            onSelectClassAndSlot: (cName, slot) {
-                              _sessionManager.selectClass(cName);
-                              _sessionManager.selectSlot(slot);
-                            },
-                            onGoToAttendance: () => setState(() => _selectedIndex = 1),
-                            onGoToFapSync: () => setState(() => _selectedIndex = 5),
-                            onGoToSettings: () => setState(() => _selectedIndex = 6),
+                          // 0: Attendance (Hub chọn lớp <-> Bảng sinh viên chi tiết)
+                          IndexedStack(
+                            index: _isViewingAttendanceDetail ? 1 : 0,
+                            children: [
+                              AttendanceOverviewView(
+                                sheetUrl: _sessionManager.sheetUrl,
+                                initialOverview: _sessionManager.attendanceOverview,
+                                onLoadOverview: () => _sessionManager.apiClient.fetchAttendanceOverview(_sessionManager.sheetUrl),
+                                onSelectClass: _openClassFromOverview,
+                                onSelectClassItem: (item, isToday) => _openClassFromOverview(item.className, item: item, isToday: isToday),
+                                onGoToSettings: () => setState(() => _selectedIndex = 4),
+                              ),
+                              AttendanceView(
+                                students: _sessionManager.students,
+                                records: _sessionManager.records,
+                                currentClass: _sessionManager.currentClass,
+                                availableClasses: _sessionManager.availableClasses,
+                                isLoadingClasses: _sessionManager.isLoadingClasses,
+                                classesError: _sessionManager.classesError,
+                                onRetryLoadClasses: () => _sessionManager.loadClasses(),
+                                currentSlot: _sessionManager.currentSlot,
+                                currentDate: _sessionManager.currentDate,
+                                isDateLocked: _sessionManager.isSessionDateLocked,
+                                isLoading: _sessionManager.isLoading,
+                                errorMessage: _sessionManager.dataError,
+                                isSheetConfigured: _sessionManager.isSheetConfigured,
+                                onGoToSettings: () => setState(() => _selectedIndex = 4),
+                                onClassChanged: _sessionManager.selectClass,
+                                onSlotChanged: _sessionManager.selectSlot,
+                                onDateChanged: _sessionManager.selectDate,
+                                onStatusChanged: _sessionManager.updateAttendanceStatus,
+                                onNoteChanged: _sessionManager.updateNote,
+                                onMarkAllPresent: _sessionManager.markAllPresent,
+                                onMarkAllAbsent: _sessionManager.markAllAbsent,
+                                currentSessionNumber: _sessionManager.currentSessionNumber,
+                                maxAllowedSession: _sessionManager.maxAllowedSession,
+                                onSessionChanged: _sessionManager.selectSessionNumber,
+                                onBackToOverview: () => setState(() => _isViewingAttendanceDetail = false),
+                                onStartQrAttendance: () => _sessionManager.startQrAttendanceSession(),
+                                onFinishQrAttendance: () => _sessionManager.finishQrAttendance(),
+                                onCancelQrAttendance: () => _sessionManager.cancelQrAttendance(),
+                                onPollQrStatus: () => _sessionManager.pollQrCheckIns(),
+                                isQrAttendanceLocked: _sessionManager.isQrAttendanceLocked,
+                                isSessionCompleted: _sessionManager.isSessionCompleted,
+                                onReopenQrAttendance: () => _sessionManager.reopenQrAttendanceSession(),
+                                onSaveToSheet: _saveToGoogleSheet,
+                                onReloadFromSheet: _reloadFromSheet,
+                                onGoToFapSync: () => setState(() => _selectedIndex = 3),
+                                onImportStudents: _sessionManager.importStudents,
+                              ),
+                            ],
                           ),
-                          // 1: Attendance
-                          AttendanceView(
-                            students: _sessionManager.students,
-                            records: _sessionManager.records,
-                            currentClass: _sessionManager.currentClass,
-                            availableClasses: _sessionManager.availableClasses,
-                            isLoadingClasses: _sessionManager.isLoadingClasses,
-                            classesError: _sessionManager.classesError,
-                            onRetryLoadClasses: () => _sessionManager.loadClasses(),
-                            currentSlot: _sessionManager.currentSlot,
-                            currentDate: _sessionManager.currentDate,
-                            isDateLocked: _sessionManager.isSessionDateLocked,
-                            isLoading: _sessionManager.isLoading,
-                            errorMessage: _sessionManager.dataError,
-                            isSheetConfigured: _sessionManager.isSheetConfigured,
-                            onGoToSettings: () => setState(() => _selectedIndex = 6),
-                            onClassChanged: _sessionManager.selectClass,
-                            onSlotChanged: _sessionManager.selectSlot,
-                            onDateChanged: _sessionManager.selectDate,
-                            onStatusChanged: _sessionManager.updateAttendanceStatus,
-                            onNoteChanged: _sessionManager.updateNote,
-                            onMarkAllPresent: _sessionManager.markAllPresent,
-                            onMarkAllAbsent: _sessionManager.markAllAbsent,
-                            currentSessionNumber: _sessionManager.currentSessionNumber,
-                            onStartQrAttendance: () => _sessionManager.startQrAttendanceSession(),
-                            onFinishQrAttendance: () => _sessionManager.finishQrAttendance(),
-                            onCancelQrAttendance: () => _sessionManager.cancelQrAttendance(),
-                            onPollQrStatus: () => _sessionManager.pollQrCheckIns(),
-                            onSaveToSheet: _saveToGoogleSheet,
-                            onReloadFromSheet: _reloadFromSheet,
-                            onGoToFapSync: () => setState(() => _selectedIndex = 5),
-                            onImportStudents: _sessionManager.importStudents,
-                          ),
-                          // 2: Students
-                          StudentsView(
-                            students: _sessionManager.students,
-                            currentClass: _sessionManager.currentClass,
-                            availableClasses: _sessionManager.availableClasses,
-                            isLoadingClasses: _sessionManager.isLoadingClasses,
-                            classesError: _sessionManager.classesError,
-                            onRetryLoadClasses: () => _sessionManager.loadClasses(),
-                            isLoading: _sessionManager.isLoading,
-                            errorMessage: _sessionManager.dataError,
-                            isSheetConfigured: _sessionManager.isSheetConfigured,
-                            onReload: _reloadFromSheet,
-                            onGoToSettings: () => setState(() => _selectedIndex = 6),
-                            onUpdateStudents: _sessionManager.updateStudents,
-                            onClassChanged: _sessionManager.selectClass,
-                            onSyncToSheet: _syncStudentsToSheet,
-                            onGoToImport: () => setState(() => _selectedIndex = 5),
-                          ),
-                          // 3: Reports
+                          // 1: Reports
                           ReportsView(
                             students: _sessionManager.students,
                             currentClass: _sessionManager.currentClass,
@@ -228,7 +229,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             currentSlot: _sessionManager.currentSlot,
                             currentDate: _sessionManager.currentDate,
                           ),
-                          // 4: AI Insights
+                          // 2: AI Insights
                           AiInsightsView(
                             availableClasses: _sessionManager.availableClasses,
                             onClassChanged: _sessionManager.selectClass,
@@ -240,10 +241,10 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             analyticsError: _sessionManager.analyticsError,
                             isLoadingAnalytics: _sessionManager.isLoadingAnalytics,
                             onRetryLoadAnalytics: () => _sessionManager.loadAnalyticsLogs(),
-                            onConfigureByok: () => setState(() => _selectedIndex = 6),
+                            onConfigureByok: () => setState(() => _selectedIndex = 4),
                             schedule: _sessionManager.currentSchedule,
                           ),
-                          // 5: FAP Sync & Import Center
+                          // 3: FAP Sync & Import Center
                           FapSyncView(
                             students: _sessionManager.students,
                             records: _sessionManager.records,
@@ -252,7 +253,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             onImportStudents: _sessionManager.importStudents,
                             onSaveToSheet: _saveToGoogleSheet,
                           ),
-                          // 6: Settings
+                          // 4: Settings
                           SettingsView(
                             initialSheetUrl: _sessionManager.sheetUrl,
                             onSaveSheetUrl: _sessionManager.setSheetUrl,
@@ -343,26 +344,21 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               children: [
-                _buildSectionHeader('OVERVIEW'),
-                _buildNavItem(0, 'Dashboard', Icons.space_dashboard_outlined),
-
-                const SizedBox(height: 16),
                 _buildSectionHeader('ATTENDANCE'),
-                _buildNavItem(1, 'Attendance', Icons.fact_check_outlined),
-                _buildNavItem(2, 'Students', Icons.people_outline),
-                _buildNavItem(3, 'Reports', Icons.insert_chart_outlined),
+                _buildNavItem(0, 'Attendance', Icons.fact_check_outlined),
+                _buildNavItem(1, 'Reports', Icons.insert_chart_outlined),
 
                 const SizedBox(height: 16),
                 _buildSectionHeader('INTELLIGENCE'),
-                _buildNavItem(4, 'AI Insights', Icons.insights_outlined),
+                _buildNavItem(2, 'AI Insights', Icons.insights_outlined),
 
                 const SizedBox(height: 16),
                 _buildSectionHeader('INTEGRATION'),
-                _buildNavItem(5, 'FAP Sync', Icons.sync),
+                _buildNavItem(3, 'FAP Sync', Icons.sync),
 
                 const SizedBox(height: 16),
                 _buildSectionHeader('SYSTEM'),
-                _buildNavItem(6, 'Settings', Icons.settings_outlined),
+                _buildNavItem(4, 'Settings', Icons.settings_outlined),
               ],
             ),
           ),
@@ -411,7 +407,14 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1.5),
       child: InkWell(
-        onTap: () => setState(() => _selectedIndex = index),
+        onTap: () {
+          setState(() {
+            _selectedIndex = index;
+            if (index == 0) {
+              _isViewingAttendanceDetail = false;
+            }
+          });
+        },
         borderRadius: BirdleRadius.smBorder,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8.5),
@@ -483,16 +486,19 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
       child: Row(
         children: [
           // Title / Breadcrumb
-          Text(
-            _getScreenTitle(),
-            style: const TextStyle(
-              fontSize: 15.5,
-              fontWeight: FontWeight.w600,
-              color: BirdleColors.textPrimary,
-              fontFamily: BirdleTypography.fontFamily,
+          Expanded(
+            child: Text(
+              _getScreenTitle(),
+              style: const TextStyle(
+                fontSize: 15.5,
+                fontWeight: FontWeight.w600,
+                color: BirdleColors.textPrimary,
+                fontFamily: BirdleTypography.fontFamily,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          const Spacer(),
+          const SizedBox(width: 16),
 
           // Status Badges
           ConnectionStatusChip(
@@ -522,9 +528,15 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
           ],
           const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 18, color: BirdleColors.textSecondary),
-            tooltip: 'Làm mới dữ liệu',
-            onPressed: _reloadFromSheet,
+            icon: _sessionManager.isLoading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: BirdleColors.brand),
+                  )
+                : const Icon(Icons.refresh, size: 18, color: BirdleColors.textSecondary),
+            tooltip: 'Làm mới dữ liệu từ Google Sheets',
+            onPressed: _sessionManager.isLoading ? null : _reloadFromSheet,
           ),
         ],
       ),
@@ -534,18 +546,16 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
   String _getScreenTitle() {
     switch (_selectedIndex) {
       case 0:
-        return 'Overview / Dashboard';
+        return _isViewingAttendanceDetail
+            ? 'Attendance / Workspace'
+            : 'Attendance / Overview';
       case 1:
-        return 'Attendance / Workspace';
-      case 2:
-        return 'Attendance / Students';
-      case 3:
         return 'Attendance / Reports';
-      case 4:
+      case 2:
         return 'Intelligence / AI Insights';
-      case 5:
+      case 3:
         return 'Integration / FAP Sync & Import';
-      case 6:
+      case 4:
         return 'System / Settings';
       default:
         return 'Birdle';

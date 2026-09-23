@@ -10,7 +10,7 @@ import '../widgets/birdle_components.dart';
 class QrAttendanceDialog extends StatefulWidget {
   final QrAttendanceSession session;
   final List<Student> students;
-  final VoidCallback onFinishAttendance;
+  final FutureOr<void> Function() onFinishAttendance;
   final VoidCallback? onCancelAttendance;
   final Future<void> Function()? onPollStatus;
 
@@ -236,8 +236,17 @@ class _QrAttendanceDialogState extends State<QrAttendanceDialog> {
                     spacing: 6,
                     runSpacing: 4,
                     children: widget.session.checkedInEmails.map((email) {
+                      final emailTrimmed = email.trim().toLowerCase();
                       final s = widget.students.cast<Student?>().firstWhere(
-                        (st) => st != null && st.email.trim().toLowerCase() == email,
+                        (st) {
+                          if (st == null) return false;
+                          final stEmail = st.email.trim().toLowerCase();
+                          final stRoll = st.rollNumber.trim().toLowerCase();
+                          return stEmail == emailTrimmed ||
+                              stRoll == emailTrimmed ||
+                              (stRoll.isNotEmpty && (emailTrimmed.contains(stRoll) || stRoll.contains(emailTrimmed))) ||
+                              (stEmail.isNotEmpty && (emailTrimmed.contains(stEmail) || stEmail.contains(emailTrimmed)));
+                        },
                         orElse: () => null,
                       );
                       final name = s != null ? s.fullName : email;
@@ -272,9 +281,9 @@ class _QrAttendanceDialogState extends State<QrAttendanceDialog> {
                   child: BirdlePrimaryButton(
                     icon: Icons.check_circle_outline,
                     label: 'Kết thúc điểm danh',
-                    onPressed: () {
+                    onPressed: () async {
                       Navigator.of(context).pop();
-                      widget.onFinishAttendance();
+                      await widget.onFinishAttendance();
                     },
                   ),
                 ),

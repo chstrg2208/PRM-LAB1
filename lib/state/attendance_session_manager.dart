@@ -4,7 +4,10 @@ import '../models/student.dart';
 import '../models/attendance_record.dart';
 import '../models/class_schedule.dart';
 import '../models/class_session.dart';
+import '../models/class_overview_item.dart';
 import '../models/qr_attendance_session.dart';
+
+export '../models/class_overview_item.dart';
 import '../services/google_sheet_service.dart';
 import '../services/storage_service.dart';
 import '../services/ai_analytics_service.dart';
@@ -53,6 +56,8 @@ abstract class AttendanceApiClient {
   });
   Future<List<Map<String, dynamic>>> fetchAnalyticsLogs(String sheetUrl, String className);
   Future<List<Map<String, dynamic>>> fetchTodayClasses(String sheetUrl, {DateTime? date});
+  Future<AttendanceOverview> fetchAttendanceOverview(String sheetUrl) async =>
+      const AttendanceOverview();
 }
 
 /// Default Client chuyển tiếp sang GoogleSheetService
@@ -114,6 +119,10 @@ class DefaultAttendanceApiClient implements AttendanceApiClient {
   @override
   Future<List<Map<String, dynamic>>> fetchTodayClasses(String sheetUrl, {DateTime? date}) =>
       GoogleSheetService.fetchTodayClasses(sheetUrl, date: date);
+
+  @override
+  Future<AttendanceOverview> fetchAttendanceOverview(String sheetUrl) =>
+      GoogleSheetService.fetchAttendanceOverview(sheetUrl);
 }
 
 /// State Manager quản lý phiên làm việc điểm danh, danh sách sinh viên và logs phân tích
@@ -151,6 +160,13 @@ class AttendanceSessionManager extends ChangeNotifier {
   bool _isLoadingTodayClasses = false;
   QrAttendanceSession? _activeQrSession;
   int _currentSessionNumber = 1;
+  bool _isQrCompleted = false;
+  bool _isReopenedQr = false;
+  String _sheetSessionStatus = '';
+
+  AttendanceOverview? _attendanceOverview;
+  bool _isLoadingOverview = false;
+  String? _overviewError;
 
   AttendanceSessionManager({
     this.apiClient = const DefaultAttendanceApiClient(),
@@ -180,7 +196,7 @@ class AttendanceSessionManager extends ChangeNotifier {
   DateTime get currentDate => _currentDate;
   String get sheetUrl => _sheetUrl;
   bool get isSheetConnected => _isSheetConnected;
-  bool get isSheetConfigured => true;
+  bool get isSheetConfigured => _sheetUrl.trim().isNotEmpty;
   bool get isLoading => _isLoading;
   String? get dataError => _dataError;
   bool get isReloadError => _isReloadError;
@@ -194,10 +210,67 @@ class AttendanceSessionManager extends ChangeNotifier {
     return sessionDayStart.isAfter(todayStart);
   }
 
+  /// Buổi học đã hoàn tất điểm danh (đã lưu lên Sheet hoặc đã hoàn tất phiên QR)
+  bool get isSessionCompleted {
+    if (_isQrCompleted) return true;
+    final statusLower = _sheetSessionStatus.trim().toLowerCase();
+    if (statusLower == 'đã điểm danh' || statusLower == 'done' || statusLower == 'completed') {
+      return true;
+    }
+    if (_records.isNotEmpty && _records.every((r) => r.status != AttendanceStatus.notYet)) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Nút điểm danh QR có bị khóa chống gian lận hay không
+  bool get isQrAttendanceLocked {
+    if (isSessionDateLocked) return true;
+    if (isSessionCompleted && !_isReopenedQr) return true;
+    return false;
+  }
+
+  /// Phiên QR đang mở lại hay không
+  bool get isReopenedQr => _isReopenedQr;
+
   List<Map<String, dynamic>> get todayClasses => List.unmodifiable(_todayClasses);
   bool get isLoadingTodayClasses => _isLoadingTodayClasses;
   QrAttendanceSession? get activeQrSession => _activeQrSession;
   int get currentSessionNumber => _currentSessionNumber;
+
+  /// Buổi học tối đa cho phép chọn/điểm danh (Buổi hiện tại của lớp)
+  /// Tuyệt đối không cho phép chọn các buổi trong tương lai (> maxAllowedSession)
+  int get maxAllowedSession {
+    // 1. Kiểm tra từ Overview nếu đã nạp
+    if (_attendanceOverview != null) {
+      final clean = _currentClass.trim().toUpperCase();
+      for (final c in _attendanceOverview!.todayClasses) {
+        if (c.className.trim().toUpperCase() == clean && c.currentSession > 0) {
+          return c.currentSession.clamp(1, 20);
+        }
+      }
+      for (final c in _attendanceOverview!.otherClasses) {
+        if (c.className.trim().toUpperCase() == clean && c.currentSession > 0) {
+          return c.currentSession.clamp(1, 20);
+        }
+      }
+    }
+
+    // 2. Metadata từ Sheet (Dòng 1-4)
+    final metaSession = GoogleSheetService.lastClassMetadata['currentSession'];
+    if (metaSession is int && metaSession >= 1 && metaSession <= 20) {
+      return metaSession;
+    }
+
+    // 3. Tính toán theo lịch học chuẩn FPT tính đến ngày hiện tại
+    final schedToday = currentSchedule.currentSessionAsOfToday(DateTime.now());
+    if (schedToday > 0) {
+      return (schedToday >= _currentSessionNumber ? schedToday : _currentSessionNumber).clamp(1, 20);
+    }
+
+    // 4. Fallback tối thiểu là 1 hoặc session hiện tại
+    return _currentSessionNumber > 0 ? _currentSessionNumber.clamp(1, 20) : 1;
+  }
 
   /// Thông tin lịch học chuẩn FPT của lớp hiện tại
   ClassSchedule get currentSchedule {
@@ -209,7 +282,7 @@ class AttendanceSessionManager extends ChangeNotifier {
       slot: _currentSlot,
       daysOfWeek: isIA ? 'T3-T6' : 'T2-T5',
       room: isIA ? 'NVH-603' : 'NVH-611',
-      startDate: DateTime(2026, 9, 7),
+      startDate: DateTime(2026, 9, 1),
       currentSession: _currentSessionNumber > 0 ? _currentSessionNumber : 1,
       totalSessions: 20,
     );
@@ -221,6 +294,10 @@ class AttendanceSessionManager extends ChangeNotifier {
   AnalyticsDataStatus get analyticsStatus => _analyticsStatus;
   String? get analyticsError => _analyticsError;
   bool get isLoadingAnalytics => _isLoadingAnalytics;
+
+  AttendanceOverview? get attendanceOverview => _attendanceOverview;
+  bool get isLoadingOverview => _isLoadingOverview;
+  String? get overviewError => _overviewError;
 
   @override
   void dispose() {
@@ -262,14 +339,13 @@ class AttendanceSessionManager extends ChangeNotifier {
     if (_isSheetConnected) {
       await loadClasses(forceReloadDataIfClassMatches: true);
     } else {
-      _availableClasses = ['SE1801_PRM393', 'IA1601_CSN101'];
-      if (_currentClass.isEmpty || !_availableClasses.contains(_currentClass)) {
-        _currentClass = _availableClasses.first;
-      }
       await loadStudentsAndAttendance(isClassChange: true);
       await loadAnalyticsLogs();
     }
-    await loadTodayClasses();
+    await Future.wait([
+      loadTodayClasses(),
+      loadAttendanceOverview(),
+    ]);
 
     _isLoading = false;
     notifyListeners();
@@ -365,6 +441,30 @@ class AttendanceSessionManager extends ChangeNotifier {
     ]);
   }
 
+  /// ATD-05: Nạp dữ liệu Hub tổng quan lớp học
+  Future<void> loadAttendanceOverview({bool force = false}) async {
+    final cleanUrl = _sheetUrl.trim();
+    if (cleanUrl.isEmpty) {
+      _attendanceOverview = null;
+      _isLoadingOverview = false;
+      _overviewError = null;
+      notifyListeners();
+      return;
+    }
+    if (_isLoadingOverview && !force) return;
+    _isLoadingOverview = true;
+    _overviewError = null;
+    notifyListeners();
+    try {
+      _attendanceOverview = await apiClient.fetchAttendanceOverview(cleanUrl);
+    } catch (e) {
+      _overviewError = e.toString();
+    } finally {
+      _isLoadingOverview = false;
+      notifyListeners();
+    }
+  }
+
   /// Chuyển slot học đang chọn
   Future<void> selectSlot(int newSlot) async {
     if (_currentSlot == newSlot) return;
@@ -385,7 +485,39 @@ class AttendanceSessionManager extends ChangeNotifier {
     ]);
   }
 
+  /// Đổi buổi học (Session number 1..maxAllowedSession) và đồng bộ trạng thái sinh viên theo cột buổi học đó
+  void selectSessionNumber(int newSession) {
+    if (newSession < 1 || newSession > maxAllowedSession) return;
+    _currentSessionNumber = newSession;
+    final dateStr = '${_currentDate.year}-${_currentDate.month.toString().padLeft(2, '0')}-${_currentDate.day.toString().padLeft(2, '0')}';
+    _records = _students.map((s) {
+      final slotVal = (newSession >= 1 && newSession <= s.slots20.length)
+          ? s.slots20[newSession - 1]
+          : '';
+      final initialStatus = slotVal.isNotEmpty
+          ? AttendanceStatus.fromString(slotVal)
+          : AttendanceStatus.notYet;
+      return AttendanceRecord(
+        rollNumber: s.rollNumber,
+        className: _currentClass,
+        date: dateStr,
+        slot: _currentSlot,
+        status: initialStatus,
+      );
+    }).toList();
+
+    final hasCompleted = _records.isNotEmpty &&
+        _records.any((r) => r.status == AttendanceStatus.present || r.status == AttendanceStatus.absent);
+    _isQrCompleted = hasCompleted;
+    _isReopenedQr = false;
+    notifyListeners();
+  }
+
   int _calculateSessionNumber(String className, DateTime date) {
+    final metaSession = GoogleSheetService.lastClassMetadata['currentSession'];
+    if (metaSession is int && metaSession >= 1 && metaSession <= 20) {
+      return metaSession;
+    }
     final clean = className.trim().toUpperCase();
     final sched = ClassSchedule(
       className: className,
@@ -476,8 +608,12 @@ class AttendanceSessionManager extends ChangeNotifier {
   }
 
   /// Khởi tạo phiên điểm danh QR động 30s
-  QrAttendanceSession? startQrAttendanceSession({int? sessionNumber}) {
+  QrAttendanceSession? startQrAttendanceSession({int? sessionNumber, bool forceReopen = false}) {
     if (isSessionDateLocked) return null;
+    if (isQrAttendanceLocked && !forceReopen) return null;
+    if (forceReopen) {
+      _isReopenedQr = true;
+    }
     final sessNo = sessionNumber ?? _currentSessionNumber;
     _activeQrSession = QrAttendanceSession(
       sessionId: '${_currentClass}_slot${_currentSlot}_buoi$sessNo',
@@ -491,6 +627,12 @@ class AttendanceSessionManager extends ChangeNotifier {
     return _activeQrSession;
   }
 
+  /// Mở lại phiên điểm danh QR (cho phép giảng viên kích hoạt lại khi có sự cố)
+  QrAttendanceSession? reopenQrAttendanceSession({int? sessionNumber}) {
+    _isReopenedQr = true;
+    return startQrAttendanceSession(sessionNumber: sessionNumber, forceReopen: true);
+  }
+
   /// Lấy danh sách email sinh viên đã quét mã QR thành công từ backend
   Future<void> pollQrCheckIns() async {
     if (_activeQrSession == null) return;
@@ -502,10 +644,19 @@ class AttendanceSessionManager extends ChangeNotifier {
           slot: _currentSlot,
           date: _currentDate,
         );
-        for (final email in checkedEmails) {
+        for (final rawEmail in checkedEmails) {
+          final email = rawEmail.trim().toLowerCase();
           _activeQrSession!.markCheckedIn(email);
           final student = _students.cast<Student?>().firstWhere(
-            (s) => s != null && s.email.trim().toLowerCase() == email.trim().toLowerCase(),
+            (s) {
+              if (s == null) return false;
+              final sEmail = s.email.trim().toLowerCase();
+              final sRoll = s.rollNumber.trim().toLowerCase();
+              return sEmail == email ||
+                  sRoll == email ||
+                  (sRoll.isNotEmpty && (email.contains(sRoll) || sRoll.contains(email))) ||
+                  (sEmail.isNotEmpty && (email.contains(sEmail) || sEmail.contains(email)));
+            },
             orElse: () => null,
           );
           if (student != null) {
@@ -526,11 +677,26 @@ class AttendanceSessionManager extends ChangeNotifier {
   /// Kết thúc điểm danh QR: Các sinh viên CHƯA quét mã tự động bị đánh Absent (vắng)
   void finishQrAttendance() {
     if (_activeQrSession == null) return;
+
     final checkedEmails = _activeQrSession!.checkedInEmails;
 
     for (final s in _students) {
       final emailClean = s.email.trim().toLowerCase();
-      if (checkedEmails.contains(emailClean)) {
+      final rollClean = s.rollNumber.trim().toLowerCase();
+      final isPresent = checkedEmails.contains(emailClean) ||
+          checkedEmails.contains(rollClean) ||
+          checkedEmails.any((e) {
+            if (e.isEmpty) return false;
+            if (rollClean.isNotEmpty && (e == rollClean || e.contains(rollClean) || rollClean.contains(e))) {
+              return true;
+            }
+            if (emailClean.isNotEmpty && (e == emailClean || e.contains(emailClean) || emailClean.contains(e))) {
+              return true;
+            }
+            return false;
+          });
+
+      if (isPresent) {
         updateAttendanceStatus(s.rollNumber, AttendanceStatus.present);
       } else {
         updateAttendanceStatus(s.rollNumber, AttendanceStatus.absent);
@@ -538,6 +704,9 @@ class AttendanceSessionManager extends ChangeNotifier {
     }
 
     _activeQrSession = null;
+    _isQrCompleted = true;
+    _isReopenedQr = false;
+    _sheetSessionStatus = 'Đã điểm danh';
     notifyListeners();
   }
 
@@ -563,19 +732,9 @@ class AttendanceSessionManager extends ChangeNotifier {
   /// Tải danh sách sinh viên và bản ghi điểm danh với cơ chế chống race condition
   Future<String?> loadStudentsAndAttendance({bool isClassChange = false}) async {
     final cleanUrl = _sheetUrl.trim();
-    if (cleanUrl.isEmpty) {
-      if (_currentClass.isEmpty) {
-        _currentClass = 'SE1801_PRM393';
-      }
-      _availableClasses = ['SE1801_PRM393', 'IA1601_CSN101'];
-      _students = GoogleSheetService.getSampleStudentsForTesting(_currentClass);
-      _records = _students.map((s) => AttendanceRecord(
-        rollNumber: s.rollNumber,
-        status: s.absentSlots > 0 ? (s.absentSlots >= 4 ? AttendanceStatus.absent : AttendanceStatus.present) : AttendanceStatus.present,
-        slot: _currentSlot,
-        date: '${_currentDate.year}-${_currentDate.month.toString().padLeft(2, '0')}-${_currentDate.day.toString().padLeft(2, '0')}',
-        className: _currentClass,
-      )).toList();
+    if (cleanUrl.isEmpty || _currentClass.trim().isEmpty) {
+      _students = [];
+      _records = [];
       _isLoading = false;
       _dataError = null;
       _isReloadError = false;
@@ -605,6 +764,27 @@ class AttendanceSessionManager extends ChangeNotifier {
 
     try {
       final students = await apiClient.fetchStudents(cleanUrl, _currentClass);
+
+      // Tự động nhận diện slot và currentSession từ Sheet nếu có
+      final metaSlot = GoogleSheetService.lastClassMetadata['slot'];
+      if (metaSlot is int && metaSlot >= 1 && metaSlot <= 6) {
+        _currentSlot = metaSlot;
+      }
+      final metaSession = GoogleSheetService.lastClassMetadata['currentSession'];
+      if (metaSession is int && metaSession >= 1 && metaSession <= 20) {
+        _currentSessionNumber = metaSession;
+      } else if (isClassChange && students.isNotEmpty) {
+        int nextSess = 1;
+        for (int sn = 0; sn < 20; sn++) {
+          final hasEmpty = students.any((s) => sn >= s.slots20.length || s.slots20[sn].isEmpty);
+          if (hasEmpty) {
+            nextSess = sn + 1;
+            break;
+          }
+        }
+        _currentSessionNumber = nextSess;
+      }
+
       final dateStr = '${_currentDate.year}-${_currentDate.month.toString().padLeft(2, '0')}-${_currentDate.day.toString().padLeft(2, '0')}';
 
       List<AttendanceRecord> existingRecords = [];
@@ -651,6 +831,16 @@ class AttendanceSessionManager extends ChangeNotifier {
       _isLoading = false;
       _dataError = null;
       _isReloadError = false;
+
+      final hasCompletedAttendance = records.isNotEmpty &&
+          records.any((r) => r.status == AttendanceStatus.present || r.status == AttendanceStatus.absent);
+      if (hasCompletedAttendance) {
+        _isQrCompleted = true;
+      } else {
+        _isQrCompleted = false;
+      }
+      _isReopenedQr = false;
+
       notifyListeners();
       return null;
     } catch (e) {
@@ -724,7 +914,10 @@ class AttendanceSessionManager extends ChangeNotifier {
   /// Tải lại toàn bộ dữ liệu hiện tại
   Future<String?> reload() async {
     final err = await loadStudentsAndAttendance(isClassChange: false);
-    await loadAnalyticsLogs();
+    await Future.wait([
+      loadAnalyticsLogs(),
+      loadAttendanceOverview(force: true),
+    ]);
     return err;
   }
 
@@ -787,6 +980,13 @@ class AttendanceSessionManager extends ChangeNotifier {
       );
     }
 
+    if (!bypassDateLock && _currentSessionNumber > maxAllowedSession) {
+      return OperationResult(
+        success: false,
+        message: 'Không thể lưu điểm danh cho buổi học tương lai (Buổi $_currentSessionNumber > Buổi hiện tại $maxAllowedSession).',
+      );
+    }
+
     _isLoading = true;
     notifyListeners();
 
@@ -806,6 +1006,9 @@ class AttendanceSessionManager extends ChangeNotifier {
 
       final isSuccess = result['success'] == true;
       if (isSuccess) {
+        _isQrCompleted = true;
+        _isReopenedQr = false;
+        _sheetSessionStatus = 'Đã điểm danh';
         await Future.wait([
           loadAnalyticsLogs(),
           loadTodayClasses(),
@@ -918,7 +1121,6 @@ class AttendanceSessionManager extends ChangeNotifier {
               className: _currentClass,
               delimiter: delimiter,
             );
-
       _isExporting = false;
       notifyListeners();
       return result;

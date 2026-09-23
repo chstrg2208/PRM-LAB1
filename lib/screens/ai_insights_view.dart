@@ -339,7 +339,7 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
-                      'Chưa cấu hình URL Google Apps Script để tải dữ liệu lịch sử điểm danh từ Google Sheets.',
+                      'Chưa cấu hình Google Sheet để đồng bộ lịch sử điểm danh.',
                       style: BirdleTypography.metadata,
                     ),
                   ),
@@ -347,6 +347,28 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                     label: 'Cấu hình ngay',
                     color: BirdleColors.brand,
                     onPressed: widget.onConfigureByok,
+                  ),
+                ],
+              ),
+            ),
+          ] else if (_report.status == AnalyticsDataStatus.empty) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: BirdleColors.surfaceSecondary,
+                borderRadius: BirdleRadius.smBorder,
+                border: Border.all(color: BirdleColors.border),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: BirdleColors.textMuted),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Chưa đủ dữ liệu thống kê lịch sử.',
+                      style: BirdleTypography.metadata,
+                    ),
                   ),
                 ],
               ),
@@ -372,7 +394,7 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                   ),
                   if (widget.onRetryLoadAnalytics != null)
                     BirdleGhostButton(
-                      label: 'Thử lại',
+                      label: 'Thử lại (Retry)',
                       color: BirdleColors.danger,
                       onPressed: widget.onRetryLoadAnalytics,
                     ),
@@ -931,9 +953,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               children: [
                 Icon(Icons.check_circle_outline_rounded, size: 20, color: BirdleColors.success),
                 SizedBox(width: 6),
-                Text(
-                  'Chưa ghi nhận ca vắng nào',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                Expanded(
+                  child: Text(
+                    'Chưa ghi nhận ca vắng nào',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                  ),
                 ),
               ],
             ),
@@ -1035,9 +1059,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               children: [
                 Icon(Icons.check_circle_outline_rounded, size: 20, color: BirdleColors.success),
                 SizedBox(width: 6),
-                Text(
-                  'Chuyên cần đồng đều',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                Expanded(
+                  child: Text(
+                    'Chuyên cần đồng đều',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                  ),
                 ),
               ],
             ),
@@ -1224,9 +1250,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               children: [
                 Icon(Icons.check_circle_outline_rounded, size: 20, color: BirdleColors.success),
                 SizedBox(width: 6),
-                Text(
-                  '100% sinh viên an toàn',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                Expanded(
+                  child: Text(
+                    '100% sinh viên an toàn',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                  ),
                 ),
               ],
             ),

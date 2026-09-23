@@ -110,12 +110,27 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
     super.dispose();
   }
 
+  // Màu nền row: Chưa điểm danh → trắng, có mặt → xanh, vắng → vàng
+  Color _rowBgColor() {
+    switch (widget.record.status) {
+      case AttendanceStatus.present:
+        return BirdleColors.successLight;
+      case AttendanceStatus.absent:
+        return BirdleColors.warningLight;
+      case AttendanceStatus.notYet:
+      default:
+        return Colors.white;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final student = widget.student;
+
     return Container(
       height: 52,
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      color: Colors.white,
+      color: _rowBgColor(),
       child: Row(
         children: [
           // Index
@@ -128,7 +143,7 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
           SizedBox(
             width: 120,
             child: Text(
-              widget.student.rollNumber,
+              student.rollNumber,
               style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -145,29 +160,21 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.student.fullName, style: BirdleTypography.bodyMedium),
-                if (widget.student.email.isNotEmpty)
-                  Text(widget.student.email, style: const TextStyle(fontSize: 11, color: BirdleColors.textMuted)),
+                Text(student.fullName, style: BirdleTypography.bodyMedium),
+                if (student.email.isNotEmpty)
+                  Text(student.email, style: const TextStyle(fontSize: 11, color: BirdleColors.textMuted)),
               ],
             ),
           ),
 
-          // Status Controls (Segmented / Inline Pills per Section 12)
+          // Status Controls (Chỉ hiển thị Có mặt và Vắng theo yêu cầu)
           SizedBox(
-            width: 205,
+            width: 150,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
               child: Row(
                 children: [
-                  _buildStatusPill(
-                    label: 'Chưa',
-                    isSelected: widget.record.status == AttendanceStatus.notYet,
-                    selectedBg: BirdleColors.surfaceSecondary,
-                    selectedFg: BirdleColors.textMuted,
-                    onTap: () => _handleStatusChanged(AttendanceStatus.notYet),
-                  ),
-                  const SizedBox(width: 4),
                   _buildStatusPill(
                     label: 'Có mặt',
                     isSelected: widget.record.status == AttendanceStatus.present,
@@ -175,7 +182,7 @@ class _AttendanceStudentRowState extends State<AttendanceStudentRow> {
                     selectedFg: BirdleColors.success,
                     onTap: () => _handleStatusChanged(AttendanceStatus.present),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 8),
                   _buildStatusPill(
                     label: 'Vắng',
                     isSelected: widget.record.status == AttendanceStatus.absent,

@@ -148,14 +148,14 @@ void main() {
       final manager = AttendanceSessionManager(
         initialClass: 'SE1801',
         initialSlot: 1,
-        initialDate: DateTime(2026, 9, 21),
+        initialDate: DateTime.now(),
       );
 
       // Set students and records
       manager.importStudents([student1, student2]);
 
       // Start QR session
-      final qrSession = manager.startQrAttendanceSession(sessionNumber: 3);
+      final qrSession = manager.startQrAttendanceSession(sessionNumber: 3, forceReopen: true);
       expect(manager.activeQrSession, isNotNull);
 
       // Student 1 checks in

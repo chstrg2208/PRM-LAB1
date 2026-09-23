@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/student.dart';
 import '../models/attendance_record.dart';
+import '../models/class_overview_item.dart';
 
 enum GoogleSheetErrorType {
   unconfigured,
@@ -32,6 +33,9 @@ class GoogleSheetException implements Exception {
 }
 
 class GoogleSheetService {
+  /// Lưu trữ metadata của lớp học gần nhất được tải (slot, currentSession, room,...)
+  static Map<String, dynamic> lastClassMetadata = {};
+
   /// Chuẩn hóa việc phân tích phản hồi từ Google Apps Script
   static Map<String, dynamic> _parseApiResponse(http.Response response) {
     if (response.statusCode != 200 && response.statusCode != 302) {
@@ -224,6 +228,17 @@ class GoogleSheetService {
       final response = await httpClient.get(requestUri).timeout(const Duration(seconds: 12));
       final decoded = _parseApiResponse(response);
 
+      lastClassMetadata = {
+        'className': decoded['className'],
+        'slot': decoded['slot'],
+        'currentSession': decoded['currentSession'],
+        'sessionStatus': decoded['sessionStatus'],
+        'subject': decoded['subject'],
+        'room': decoded['room'],
+        'days': decoded['days'],
+        'totalSessions': decoded['totalSessions'],
+      };
+
       final rawData = decoded['data'];
       if (rawData is! List) {
         throw const GoogleSheetException(
@@ -232,12 +247,15 @@ class GoogleSheetService {
         );
       }
 
-      return rawData.map((item) {
-        if (item is Map<String, dynamic>) {
-          return Student.fromJson(item);
-        }
-        return Student.fromJson(Map<String, dynamic>.from(item as Map));
-      }).toList();
+      return rawData
+          .map((item) {
+            if (item is Map<String, dynamic>) {
+              return Student.fromJson(item);
+            }
+            return Student.fromJson(Map<String, dynamic>.from(item as Map));
+          })
+          .where((s) => Student.isValidStudentId(s.rollNumber) && Student.isValidStudentId(s.member))
+          .toList();
     } on GoogleSheetException {
       rethrow;
     } on SocketException catch (e) {
@@ -821,6 +839,77 @@ class GoogleSheetService {
     ];
   }
 
+  // ---------------------------------------------------------------------------
+  // ATD-03: Tổng quan điểm danh (getAttendanceOverview)
+  // ---------------------------------------------------------------------------
+
+  /// Lấy tổng quan danh sách lớp học từ Google Apps Script.
+  ///
+  /// Gọi `action=getAttendanceOverview` và trả về [AttendanceOverview]
+  /// chứa [todayClasses] (lớp hôm nay) và [otherClasses] (các lớp khác).
+  ///
+  /// Ném [GoogleSheetException] khi:
+  /// - URL chưa được cấu hình
+  /// - Lỗi mạng / timeout
+  /// - GAS trả về JSON không hợp lệ
+  static Future<AttendanceOverview> fetchAttendanceOverview(
+    String webAppUrl, {
+    http.Client? client,
+  }) async {
+    final cleanUrl = webAppUrl.trim();
+    if (cleanUrl.isEmpty) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.unconfigured,
+        message: 'Chưa cấu hình URL Google Sheet trong Cài đặt.',
+      );
+    }
+
+    final uri = Uri.tryParse(cleanUrl);
+    if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) {
+      throw const GoogleSheetException(
+        type: GoogleSheetErrorType.invalidSchema,
+        message: 'URL Google Sheet không hợp lệ.',
+      );
+    }
+
+    final httpClient = client ?? http.Client();
+    try {
+      final requestUri = uri.replace(queryParameters: {
+        ...uri.queryParameters,
+        'action': 'getAttendanceOverview',
+      });
+      final response =
+          await httpClient.get(requestUri).timeout(const Duration(seconds: 15));
+      final decoded = _parseApiResponse(response);
+
+      return AttendanceOverview.fromJson(decoded);
+    } on GoogleSheetException {
+      rethrow;
+    } on SocketException catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message:
+            'Không thể kết nối đến Google Sheet. Vui lòng kiểm tra lại mạng internet.',
+        details: e,
+      );
+    } on TimeoutException catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Hết thời gian chờ phản hồi từ Google Sheet (timeout).',
+        details: e,
+      );
+    } catch (e) {
+      throw GoogleSheetException(
+        type: GoogleSheetErrorType.network,
+        message: 'Lỗi khi tải tổng quan lớp học: $e',
+        details: e,
+      );
+    } finally {
+      if (client == null) {
+        httpClient.close();
+      }
+    }
+  }
   /// Dữ liệu log lịch sử mẫu cho chế độ demo offline theo đặc thù FPT (Deterministic Data)
   static List<Map<String, dynamic>> getSampleAnalyticsLogs(String className) {
     if (className.contains('IA1601')) {

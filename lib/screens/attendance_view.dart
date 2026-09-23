@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/student.dart';
@@ -7,6 +8,7 @@ import '../models/qr_attendance_session.dart';
 import '../theme/app_theme.dart';
 import '../widgets/birdle_components.dart';
 import '../widgets/attendance_student_row.dart';
+import '../widgets/attendance_matrix_view.dart';
 import '../widgets/fap_sync_dialog.dart';
 import '../widgets/import_fap_dialog.dart';
 import '../widgets/qr_attendance_dialog.dart';
@@ -37,11 +39,17 @@ class AttendanceView extends StatefulWidget {
   final bool isSheetConfigured;
   final VoidCallback? onGoToSettings;
   final int currentSessionNumber;
+  final ValueChanged<int>? onSessionChanged;
   final bool isDateLocked;
   final QrAttendanceSession? Function()? onStartQrAttendance;
-  final VoidCallback? onFinishQrAttendance;
+  final FutureOr<void> Function()? onFinishQrAttendance;
   final VoidCallback? onCancelQrAttendance;
   final Future<void> Function()? onPollQrStatus;
+  final bool isQrAttendanceLocked;
+  final bool isSessionCompleted;
+  final QrAttendanceSession? Function()? onReopenQrAttendance;
+  final VoidCallback? onBackToOverview;
+  final int maxAllowedSession;
 
   const AttendanceView({
     super.key,
@@ -71,10 +79,16 @@ class AttendanceView extends StatefulWidget {
     this.isSheetConfigured = true,
     this.onGoToSettings,
     this.currentSessionNumber = 1,
+    this.onSessionChanged,
     this.onStartQrAttendance,
     this.onFinishQrAttendance,
     this.onCancelQrAttendance,
     this.onPollQrStatus,
+    this.isQrAttendanceLocked = false,
+    this.isSessionCompleted = false,
+    this.onReopenQrAttendance,
+    this.onBackToOverview,
+    this.maxAllowedSession = 20,
   });
 
   @override
@@ -84,7 +98,13 @@ class AttendanceView extends StatefulWidget {
 class _AttendanceViewState extends State<AttendanceView> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String _statusFilter = 'ALL'; // ALL, PRESENT, ABSENT, LATE
+  String _statusFilter = 'ALL'; // ALL, PRESENT, ABSENT, LATE, WARNING
+
+  // Task 7: Success banner sau khi lưu thành công
+  String? _lastSaveBanner;
+
+  // Task 8: Toggle giữa Table View và Matrix View
+  bool _isMatrixView = false;
 
   @override
   void dispose() {
@@ -107,20 +127,25 @@ class _AttendanceViewState extends State<AttendanceView> {
       }
 
       if (_statusFilter != 'ALL') {
-      final rec = widget.records.where((r) => r.rollNumber == s.rollNumber).firstOrNull;
-      if (_statusFilter == 'NOT_YET' && rec?.status != AttendanceStatus.notYet) return false;
-      if (_statusFilter == 'PRESENT' && rec?.status != AttendanceStatus.present) return false;
-      if (_statusFilter == 'ABSENT' && rec?.status != AttendanceStatus.absent) return false;
-    }
+        final rec = widget.records.where((r) => r.rollNumber == s.rollNumber).firstOrNull;
+        if (_statusFilter == 'NOT_YET' && rec?.status != AttendanceStatus.notYet) return false;
+        if (_statusFilter == 'PRESENT' && rec?.status != AttendanceStatus.present) return false;
+        if (_statusFilter == 'ABSENT' && rec?.status != AttendanceStatus.absent) return false;
+        if (_statusFilter == 'WARNING' && !(s.isWarning || s.isBanned || s.hasExhaustedAbsenceAllowance || s.isExactlyAtAbsenceLimit)) return false;
+      }
 
-    return true;
-  }).toList();
+      return true;
+    }).toList();
 
-  final notYetCount = widget.records.where((r) => r.status == AttendanceStatus.notYet).length;
-  final presentCount = widget.records.where((r) => r.status == AttendanceStatus.present).length;
-  final absentCount = widget.records.where((r) => r.status == AttendanceStatus.absent).length;
+    final notYetCount = widget.records.where((r) => r.status == AttendanceStatus.notYet).length;
+    final presentCount = widget.records.where((r) => r.status == AttendanceStatus.present).length;
+    final absentCount = widget.records.where((r) => r.status == AttendanceStatus.absent).length;
 
-  final dateStr = DateFormat('MMMM d, y').format(widget.currentDate);
+    // Task 6: Tính số sinh viên cảnh báo/cấm thi (dựa trên dữ liệu 20 slot)
+    final warningStudents = widget.students.where((s) => s.isWarning).length;
+    final bannedStudents = widget.students.where((s) => s.isBanned || s.hasExhaustedAbsenceAllowance || s.isExactlyAtAbsenceLimit).length;
+
+    final dateStr = DateFormat('MMMM d, y').format(widget.currentDate);
 
   return Padding(
     padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
@@ -133,6 +158,17 @@ class _AttendanceViewState extends State<AttendanceView> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (widget.onBackToOverview != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, right: 12),
+                  child: BirdleGhostButton(
+                    key: const Key('btnBackToOverview'),
+                    icon: Icons.arrow_back,
+                    label: 'Quay lại danh sách lớp',
+                    onPressed: widget.onBackToOverview,
+                  ),
+                ),
+              ],
               SizedBox(
                 width: 320,
                 child: Column(
@@ -152,56 +188,38 @@ class _AttendanceViewState extends State<AttendanceView> {
               _buildSessionPickers(),
               const SizedBox(width: 16),
               // Action Buttons (Section 12 design.md)
-              BirdlePrimaryButton(
-                icon: Icons.qr_code_scanner,
-                label: 'Điểm danh QR',
-                onPressed: isLocked
-                    ? () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Buổi học ngày ${DateFormat('dd/MM/yyyy').format(widget.currentDate)} chưa diễn ra! Chỉ mở sau 00:00 ngày học.'),
-                            backgroundColor: BirdleColors.warning,
-                          ),
-                        );
+              if (isLocked)
+                BirdlePrimaryButton(
+                  icon: Icons.calendar_today_outlined,
+                  label: 'Điểm danh QR (Chưa tới ngày)',
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Buổi học ngày ${DateFormat('dd/MM/yyyy').format(widget.currentDate)} chưa diễn ra! Chỉ mở sau 00:00 ngày học.'),
+                        backgroundColor: BirdleColors.warning,
+                      ),
+                    );
+                  },
+                )
+              else if (widget.isQrAttendanceLocked)
+                BirdleSecondaryButton(
+                  icon: Icons.lock_outline,
+                  label: 'Đã chốt QR (Khóa)',
+                  onPressed: _showLockedQrDialog,
+                )
+              else
+                BirdlePrimaryButton(
+                  icon: Icons.qr_code_scanner,
+                  label: 'Điểm danh QR',
+                  onPressed: () {
+                    if (widget.onStartQrAttendance != null) {
+                      final session = widget.onStartQrAttendance!();
+                      if (session != null) {
+                        _showQrDialog(session);
                       }
-                    : () {
-                        if (widget.onStartQrAttendance != null) {
-                          final session = widget.onStartQrAttendance!();
-                          if (session == null) return;
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => QrAttendanceDialog(
-                              session: session,
-                              students: widget.students,
-                              onFinishAttendance: () {
-                                if (widget.onFinishQrAttendance != null) {
-                                  widget.onFinishQrAttendance!();
-                                }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('✓ Đã kết thúc điểm danh QR: Sinh viên chưa quét mã được đánh Vắng. Vui lòng kiểm tra lại trước khi bấm "Save to Sheet".'),
-                                    backgroundColor: BirdleColors.success,
-                                  ),
-                                );
-                              },
-                              onCancelAttendance: () {
-                                if (widget.onCancelQrAttendance != null) {
-                                  widget.onCancelQrAttendance!();
-                                }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Đã đóng phiên QR (giữ nguyên trạng thái sinh viên).'),
-                                    backgroundColor: BirdleColors.surfaceSecondary,
-                                  ),
-                                );
-                              },
-                              onPollStatus: widget.onPollQrStatus,
-                            ),
-                          );
-                      }
-                    },
-            ),
+                    }
+                  },
+                ),
             const SizedBox(width: 8),
             BirdleSecondaryButton(
               icon: Icons.file_upload_outlined,
@@ -231,7 +249,7 @@ class _AttendanceViewState extends State<AttendanceView> {
                     }
                   : () {
                       FocusScope.of(context).unfocus();
-                      widget.onSaveToSheet();
+                      _showSaveConfirmDialog(context); // Task 7
                     },
             ),
             const SizedBox(width: 8),
@@ -249,6 +267,33 @@ class _AttendanceViewState extends State<AttendanceView> {
                   ),
                 );
               },
+            ),
+            const SizedBox(width: 16),
+            // Task 8: View Toggle — Table / Matrix
+            Container(
+              decoration: BoxDecoration(
+                color: BirdleColors.surfaceSecondary,
+                borderRadius: BirdleRadius.smBorder,
+                border: Border.all(color: BirdleColors.border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildViewToggle(
+                    icon: Icons.table_rows_outlined,
+                    label: 'Bảng',
+                    isSelected: !_isMatrixView,
+                    onTap: () => setState(() => _isMatrixView = false),
+                  ),
+                  Container(width: 1, height: 24, color: BirdleColors.border),
+                  _buildViewToggle(
+                    icon: Icons.grid_view_rounded,
+                    label: 'Matrix',
+                    isSelected: _isMatrixView,
+                    onTap: () => setState(() => _isMatrixView = true),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -290,6 +335,25 @@ class _AttendanceViewState extends State<AttendanceView> {
           ),
         ],
 
+        // Task 8: Swap giữa Matrix View và Table View
+        if (_isMatrixView) ...[
+          Expanded(
+            child: BirdleCard(
+              padding: const EdgeInsets.all(16),
+              child: widget.students.isEmpty
+                  ? const Center(
+                      child: Text('Chưa có sinh viên. Hãy tải dữ liệu lớp trước.',
+                          style: TextStyle(color: BirdleColors.textMuted)),
+                    )
+                  : AttendanceMatrixView(
+                      students: widget.students,
+                      currentSessionNumber: widget.currentSessionNumber,
+                      currentClass: widget.currentClass,
+                    ),
+            ),
+          ),
+        ] else ...[
+
         // Summary & Filter Bar
         BirdleCard(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -307,6 +371,15 @@ class _AttendanceViewState extends State<AttendanceView> {
                 _buildSummaryBadge('$presentCount Present', BirdleColors.success, () => setState(() => _statusFilter = 'PRESENT')),
                 const SizedBox(width: 8),
                 _buildSummaryBadge('$absentCount Absent', BirdleColors.danger, () => setState(() => _statusFilter = 'ABSENT')),
+                // Task 6: Warning filter badge (chỉ hiện khi có sinh viên cảnh báo)
+                if (warningStudents + bannedStudents > 0) ...[
+                  const SizedBox(width: 8),
+                  _buildSummaryBadge(
+                    '${warningStudents + bannedStudents} ⚠ Cảnh báo',
+                    BirdleColors.warning,
+                    () => setState(() => _statusFilter = 'WARNING'),
+                  ),
+                ],
 
                 const SizedBox(width: 24),
 
@@ -350,7 +423,98 @@ class _AttendanceViewState extends State<AttendanceView> {
             ),
           ),
         ),
+        // Task 6: Warning Summary Banner — chỉ hiện khi có sinh viên nguy cơ
+        if ((warningStudents > 0 || bannedStudents > 0) && widget.students.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: () => setState(() => _statusFilter = 'WARNING'),
+            borderRadius: BirdleRadius.smBorder,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: bannedStudents > 0 ? BirdleColors.dangerLight : BirdleColors.warningLight,
+                borderRadius: BirdleRadius.smBorder,
+                border: Border.all(
+                  color: (bannedStudents > 0 ? BirdleColors.danger : BirdleColors.warning).withValues(alpha: 0.35),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    bannedStudents > 0 ? Icons.block_rounded : Icons.warning_amber_rounded,
+                    size: 16,
+                    color: bannedStudents > 0 ? BirdleColors.danger : BirdleColors.warning,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: RichText(
+                      text: TextSpan(
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: bannedStudents > 0 ? BirdleColors.danger : BirdleColors.warning,
+                          fontFamily: BirdleTypography.fontFamily,
+                        ),
+                        children: [
+                          if (bannedStudents > 0)
+                            TextSpan(
+                              text: '$bannedStudents sinh viên nguy hiểm (cấm thi / hết lượt vắng)',
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          if (bannedStudents > 0 && warningStudents > 0)
+                            const TextSpan(text: ' · '),
+                          if (warningStudents > 0)
+                            TextSpan(
+                              text: '$warningStudents sinh viên cảnh báo (15–20% vắng)',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          const TextSpan(
+                            text: ' — Nhấn để lọc xem nhóm này',
+                            style: TextStyle(fontStyle: FontStyle.italic, fontWeight: FontWeight.w400),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 16,
+                    color: bannedStudents > 0 ? BirdleColors.danger : BirdleColors.warning,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 14),
+
+        // Task 7: Success Banner sau khi lưu thành công (tự ẩn)
+        if (_lastSaveBanner != null) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: BirdleColors.successLight,
+              borderRadius: BirdleRadius.smBorder,
+              border: Border.all(color: BirdleColors.success.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle_outline, size: 16, color: BirdleColors.success),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _lastSaveBanner!,
+                    style: const TextStyle(fontSize: 12.5, color: BirdleColors.success, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                InkWell(
+                  onTap: () => setState(() => _lastSaveBanner = null),
+                  child: const Icon(Icons.close, size: 15, color: BirdleColors.success),
+                ),
+              ],
+            ),
+          ),
+        ],
 
           // Main Data Table (Section 12 dominant component)
           Expanded(
@@ -471,7 +635,7 @@ class _AttendanceViewState extends State<AttendanceView> {
                                   SizedBox(width: 44, child: Text('#', style: BirdleTypography.caption)),
                                   SizedBox(width: 120, child: Text('STUDENT ID', style: BirdleTypography.caption)),
                                   Expanded(flex: 3, child: Text('STUDENT NAME', style: BirdleTypography.caption)),
-                                  SizedBox(width: 205, child: Text('STATUS (PRESENT / ABSENT / NOT YET)', style: BirdleTypography.caption)),
+                                  SizedBox(width: 150, child: Text('ĐIỂM DANH (CÓ MẶT / VẮNG)', style: BirdleTypography.caption)),
                                   Expanded(flex: 2, child: Text('NOTE', style: BirdleTypography.caption)),
                                   SizedBox(width: 140, child: Text('ATTENDANCE RATE', style: BirdleTypography.caption)),
                                 ],
@@ -501,17 +665,53 @@ class _AttendanceViewState extends State<AttendanceView> {
                                     index: index + 1,
                                     student: student,
                                     record: record,
-                                    onStatusChanged: widget.onStatusChanged,
-                                    onNoteChanged: widget.onNoteChanged,
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-            ),
+                                     onStatusChanged: widget.onStatusChanged,
+                                     onNoteChanged: widget.onNoteChanged,
+                                   );
+                                 },
+                               ),
+                             ),
+                           ],
+                         ),
+             ),
           ),
-        ],
+        ], // end else (Table View)
+      ],
+      ),
+    );
+  }
+
+  // Task 8: Toggle button helper
+  Widget _buildViewToggle({
+    required IconData icon,
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BirdleRadius.smBorder,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? BirdleColors.brand.withValues(alpha: 0.1) : Colors.transparent,
+          borderRadius: BirdleRadius.smBorder,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: isSelected ? BirdleColors.brand : BirdleColors.textMuted),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                color: isSelected ? BirdleColors.brand : BirdleColors.textMuted,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -590,6 +790,28 @@ class _AttendanceViewState extends State<AttendanceView> {
           ),
           Container(width: 1, height: 16, color: BirdleColors.border, margin: const EdgeInsets.symmetric(horizontal: 8)),
 
+          // Buổi Dropdown (Giới hạn từ Buổi 1 đến maxAllowedSession)
+          Builder(
+            builder: (context) {
+              final maxSess = widget.maxAllowedSession.clamp(1, 20);
+              final currentSessVal = widget.currentSessionNumber.clamp(1, maxSess);
+              return DropdownButton<int>(
+                key: const Key('dropdownSessionNumber'),
+                value: currentSessVal,
+                underline: const SizedBox(),
+                isDense: true,
+                style: const TextStyle(fontWeight: FontWeight.w600, color: BirdleColors.brand, fontSize: 13),
+                items: List.generate(maxSess, (i) => i + 1)
+                    .map((s) => DropdownMenuItem(value: s, child: Text('Buổi $s')))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) widget.onSessionChanged?.call(val);
+                },
+              );
+            },
+          ),
+          Container(width: 1, height: 16, color: BirdleColors.border, margin: const EdgeInsets.symmetric(horizontal: 8)),
+
           // Date Picker Clickable
           InkWell(
             onTap: () async {
@@ -651,4 +873,337 @@ class _AttendanceViewState extends State<AttendanceView> {
       ),
     );
   }
+
+  // ─── Task 7: Save Confirmation Flow ───────────────────────────────────────
+
+  /// Tính toán sinh viên nào sẽ thay đổi trạng thái cảnh báo sau buổi này
+  List<_WarningImpact> _computeWarningImpacts() {
+    final impacts = <_WarningImpact>[];
+    for (final student in widget.students) {
+      final rec = widget.records.where((r) => r.rollNumber == student.rollNumber).firstOrNull;
+      if (rec == null || rec.status != AttendanceStatus.absent) continue;
+
+      // Giả lập: nếu buổi này bị Vắng, absent của sinh viên sẽ tăng lên 1
+      final projectedAbsent = student.absentSlots + 1;
+      final total = student.totalSlots;
+      if (total <= 0) continue;
+
+      final wasOk = !student.isBanned && !student.hasExhaustedAbsenceAllowance && !student.isExactlyAtAbsenceLimit;
+      final willBeBanned = projectedAbsent * 100 > total * 20;
+      final willBeAtLimit = projectedAbsent * 100 == total * 20;
+
+      if (wasOk && (willBeBanned || willBeAtLimit)) {
+        impacts.add(_WarningImpact(
+          student: student,
+          isBanned: willBeBanned,
+        ));
+      }
+    }
+    return impacts;
+  }
+
+  Future<void> _showSaveConfirmDialog(BuildContext ctx) async {
+    final presentCount = widget.records.where((r) => r.status == AttendanceStatus.present).length;
+    final absentCount = widget.records.where((r) => r.status == AttendanceStatus.absent).length;
+    final notYetCount = widget.records.where((r) => r.status == AttendanceStatus.notYet).length;
+    final impacts = _computeWarningImpacts();
+    final sessionLabel = 'Buổi ${widget.currentSessionNumber}/20 · ${widget.currentClass} · ${DateFormat('dd/MM/yyyy').format(widget.currentDate)}';
+
+    final confirmed = await showDialog<bool>(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: BirdleColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: BirdleColors.border),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: BirdleColors.surfaceSecondary, borderRadius: BorderRadius.circular(8)),
+              child: const Icon(Icons.save_outlined, color: BirdleColors.brand, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Xác nhận lưu điểm danh',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: BirdleColors.textPrimary, fontFamily: BirdleTypography.fontFamily)),
+                  Text(sessionLabel,
+                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w400, color: BirdleColors.textMuted, fontFamily: BirdleTypography.fontFamily)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Tóm tắt 3 con số
+              Row(
+                children: [
+                  _buildStatCard('$presentCount', 'Có mặt', BirdleColors.success, BirdleColors.successLight),
+                  const SizedBox(width: 8),
+                  _buildStatCard('$absentCount', 'Vắng', BirdleColors.danger, BirdleColors.dangerLight),
+                  const SizedBox(width: 8),
+                  _buildStatCard('$notYetCount', 'Chưa điểm', BirdleColors.textMuted, BirdleColors.surfaceSecondary),
+                ],
+              ),
+
+              // Cảnh báo Not Yet
+              if (notYetCount > 0) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: BirdleColors.warningLight,
+                    borderRadius: BirdleRadius.smBorder,
+                    border: Border.all(color: BirdleColors.warning.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, size: 15, color: BirdleColors.warning),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Còn $notYetCount sinh viên chưa được điểm danh. Họ sẽ vẫn là "Chưa" trên Sheet sau khi lưu.',
+                          style: const TextStyle(fontSize: 12, color: BirdleColors.warning, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // Tác động cảnh báo vắng
+              if (impacts.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: BirdleColors.dangerLight,
+                    borderRadius: BirdleRadius.smBorder,
+                    border: Border.all(color: BirdleColors.danger.withValues(alpha: 0.4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.block_rounded, size: 14, color: BirdleColors.danger),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${impacts.length} sinh viên sẽ chạm/vượt ngưỡng sau buổi này:',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BirdleColors.danger),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ...impacts.map((imp) => Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  imp.isBanned ? Icons.block : Icons.warning_amber_rounded,
+                                  size: 11,
+                                  color: BirdleColors.danger,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  '${imp.student.fullName} (${imp.student.rollNumber}) — ${imp.isBanned ? "CẤM THI >20%" : "Chạm ngưỡng 20%"}',
+                                  style: const TextStyle(fontSize: 11.5, color: BirdleColors.danger),
+                                ),
+                              ],
+                            ),
+                          )),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Quay lại kiểm tra', style: TextStyle(color: BirdleColors.textSecondary)),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.save_outlined, size: 15),
+            label: const Text('Xác nhận & Lưu'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: BirdleColors.brand,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BirdleRadius.smBorder),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            ),
+            onPressed: () => Navigator.pop(dialogCtx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      widget.onSaveToSheet();
+      // Xây dựng success banner
+      final banner = '✓ Đã lưu Buổi ${widget.currentSessionNumber}/20 lên Google Sheets — $presentCount Có mặt · $absentCount Vắng · $notYetCount Chưa';
+      setState(() => _lastSaveBanner = banner);
+      // Tự ẩn sau 5 giây
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted && _lastSaveBanner == banner) {
+          setState(() => _lastSaveBanner = null);
+        }
+      });
+    }
+  }
+
+  Widget _buildStatCard(String value, String label, Color color, Color bgColor) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(color: bgColor, borderRadius: BirdleRadius.smBorder),
+        child: Column(
+          children: [
+            Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: color, fontFamily: BirdleTypography.fontFamily)),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showQrDialog(QrAttendanceSession session) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => QrAttendanceDialog(
+        session: session,
+        students: widget.students,
+        onFinishAttendance: () async {
+          if (widget.onFinishQrAttendance != null) {
+            await widget.onFinishQrAttendance!();
+          }
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✓ Đã kết thúc điểm danh QR: Sinh viên chưa quét mã được đánh Vắng. Vui lòng kiểm tra lại trước khi bấm "Save to Sheet".'),
+                backgroundColor: BirdleColors.success,
+              ),
+            );
+          }
+        },
+        onCancelAttendance: () {
+          if (widget.onCancelQrAttendance != null) {
+            widget.onCancelQrAttendance!();
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Đã đóng phiên QR (giữ nguyên trạng thái sinh viên).'),
+              backgroundColor: BirdleColors.surfaceSecondary,
+            ),
+          );
+        },
+        onPollStatus: widget.onPollQrStatus,
+      ),
+    );
+  }
+
+  void _showLockedQrDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: BirdleColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: BirdleColors.border),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: BirdleColors.surfaceSecondary,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.lock_outline, color: BirdleColors.brand, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Điểm danh QR đã chốt',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: BirdleColors.textPrimary,
+                fontFamily: BirdleTypography.fontFamily,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Buổi học này đã hoàn tất điểm danh. Nhằm chống gian lận quét mã, tính năng tạo QR cho buổi học này mặc định đã được khóa.',
+              style: TextStyle(fontSize: 13.5, color: BirdleColors.textSecondary, height: 1.5),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: BirdleColors.surfaceSecondary,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: BirdleColors.border),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '✓ Toàn quyền sửa thủ công:',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: BirdleColors.textPrimary),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Giảng viên có thể tự do bấm đổi trạng thái (Chưa / Có mặt / Vắng) cho từng sinh viên trên danh sách và bấm "Save to Sheet".',
+                    style: TextStyle(fontSize: 12, color: BirdleColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          BirdleSecondaryButton(
+            label: 'Sửa trên bảng',
+            onPressed: () => Navigator.pop(dialogCtx),
+          ),
+          if (widget.onReopenQrAttendance != null)
+            BirdlePrimaryButton(
+              icon: Icons.refresh,
+              label: 'Mở lại QR (30s)',
+              onPressed: () {
+                Navigator.pop(dialogCtx);
+                final session = widget.onReopenQrAttendance!();
+                if (session != null) {
+                  _showQrDialog(session);
+                }
+              },
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Helper class cho Task 7: lưu thông tin sinh viên sẽ bị ảnh hưởng sau khi lưu
+class _WarningImpact {
+  final Student student;
+  final bool isBanned; // true = vượt >20%, false = chạm đúng 20%
+  const _WarningImpact({required this.student, required this.isBanned});
 }

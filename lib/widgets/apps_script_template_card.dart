@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
@@ -48,8 +49,23 @@ class _AppsScriptTemplateCardState extends State<AppsScriptTemplateCard> {
     });
 
     try {
-      final bundle = widget.bundle ?? rootBundle;
-      final content = await bundle.loadString(widget.assetPath);
+      String content = '';
+      if (widget.bundle != null) {
+        content = await widget.bundle!.loadString(widget.assetPath);
+      } else {
+        // Trên môi trường Desktop Windows, ưu tiên đọc file trực tiếp từ source để luôn có bản mới nhất
+        try {
+          final file = File(widget.assetPath);
+          if (file.existsSync()) {
+            content = await file.readAsString();
+          }
+        } catch (_) {}
+
+        if (content.isEmpty) {
+          content = await rootBundle.loadString(widget.assetPath);
+        }
+      }
+
       if (!mounted) return;
       setState(() {
         _state = ScriptLoadState.loaded;
