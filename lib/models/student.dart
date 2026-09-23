@@ -236,7 +236,23 @@ class Student {
     }
 
     String resolvedEmail = (json['email'] ?? json['EMAIL'] ?? json['Email'] ?? '').toString().trim();
-    if (!resolvedEmail.contains('@') && rollNumber.isNotEmpty) {
+    // Phát hiện email bị sai hoặc bị lệch cột (ví dụ '1', '1@fpt.edu.vn', '3@fpt.edu.vn', số đếm vắng gán nhầm vào email)
+    final isInvalidEmail = !resolvedEmail.contains('@') ||
+        RegExp(r'^\d+(@|$)').hasMatch(resolvedEmail) ||
+        resolvedEmail.startsWith('@');
+    
+    // Nếu phát hiện bị lệch cột từ GAS cũ (absentSlots = 20 và email là '1@...', '3@...'):
+    if (parsedSlots20 == null && absentSlots >= totalSlots && RegExp(r'^\d+(@|$)').hasMatch(resolvedEmail)) {
+      final numMatch = RegExp(r'^(\d+)').firstMatch(resolvedEmail);
+      if (numMatch != null) {
+        final parsedFromEmail = int.tryParse(numMatch.group(1)!);
+        if (parsedFromEmail != null && parsedFromEmail < totalSlots) {
+          absentSlots = parsedFromEmail;
+        }
+      }
+    }
+
+    if (isInvalidEmail && rollNumber.isNotEmpty) {
       resolvedEmail = '${rollNumber.toLowerCase()}@fpt.edu.vn';
     }
 

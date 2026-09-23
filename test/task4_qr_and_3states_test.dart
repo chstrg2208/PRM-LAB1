@@ -139,8 +139,8 @@ void main() {
       );
       await tester.pump();
 
-      // Phải có đúng 3 nút
-      expect(find.text('Chưa'), findsOneWidget);
+      // Phải có đúng 2 nút: Có mặt, Vắng (không có Chưa trên row theo yêu cầu mới)
+      expect(find.text('Chưa'), findsNothing);
       expect(find.text('Có mặt'), findsOneWidget);
       expect(find.text('Vắng'), findsOneWidget);
       // Tuyệt đối không còn nút Muộn
