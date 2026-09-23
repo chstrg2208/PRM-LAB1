@@ -323,12 +323,18 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
         item: item,
         isToday: isToday,
         onTap: () {
-          widget.onSelectClass(item.className);
-          widget.onSelectClassItem?.call(item, isToday);
+          if (widget.onSelectClassItem != null) {
+            widget.onSelectClassItem!(item, isToday);
+          } else {
+            widget.onSelectClass(item.className);
+          }
         },
         onActionPressed: () {
-          widget.onSelectClass(item.className);
-          widget.onSelectClassItem?.call(item, isToday);
+          if (widget.onSelectClassItem != null) {
+            widget.onSelectClassItem!(item, isToday);
+          } else {
+            widget.onSelectClass(item.className);
+          }
         },
       )).toList(),
     );
