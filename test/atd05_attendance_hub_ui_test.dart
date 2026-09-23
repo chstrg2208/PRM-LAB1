@@ -117,14 +117,16 @@ void main() {
       expect(find.text('Buổi 5/20'), findsOneWidget);
       expect(find.text('25%'), findsOneWidget);
 
-      // 6. Trạng thái badge
+      // 6. Trạng thái badge & field
       expect(find.text('Hôm nay'), findsOneWidget);
+      expect(find.text('Trạng thái: '), findsOneWidget);
+      expect(find.text('Chưa điểm danh'), findsOneWidget);
 
       // 7. Nút hành động lớp hôm nay chưa điểm danh
       expect(find.text('Điểm danh ngay'), findsOneWidget);
     });
 
-    testWidgets('3. Lớp hôm nay đã điểm danh hiển thị badge "Đã điểm danh" và nút "Xem điểm danh"', (tester) async {
+    testWidgets('3. Lớp hôm nay đã điểm danh hiển thị badge, field trạng thái và nút "Đã điểm danh"', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -139,7 +141,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('✓ Đã điểm danh'), findsOneWidget);
-      expect(find.text('Xem điểm danh'), findsOneWidget);
+      expect(find.text('Trạng thái: '), findsOneWidget);
+      // 'Đã điểm danh' xuất hiện ở field trạng thái và trên nút bấm
+      expect(find.text('Đã điểm danh'), findsNWidgets(2));
     });
 
     testWidgets('4. Card lớp khác hiển thị metadata gần nhất, ngày tiếp theo và nút "Xem / Sửa lịch sử"', (tester) async {

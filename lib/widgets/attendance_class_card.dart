@@ -15,7 +15,7 @@ import '../theme/app_theme.dart';
 /// 7. Thông tin lần học tiếp theo hoặc lần điểm danh gần nhất (`lastSession`, `lastDate`, `nextDate`)
 ///
 /// Hỗ trợ 2 chế độ:
-/// - `isToday = true`: Nút "Điểm danh ngay" hoặc "Xem điểm danh"
+/// - `isToday = true`: Nút "Điểm danh ngay" hoặc "Đã điểm danh"
 /// - `isToday = false`: Nút "Xem / Sửa lịch sử" và metadata lần điểm danh gần nhất
 class AttendanceClassCard extends StatefulWidget {
   final ClassOverviewItem item;
@@ -152,6 +152,39 @@ class _AttendanceClassCardState extends State<AttendanceClassCard> {
                   ),
                 ],
               ),
+              const SizedBox(height: 10),
+
+              // ── 4b. Field Trạng thái điểm danh ──────────────────────────────
+              Row(
+                children: [
+                  Icon(
+                    item.isAttendanceDone ? Icons.check_circle_outline : Icons.pending_outlined,
+                    size: 13.5,
+                    color: item.isAttendanceDone ? BirdleColors.success : BirdleColors.pending,
+                  ),
+                  const SizedBox(width: 5),
+                  const Text('Trạng thái: ', style: BirdleTypography.metadata),
+                  Flexible(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: item.isAttendanceDone ? BirdleColors.successLight : BirdleColors.pendingLight,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        item.isAttendanceDone ? 'Đã điểm danh' : 'Chưa điểm danh',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: item.isAttendanceDone ? BirdleColors.success : BirdleColors.pending,
+                          fontFamily: BirdleTypography.fontFamily,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 14),
 
               // ── 5. Tiến độ buổi học ───────────────────────────────────────
@@ -211,9 +244,9 @@ class _AttendanceClassCardState extends State<AttendanceClassCard> {
           child: isDone
               ? OutlinedButton.icon(
                   onPressed: _handleAction,
-                  icon: const Icon(Icons.visibility_outlined, size: 16, color: BirdleColors.success),
+                  icon: const Icon(Icons.check_circle_outline, size: 16, color: BirdleColors.success),
                   label: const Text(
-                    'Xem điểm danh',
+                    'Đã điểm danh',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,

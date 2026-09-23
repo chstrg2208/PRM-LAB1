@@ -85,11 +85,18 @@ class ClassOverviewItem {
   /// Parse từ JSON trả về bởi GAS `getAttendanceOverview`
   factory ClassOverviewItem.fromJson(Map<String, dynamic> json) {
     // Parse sessionStatus
-    final rawStatus = json['sessionStatus']?.toString().toLowerCase() ?? 'notyet';
+    final rawStatus = json['sessionStatus']?.toString().toLowerCase().trim() ?? 'notyet';
+    final isDoneRaw = json['isAttendanceDone'];
+    final bool isDone = isDoneRaw == true ||
+        isDoneRaw?.toString().toLowerCase() == 'true' ||
+        rawStatus == 'done' ||
+        rawStatus == 'completed' ||
+        rawStatus.contains('đã điểm danh');
+
     final SessionStatus status;
-    if (rawStatus == 'done' || json['isAttendanceDone'] == true) {
+    if (isDone) {
       status = SessionStatus.done;
-    } else if (rawStatus == 'inprogress') {
+    } else if (rawStatus == 'inprogress' || rawStatus.contains('đang điểm danh')) {
       status = SessionStatus.inProgress;
     } else {
       status = SessionStatus.notYet;

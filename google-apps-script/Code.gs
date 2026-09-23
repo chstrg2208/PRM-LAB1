@@ -703,7 +703,17 @@ function doGet(e) {
         // Kiểm tra đã điểm danh buổi hôm nay chưa
         var isDoneToday = (sMeta.sessionStatus === 'Đã điểm danh');
         for (var lg = 1; lg < logValues.length; lg++) {
-          if (logValues[lg][1] === sName && logValues[lg][2] === isoDate && parseInt(logValues[lg][3]) === sMeta.slot) {
+          var lgDate = logValues[lg][2];
+          var lgDateStr = '';
+          if (lgDate instanceof Date) {
+            var ly = lgDate.getFullYear();
+            var lm = ('0' + (lgDate.getMonth() + 1)).slice(-2);
+            var ld = ('0' + lgDate.getDate()).slice(-2);
+            lgDateStr = ly + '-' + lm + '-' + ld;
+          } else {
+            lgDateStr = (lgDate || '').toString().trim().slice(0, 10);
+          }
+          if (logValues[lg][1] === sName && (lgDateStr === isoDate || lgDateStr === dmyDate) && parseInt(logValues[lg][3]) === sMeta.slot) {
             isDoneToday = true;
             break;
           }
