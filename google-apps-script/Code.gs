@@ -687,6 +687,15 @@ function doGet(e) {
           sMeta.slotTime = _getFptSlotTime(sMeta.slot);
         }
 
+        // ATD-04 fix: Tính lại "buổi hiện tại" = buổi học gần nhất có ngày <= hôm nay
+        // Ưu tiên tính từ startDate + daysOfWeek; nếu không có startDate thì dùng currentSession từ sheet
+        if (sMeta.startDate && sMeta.days) {
+          var computedSession = _calcCurrentSessionFromToday(sMeta.startDate, targetDate, sMeta.days, sMeta.totalSessions);
+          if (computedSession > 0) {
+            sMeta.currentSession = computedSession;
+          }
+        }
+
         var parts = sName.split('_');
         var subCode = parts[1] || (sMeta.subject ? sMeta.subject.split(' - ')[0] : 'PRM393');
         var stuCount = Math.max(0, sData.length - 5);
@@ -1533,6 +1542,70 @@ function _calcSessionNo(startDateStr, targetDate, daysOfWeek, totalSessions) {
     return count > 0 ? count : 1;
   } catch (_) {
     return 1;
+  }
+}
+
+/**
+ * ATD-04: Tính "buổi hiện tại" theo nguyên tắc:
+ *   Buổi hiện tại = buổi học gần nhất mà ngày học <= hôm nay (targetDate).
+ *
+ * Ví dụ: lớp học T3-T6, hôm nay là T4 (Thứ Tư)
+ *   → Ngày học gần nhất ≤ hôm nay là T3 (Thứ Ba)
+ *   → Đếm số buổi từ startDate đến T3 đó = buổi hiện tại
+ *
+ * Nếu hôm nay đúng là ngày học (ví dụ T6 = Thứ Sáu, 00:00) thì tính chính buổi đó.
+ *
+ * @param {string} startDateStr - Ngày bắt đầu lớp học (dd/MM/yyyy hoặc yyyy-MM-dd)
+ * @param {Date}   targetDate   - Ngày cần tính (thường là hôm nay)
+ * @param {string} daysOfWeek   - Lịch học: "T2-T5" | "T3-T6" | "T4-T7"
+ * @param {number} totalSessions - Tổng số buổi (mặc định 20)
+ * @returns {number} Số thứ tự buổi học hiện tại (1..totalSessions), hoặc 0 nếu chưa bắt đầu
+ */
+function _calcCurrentSessionFromToday(startDateStr, targetDate, daysOfWeek, totalSessions) {
+  try {
+    if (!startDateStr) return 0;
+
+    // Chuẩn hóa startDate
+    var startIso = _normalizeDateToIso(startDateStr.toString().trim());
+    if (!startIso) return 0;
+    var startParts = startIso.split('-');
+    var start = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]));
+    start.setHours(0, 0, 0, 0);
+
+    // Chuẩn hóa targetDate (hôm nay, tính từ 00:00)
+    var today = new Date(targetDate);
+    today.setHours(0, 0, 0, 0);
+
+    if (today < start) return 0; // Lớp chưa bắt đầu
+
+    // Xác định các ngày học hợp lệ trong tuần (JS: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat)
+    var days = (daysOfWeek || 'T2-T5').toUpperCase();
+    var allowedWeekdays = [];
+    if (days.indexOf('T2') >= 0 && days.indexOf('T5') >= 0) allowedWeekdays = [1, 4]; // T2=Mon, T5=Thu
+    else if (days.indexOf('T3') >= 0 && days.indexOf('T6') >= 0) allowedWeekdays = [2, 5]; // T3=Tue, T6=Fri
+    else if (days.indexOf('T4') >= 0 && days.indexOf('T7') >= 0) allowedWeekdays = [3, 6]; // T4=Wed, T7=Sat
+    else allowedWeekdays = [1, 4];
+
+    var total = totalSessions || 20;
+
+    // Tìm ngày học gần nhất <= hôm nay (bao gồm cả hôm nay nếu hôm nay là ngày học)
+    // Duyệt lùi từ today về start
+    var lastClassDay = null;
+    var cur = new Date(today.getTime());
+    while (cur >= start) {
+      if (allowedWeekdays.indexOf(cur.getDay()) >= 0) {
+        lastClassDay = new Date(cur.getTime());
+        break;
+      }
+      cur.setDate(cur.getDate() - 1);
+    }
+
+    if (!lastClassDay) return 0;
+
+    // Đếm số buổi từ start đến lastClassDay (inclusive)
+    return _calcSessionNo(startIso, lastClassDay, daysOfWeek, total);
+  } catch (_) {
+    return 0;
   }
 }
 

@@ -383,9 +383,11 @@ void main() {
 
       expect(find.text('BIRDLE'), findsOneWidget);
       expect(find.text('Sheets: Connected'), findsOneWidget);
-      expect(find.text('Attendance / Workspace'), findsOneWidget);
+      // ATD-04: Default screen is now Overview (index 0)
+      expect(find.text('Attendance / Overview'), findsOneWidget);
 
-      // Verify sidebar contains only the 5 required navigation items
+      // Verify sidebar contains the 6 required navigation items (Overview added)
+      expect(find.text('Overview'), findsOneWidget);
       expect(find.text('Attendance'), findsWidgets);
       expect(find.text('Reports'), findsOneWidget);
       expect(find.text('AI Insights'), findsOneWidget);

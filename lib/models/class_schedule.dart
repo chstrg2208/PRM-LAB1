@@ -89,6 +89,40 @@ class ClassSchedule {
     return hasClassOnDate(cleanAttDate);
   }
 
+  /// ATD-04: Tính "buổi hiện tại" = buổi học gần nhất có ngày <= [today].
+  ///
+  /// Ví dụ: lớp học T3-T6, hôm nay là T4 (Thứ Tư)
+  ///   → Ngày học gần nhất ≤ hôm nay là T3 (Thứ Ba)
+  ///   → Đếm số buổi từ [startDate] đến T3 = buổi hiện tại.
+  ///
+  /// Nếu hôm nay đúng là ngày học thì tính ngay buổi hôm nay.
+  /// Trả về 0 nếu lớp chưa bắt đầu.
+  int currentSessionAsOfToday([DateTime? today]) {
+    final now = today ?? DateTime.now();
+    final cleanToday = DateTime(now.year, now.month, now.day);
+    final cleanStart = DateTime(startDate.year, startDate.month, startDate.day);
+
+    if (cleanToday.isBefore(cleanStart)) return 0;
+
+    final weekdays = parseWeekdays(daysOfWeek);
+
+    // Duyệt lùi từ hôm nay về startDate tìm ngày học gần nhất
+    DateTime? lastClassDay;
+    DateTime cursor = cleanToday;
+    while (!cursor.isBefore(cleanStart)) {
+      if (weekdays.contains(cursor.weekday)) {
+        lastClassDay = cursor;
+        break;
+      }
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+
+    if (lastClassDay == null) return 0;
+
+    // Đếm số buổi từ startDate đến lastClassDay (inclusive)
+    return calculateSessionNumber(lastClassDay);
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'className': className,
