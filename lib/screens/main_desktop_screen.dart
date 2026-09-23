@@ -485,16 +485,19 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
       child: Row(
         children: [
           // Title / Breadcrumb
-          Text(
-            _getScreenTitle(),
-            style: const TextStyle(
-              fontSize: 15.5,
-              fontWeight: FontWeight.w600,
-              color: BirdleColors.textPrimary,
-              fontFamily: BirdleTypography.fontFamily,
+          Expanded(
+            child: Text(
+              _getScreenTitle(),
+              style: const TextStyle(
+                fontSize: 15.5,
+                fontWeight: FontWeight.w600,
+                color: BirdleColors.textPrimary,
+                fontFamily: BirdleTypography.fontFamily,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          const Spacer(),
+          const SizedBox(width: 16),
 
           // Status Badges
           ConnectionStatusChip(

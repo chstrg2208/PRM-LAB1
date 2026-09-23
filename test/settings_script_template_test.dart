@@ -46,6 +46,7 @@ void main() {
       expect(content.contains('LockService'), isTrue);
       expect(content.contains('getStudents'), isTrue);
       expect(content.contains('syncStudents'), isTrue);
+      expect(content.contains('getAttendanceOverview'), isTrue);
     });
 
     test('2. SettingsView does not contain hardcoded sampleScript constant', () {

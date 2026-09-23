@@ -953,9 +953,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               children: [
                 Icon(Icons.check_circle_outline_rounded, size: 20, color: BirdleColors.success),
                 SizedBox(width: 6),
-                Text(
-                  'Chưa ghi nhận ca vắng nào',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                Expanded(
+                  child: Text(
+                    'Chưa ghi nhận ca vắng nào',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                  ),
                 ),
               ],
             ),
@@ -1057,9 +1059,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               children: [
                 Icon(Icons.check_circle_outline_rounded, size: 20, color: BirdleColors.success),
                 SizedBox(width: 6),
-                Text(
-                  'Chuyên cần đồng đều',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                Expanded(
+                  child: Text(
+                    'Chuyên cần đồng đều',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                  ),
                 ),
               ],
             ),
@@ -1246,9 +1250,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               children: [
                 Icon(Icons.check_circle_outline_rounded, size: 20, color: BirdleColors.success),
                 SizedBox(width: 6),
-                Text(
-                  '100% sinh viên an toàn',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                Expanded(
+                  child: Text(
+                    '100% sinh viên an toàn',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                  ),
                 ),
               ],
             ),
