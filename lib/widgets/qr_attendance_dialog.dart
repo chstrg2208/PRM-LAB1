@@ -10,7 +10,7 @@ import '../widgets/birdle_components.dart';
 class QrAttendanceDialog extends StatefulWidget {
   final QrAttendanceSession session;
   final List<Student> students;
-  final VoidCallback onFinishAttendance;
+  final FutureOr<void> Function() onFinishAttendance;
   final VoidCallback? onCancelAttendance;
   final Future<void> Function()? onPollStatus;
 
@@ -272,9 +272,9 @@ class _QrAttendanceDialogState extends State<QrAttendanceDialog> {
                   child: BirdlePrimaryButton(
                     icon: Icons.check_circle_outline,
                     label: 'Kết thúc điểm danh',
-                    onPressed: () {
+                    onPressed: () async {
                       Navigator.of(context).pop();
-                      widget.onFinishAttendance();
+                      await widget.onFinishAttendance();
                     },
                   ),
                 ),

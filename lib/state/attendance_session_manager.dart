@@ -403,6 +403,34 @@ class AttendanceSessionManager extends ChangeNotifier {
     ]);
   }
 
+  /// Đổi buổi học (Session number 1..20) và đồng bộ trạng thái sinh viên theo cột buổi học đó
+  void selectSessionNumber(int newSession) {
+    if (newSession < 1 || newSession > 20) return;
+    _currentSessionNumber = newSession;
+    final dateStr = '${_currentDate.year}-${_currentDate.month.toString().padLeft(2, '0')}-${_currentDate.day.toString().padLeft(2, '0')}';
+    _records = _students.map((s) {
+      final slotVal = (newSession >= 1 && newSession <= s.slots20.length)
+          ? s.slots20[newSession - 1]
+          : '';
+      final initialStatus = slotVal.isNotEmpty
+          ? AttendanceStatus.fromString(slotVal)
+          : AttendanceStatus.notYet;
+      return AttendanceRecord(
+        rollNumber: s.rollNumber,
+        className: _currentClass,
+        date: dateStr,
+        slot: _currentSlot,
+        status: initialStatus,
+      );
+    }).toList();
+
+    final hasCompleted = _records.isNotEmpty &&
+        _records.any((r) => r.status == AttendanceStatus.present || r.status == AttendanceStatus.absent);
+    _isQrCompleted = hasCompleted;
+    _isReopenedQr = false;
+    notifyListeners();
+  }
+
   int _calculateSessionNumber(String className, DateTime date) {
     final clean = className.trim().toUpperCase();
     final sched = ClassSchedule(
@@ -530,10 +558,16 @@ class AttendanceSessionManager extends ChangeNotifier {
           slot: _currentSlot,
           date: _currentDate,
         );
-        for (final email in checkedEmails) {
+        for (final rawEmail in checkedEmails) {
+          final email = rawEmail.trim().toLowerCase();
           _activeQrSession!.markCheckedIn(email);
           final student = _students.cast<Student?>().firstWhere(
-            (s) => s != null && s.email.trim().toLowerCase() == email.trim().toLowerCase(),
+            (s) {
+              if (s == null) return false;
+              final sEmail = s.email.trim().toLowerCase();
+              final sRoll = s.rollNumber.trim().toLowerCase();
+              return sEmail == email || sRoll == email || email.startsWith(sRoll);
+            },
             orElse: () => null,
           );
           if (student != null) {
@@ -554,11 +588,17 @@ class AttendanceSessionManager extends ChangeNotifier {
   /// Kết thúc điểm danh QR: Các sinh viên CHƯA quét mã tự động bị đánh Absent (vắng)
   void finishQrAttendance() {
     if (_activeQrSession == null) return;
+
     final checkedEmails = _activeQrSession!.checkedInEmails;
 
     for (final s in _students) {
       final emailClean = s.email.trim().toLowerCase();
-      if (checkedEmails.contains(emailClean)) {
+      final rollClean = s.rollNumber.trim().toLowerCase();
+      final isPresent = checkedEmails.contains(emailClean) ||
+          checkedEmails.contains(rollClean) ||
+          checkedEmails.any((e) => e == rollClean || e.startsWith(rollClean));
+
+      if (isPresent) {
         updateAttendanceStatus(s.rollNumber, AttendanceStatus.present);
       } else {
         updateAttendanceStatus(s.rollNumber, AttendanceStatus.absent);
@@ -616,6 +656,29 @@ class AttendanceSessionManager extends ChangeNotifier {
 
     try {
       final students = await apiClient.fetchStudents(cleanUrl, _currentClass);
+
+      // Tự động nhận diện slot và currentSession từ Sheet nếu có
+      if (isClassChange) {
+        final metaSlot = GoogleSheetService.lastClassMetadata['slot'];
+        if (metaSlot is int && metaSlot >= 1 && metaSlot <= 6) {
+          _currentSlot = metaSlot;
+        }
+        final metaSession = GoogleSheetService.lastClassMetadata['currentSession'];
+        if (metaSession is int && metaSession >= 1 && metaSession <= 20) {
+          _currentSessionNumber = metaSession;
+        } else if (students.isNotEmpty) {
+          int nextSess = 1;
+          for (int sn = 0; sn < 20; sn++) {
+            final hasEmpty = students.any((s) => sn >= s.slots20.length || s.slots20[sn].isEmpty);
+            if (hasEmpty) {
+              nextSess = sn + 1;
+              break;
+            }
+          }
+          _currentSessionNumber = nextSess;
+        }
+      }
+
       final dateStr = '${_currentDate.year}-${_currentDate.month.toString().padLeft(2, '0')}-${_currentDate.day.toString().padLeft(2, '0')}';
 
       List<AttendanceRecord> existingRecords = [];

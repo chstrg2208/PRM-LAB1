@@ -32,6 +32,9 @@ class GoogleSheetException implements Exception {
 }
 
 class GoogleSheetService {
+  /// Lưu trữ metadata của lớp học gần nhất được tải (slot, currentSession, room,...)
+  static Map<String, dynamic> lastClassMetadata = {};
+
   /// Chuẩn hóa việc phân tích phản hồi từ Google Apps Script
   static Map<String, dynamic> _parseApiResponse(http.Response response) {
     if (response.statusCode != 200 && response.statusCode != 302) {
@@ -223,6 +226,17 @@ class GoogleSheetService {
       });
       final response = await httpClient.get(requestUri).timeout(const Duration(seconds: 12));
       final decoded = _parseApiResponse(response);
+
+      lastClassMetadata = {
+        'className': decoded['className'],
+        'slot': decoded['slot'],
+        'currentSession': decoded['currentSession'],
+        'sessionStatus': decoded['sessionStatus'],
+        'subject': decoded['subject'],
+        'room': decoded['room'],
+        'days': decoded['days'],
+        'totalSessions': decoded['totalSessions'],
+      };
 
       final rawData = decoded['data'];
       if (rawData is! List) {

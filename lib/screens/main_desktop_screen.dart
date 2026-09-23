@@ -184,6 +184,7 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             onMarkAllPresent: _sessionManager.markAllPresent,
                             onMarkAllAbsent: _sessionManager.markAllAbsent,
                             currentSessionNumber: _sessionManager.currentSessionNumber,
+                            onSessionChanged: _sessionManager.selectSessionNumber,
                             onStartQrAttendance: () => _sessionManager.startQrAttendanceSession(),
                             onFinishQrAttendance: () => _sessionManager.finishQrAttendance(),
                             onCancelQrAttendance: () => _sessionManager.cancelQrAttendance(),

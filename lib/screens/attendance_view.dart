@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/student.dart';
@@ -38,9 +39,10 @@ class AttendanceView extends StatefulWidget {
   final bool isSheetConfigured;
   final VoidCallback? onGoToSettings;
   final int currentSessionNumber;
+  final ValueChanged<int>? onSessionChanged;
   final bool isDateLocked;
   final QrAttendanceSession? Function()? onStartQrAttendance;
-  final VoidCallback? onFinishQrAttendance;
+  final FutureOr<void> Function()? onFinishQrAttendance;
   final VoidCallback? onCancelQrAttendance;
   final Future<void> Function()? onPollQrStatus;
   final bool isQrAttendanceLocked;
@@ -75,6 +77,7 @@ class AttendanceView extends StatefulWidget {
     this.isSheetConfigured = true,
     this.onGoToSettings,
     this.currentSessionNumber = 1,
+    this.onSessionChanged,
     this.onStartQrAttendance,
     this.onFinishQrAttendance,
     this.onCancelQrAttendance,
@@ -772,6 +775,23 @@ class _AttendanceViewState extends State<AttendanceView> {
           ),
           Container(width: 1, height: 16, color: BirdleColors.border, margin: const EdgeInsets.symmetric(horizontal: 8)),
 
+          // Buổi Dropdown (Buổi 1..20)
+          DropdownButton<int>(
+            value: widget.currentSessionNumber >= 1 && widget.currentSessionNumber <= 20
+                ? widget.currentSessionNumber
+                : 1,
+            underline: const SizedBox(),
+            isDense: true,
+            style: const TextStyle(fontWeight: FontWeight.w600, color: BirdleColors.brand, fontSize: 13),
+            items: List.generate(20, (i) => i + 1)
+                .map((s) => DropdownMenuItem(value: s, child: Text('Buổi $s')))
+                .toList(),
+            onChanged: (val) {
+              if (val != null) widget.onSessionChanged?.call(val);
+            },
+          ),
+          Container(width: 1, height: 16, color: BirdleColors.border, margin: const EdgeInsets.symmetric(horizontal: 8)),
+
           // Date Picker Clickable
           InkWell(
             onTap: () async {
@@ -1045,16 +1065,18 @@ class _AttendanceViewState extends State<AttendanceView> {
       builder: (_) => QrAttendanceDialog(
         session: session,
         students: widget.students,
-        onFinishAttendance: () {
+        onFinishAttendance: () async {
           if (widget.onFinishQrAttendance != null) {
-            widget.onFinishQrAttendance!();
+            await widget.onFinishQrAttendance!();
           }
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✓ Đã kết thúc điểm danh QR: Sinh viên chưa quét mã được đánh Vắng. Vui lòng kiểm tra lại trước khi bấm "Save to Sheet".'),
-              backgroundColor: BirdleColors.success,
-            ),
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✓ Đã kết thúc điểm danh QR: Sinh viên chưa quét mã được đánh Vắng. Vui lòng kiểm tra lại trước khi bấm "Save to Sheet".'),
+                backgroundColor: BirdleColors.success,
+              ),
+            );
+          }
         },
         onCancelAttendance: () {
           if (widget.onCancelQrAttendance != null) {

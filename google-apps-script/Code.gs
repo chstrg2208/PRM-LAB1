@@ -1508,11 +1508,44 @@ function _handleStudentCheckIn(ss, params) {
     var nowIso = new Date().toISOString();
     var todayStr = date || nowIso.slice(0, 10);
 
+    // Chuẩn hóa tên lớp
+    function _normClass(str) {
+      return (str || '').toString().trim().toLowerCase().replace(/[-_\s]/g, '');
+    }
+
+    // Chuẩn hóa ngày dạng YYYY-MM-DD
+    function _normDate(val) {
+      if (!val) return '';
+      if (val instanceof Date) {
+        return Utilities.formatDate(val, Session.getScriptTimeZone() || 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
+      }
+      var s = val.toString().trim();
+      if (s.indexOf('T') > 0) return s.split('T')[0];
+      var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (m) {
+        var day = m[1].length === 1 ? '0' + m[1] : m[1];
+        var month = m[2].length === 1 ? '0' + m[2] : m[2];
+        return m[3] + '-' + month + '-' + day;
+      }
+      return s.slice(0, 10);
+    }
+
+    var targetDateNorm = _normDate(todayStr);
+
     // Kiểm tra xem đã check-in chưa
     var alreadyCheckedIn = false;
     for (var q = 1; q < qrData.length; q++) {
       var qRow = qrData[q];
-      if (qRow[1] === cName && qRow[2] === todayStr && parseInt(qRow[3]) === slot && (qRow[5] || '').toString().toLowerCase() === email) {
+      var qClassNorm = _normClass(qRow[1]);
+      var qDateNorm = _normDate(qRow[2]);
+      var qSlot = parseInt(qRow[3], 10);
+      var qEmail = (qRow[5] || '').toString().trim().toLowerCase();
+
+      var matchCls = qClassNorm === _normClass(cName) || qClassNorm.indexOf(_normClass(cName)) >= 0 || _normClass(cName).indexOf(qClassNorm) >= 0;
+      var matchDt = !targetDateNorm || qDateNorm === targetDateNorm;
+      var matchSl = isNaN(slot) || slot <= 0 || isNaN(qSlot) || qSlot === slot;
+
+      if (matchCls && matchDt && matchSl && qEmail === email) {
         alreadyCheckedIn = true;
         break;
       }
@@ -1550,6 +1583,29 @@ function _handleGetQrStatus(ss, params) {
     var slot = parseInt(params.slot || '1', 10);
     var date = (params.date || new Date().toISOString().slice(0, 10)).toString().trim();
 
+    function _normClass(str) {
+      return (str || '').toString().trim().toLowerCase().replace(/[-_\s]/g, '');
+    }
+
+    function _normDate(val) {
+      if (!val) return '';
+      if (val instanceof Date) {
+        return Utilities.formatDate(val, Session.getScriptTimeZone() || 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd');
+      }
+      var s = val.toString().trim();
+      if (s.indexOf('T') > 0) return s.split('T')[0];
+      var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (m) {
+        var day = m[1].length === 1 ? '0' + m[1] : m[1];
+        var month = m[2].length === 1 ? '0' + m[2] : m[2];
+        return m[3] + '-' + month + '-' + day;
+      }
+      return s.slice(0, 10);
+    }
+
+    var targetDateNorm = _normDate(date);
+    var targetClassNorm = _normClass(cName);
+
     var qrSheet = ss.getSheetByName('_Qr_CheckIns');
     var checkedInList = [];
     if (qrSheet) {
@@ -1557,10 +1613,20 @@ function _handleGetQrStatus(ss, params) {
       for (var i = 1; i < data.length; i++) {
         var r = data[i];
         var rClass = (r[1] || '').toString().trim();
-        var matchClass = (rClass.toLowerCase() === cName.toLowerCase() ||
-                          rClass.toLowerCase().indexOf(cName.toLowerCase() + '_') === 0 ||
-                          cName.toLowerCase().indexOf(rClass.toLowerCase() + '_') === 0);
-        if (matchClass && r[2] === date && parseInt(r[3]) === slot) {
+        var rClassNorm = _normClass(rClass);
+
+        var matchClass = !targetClassNorm ||
+                          rClassNorm === targetClassNorm ||
+                          rClassNorm.indexOf(targetClassNorm) >= 0 ||
+                          targetClassNorm.indexOf(rClassNorm) >= 0;
+
+        var rDateNorm = _normDate(r[2]);
+        var matchDate = !targetDateNorm || rDateNorm === targetDateNorm;
+
+        var rSlot = parseInt(r[3], 10);
+        var matchSlot = isNaN(slot) || slot <= 0 || isNaN(rSlot) || rSlot === slot;
+
+        if (matchClass && matchDate && matchSlot) {
           checkedInList.push({
             email: (r[5] || '').toString().trim().toLowerCase(),
             name: r[6] || '',
