@@ -50,6 +50,18 @@ class Student {
     return '';
   }
 
+  /// Kiểm tra xem rollNumber có phải là dữ liệu sinh viên hợp lệ hay chỉ là tiêu đề/metadata rác từ Sheet
+  static bool isValidStudentId(String id) {
+    final clean = id.trim().toUpperCase();
+    if (clean.isEmpty) return false;
+    if (clean == 'STT' || clean == 'MSSV' || clean == 'MEMBER' || clean == 'CODE' || clean == 'STUDENT ID') return false;
+    if (clean.contains(':') || clean.contains('|') || clean.contains('(') || clean.contains(')')) return false;
+    if (clean.contains('SLOT') || clean.contains('PHÒNG') || clean.contains('NGÀY') || clean.contains('LỊCH') || clean.contains('TRẠNG THÁI')) return false;
+    if (clean.startsWith('T2-') || clean.startsWith('T3-') || clean.startsWith('T4-') || clean.startsWith('NVH-') || clean.startsWith('BE-') || clean.startsWith('DE-')) return false;
+    if (RegExp(r'^\d{2}/\d{2}/\d{4}').hasMatch(clean)) return false;
+    return true;
+  }
+
   // Alias rollNumber tương đương member và code theo FAP
   String get rollNumber => member.isNotEmpty ? member : code;
 

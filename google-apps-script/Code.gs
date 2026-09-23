@@ -41,9 +41,12 @@ function doGet(e) {
       }
     }
 
-    // Nếu chưa có sheet cho lớp này, tự động khởi tạo sheet chuẩn
+    // Nếu chưa có sheet cho lớp này, báo lỗi rõ ràng thay vì tự tiện tạo tab mới
     if (!sheet) {
-      sheet = _createSampleClassSheet(ss, reqName);
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        message: 'Lớp ' + reqName + ' không tồn tại trong Google Sheet!'
+      })).setMimeType(ContentService.MimeType.JSON);
     }
 
     var data = sheet.getDataRange().getValues();
@@ -61,13 +64,27 @@ function doGet(e) {
       sessionStatus: 'Chưa điểm danh'
     };
 
-    // 1. Tìm dòng Header (dòng chứa MSSV / ROLLNUMBER / MEMBER / CODE / STUDENT ID)
+    // 1. Tìm dòng Header chính xác:
+    // Ưu tiên dòng chứa cột định danh sinh viên (MSSV/MEMBER/ROLLNUMBER) VÀ cột tên/email/vắng
     var headerRowIdx = -1;
-    for (var r = 0; r < Math.min(data.length, 7); r++) {
+    for (var r = 0; r < Math.min(data.length, 10); r++) {
       var rowStr = data[r].map(function(c) { return (c || '').toString().trim().toUpperCase(); }).join(' ');
-      if (rowStr.indexOf('MSSV') >= 0 || rowStr.indexOf('ROLLNUMBER') >= 0 || rowStr.indexOf('MEMBER') >= 0 || rowStr.indexOf('MÃ SV') >= 0 || rowStr.indexOf('MÃ SINH VIÊN') >= 0 || rowStr.indexOf('STUDENT ID') >= 0) {
+      var hasId = (rowStr.indexOf('MSSV') >= 0 || rowStr.indexOf('ROLLNUMBER') >= 0 || rowStr.indexOf('MEMBER') >= 0 || rowStr.indexOf('STUDENT ID') >= 0);
+      var hasDetails = (rowStr.indexOf('HỌ') >= 0 || rowStr.indexOf('TÊN') >= 0 || rowStr.indexOf('SURNAME') >= 0 || rowStr.indexOf('GIVEN') >= 0 || rowStr.indexOf('EMAIL') >= 0 || rowStr.indexOf('STT') >= 0 || rowStr.indexOf('VẮNG') >= 0);
+      if (hasId && hasDetails) {
         headerRowIdx = r;
         break;
+      }
+    }
+
+    // Fallback: dòng chỉ chứa MSSV hoặc ROLLNUMBER
+    if (headerRowIdx < 0) {
+      for (var r = 0; r < Math.min(data.length, 10); r++) {
+        var rowStr = data[r].map(function(c) { return (c || '').toString().trim().toUpperCase(); }).join(' ');
+        if (rowStr.indexOf('MSSV') >= 0 || rowStr.indexOf('ROLLNUMBER') >= 0 || rowStr.indexOf('MEMBER') >= 0 || rowStr.indexOf('MÃ SV') >= 0 || rowStr.indexOf('STUDENT ID') >= 0) {
+          headerRowIdx = r;
+          break;
+        }
       }
     }
 
@@ -178,6 +195,11 @@ function doGet(e) {
       if (!code) code = mssv;
       if (!member) member = mssv;
       if (!mssv) continue;
+
+      // Bỏ qua nếu dòng này là metadata lịch học hoặc dòng header phụ
+      if (_isInvalidStudentRollNumber(mssv) || _isInvalidStudentRollNumber(code) || _isInvalidStudentRollNumber(member)) {
+        continue;
+      }
 
       var surname = (colMap.surname >= 0 && row[colMap.surname] !== undefined) ? row[colMap.surname].toString().trim() : '';
       var middleName = (colMap.middleName >= 0 && row[colMap.middleName] !== undefined) ? row[colMap.middleName].toString().trim() : '';
@@ -592,9 +614,9 @@ function doGet(e) {
 
   // 7. Giao diện Web Form điểm danh khi sinh viên quét mã QR trên điện thoại
   if (action === 'checkinForm') {
-    var cNameParam = (e.parameter.class || 'SE1801').toString().trim();
+    var cNameParam = (e.parameter.class || e.parameter.className || 'SE1801').toString().trim();
     var slotParam = (e.parameter.slot || '1').toString().trim();
-    var sessParam = (e.parameter.session || '1').toString().trim();
+    var sessParam = (e.parameter.session || e.parameter.sessionNumber || '1').toString().trim();
     var tokenParam = (e.parameter.token || '').toString().trim();
     return _renderCheckInHtml(cNameParam, slotParam, sessParam, tokenParam);
   }
@@ -876,29 +898,44 @@ function _recalculateClassAbsentCount(ss, className, logSheet) {
     var classData = classSheet.getDataRange().getValues();
     if (classData.length <= 1) return;
 
-    var header = classData[0];
+    var headerRowIdx = 0;
+    for (var r = 0; r < Math.min(classData.length, 10); r++) {
+      var rowStr = classData[r].map(function(c) { return (c || '').toString().trim().toUpperCase(); }).join(' ');
+      if (rowStr.indexOf('MSSV') >= 0 || rowStr.indexOf('ROLLNUMBER') >= 0 || rowStr.indexOf('MEMBER') >= 0) {
+        headerRowIdx = r;
+        break;
+      }
+    }
+
+    var header = classData[headerRowIdx] || [];
     var memberColIdx = 0;
-    var absentColIdx = 6; // Mặc định cột 7 (index 6: ABSENT)
+    var absentColIdx = -1;
 
     for (var h = 0; h < header.length; h++) {
       var colName = (header[h] || '').toString().trim().toUpperCase();
-      if (colName === 'MEMBER' || colName === 'ROLLNUMBER') {
-        memberColIdx = h;
+      if (colName === 'MEMBER' || colName === 'ROLLNUMBER' || colName === 'MSSV' || colName === 'CODE') {
+        if (memberColIdx === 0) memberColIdx = h;
       }
-      if (colName === 'ABSENT' || colName === 'VẮNG') {
+      if (colName === 'ABSENT' || colName === 'VẮNG' || colName === 'ABSENT SLOTS') {
         absentColIdx = h;
       }
     }
 
+    if (absentColIdx < 0) return;
+
     var absentValues = [];
-    for (var s = 1; s < classData.length; s++) {
+    for (var s = headerRowIdx + 1; s < classData.length; s++) {
       var sMember = (classData[s][memberColIdx] || '').toString().trim().toUpperCase();
+      if (_isInvalidStudentRollNumber(sMember)) {
+        absentValues.push([classData[s][absentColIdx] || 0]);
+        continue;
+      }
       var realAbsent = sMember ? (absentCountsByMember[sMember] || 0) : 0;
       absentValues.push([realAbsent]);
     }
 
     if (absentValues.length > 0) {
-      classSheet.getRange(2, absentColIdx + 1, absentValues.length, 1).setValues(absentValues);
+      classSheet.getRange(headerRowIdx + 2, absentColIdx + 1, absentValues.length, 1).setValues(absentValues);
     }
   } catch (_) {}
 }
@@ -1198,6 +1235,18 @@ function _createSampleClassSheet(ss, className) {
 
   sheet.getRange(6, 1, paddedData.length, headers.length).setValues(paddedData);
   return sheet;
+}
+
+// Kiểm tra chuỗi có phải là MSSV hợp lệ hay là dòng tiêu đề / metadata
+function _isInvalidStudentRollNumber(str) {
+  if (!str) return true;
+  var s = str.toString().trim().toUpperCase();
+  if (!s || s === 'STT' || s === 'MSSV' || s === 'MEMBER' || s === 'CODE' || s === 'STUDENT ID' || s === 'ROLLNUMBER') return true;
+  if (s.indexOf(':') >= 0 || s.indexOf('|') >= 0 || s.indexOf('(') >= 0 || s.indexOf(')') >= 0) return true;
+  if (s.indexOf('SLOT') >= 0 || s.indexOf('PHÒNG') >= 0 || s.indexOf('NGÀY') >= 0 || s.indexOf('LỊCH') >= 0 || s.indexOf('TRẠNG THÁI') >= 0 || s.indexOf('TỔNG SỐ') >= 0) return true;
+  if (/^T[2-7]-T[2-7]/.test(s) || /^NVH-/.test(s) || /^BE-/.test(s) || /^DE-/.test(s)) return true;
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) return true;
+  return false;
 }
 
 // Khung giờ 4 Slot chuẩn FPT (135 phút/tiết)
@@ -1508,6 +1557,13 @@ function _renderCheckInHtml(className, slot, sessionNo, token) {
     }
   } catch (e) {}
 
+  var serviceUrl = '';
+  try {
+    if (typeof ScriptApp !== 'undefined' && ScriptApp.getService) {
+      serviceUrl = ScriptApp.getService().getUrl() || '';
+    }
+  } catch (e) {}
+
   var html = '<!DOCTYPE html>' +
     '<html lang="vi">' +
     '<head>' +
@@ -1548,12 +1604,14 @@ function _renderCheckInHtml(className, slot, sessionNo, token) {
     '    var form = document.getElementById("checkinForm");' +
     '    var resBox = document.getElementById("resBox");' +
     '    var btn = document.getElementById("btnSubmit");' +
+    '    var serviceUrl = "' + (serviceUrl || '') + '";' +
     '    form.onsubmit = function(e) {' +
     '      e.preventDefault();' +
     '      var email = document.getElementById("email").value.trim();' +
     '      btn.disabled = true;' +
     '      btn.innerText = "Đang xác thực OAuth...";' +
-    '      var url = window.location.href.split("?")[0] + "?action=studentCheckIn&className=" + encodeURIComponent("' + className + '") + "&slot=" + encodeURIComponent("' + slot + '") + "&session=" + encodeURIComponent("' + sessionNo + '") + "&token=" + encodeURIComponent("' + token + '") + "&email=" + encodeURIComponent(email);' +
+    '      var base = serviceUrl || window.location.href.split("?")[0];' +
+    '      var url = base + "?action=studentCheckIn&className=" + encodeURIComponent("' + className + '") + "&slot=" + encodeURIComponent("' + slot + '") + "&session=" + encodeURIComponent("' + sessionNo + '") + "&token=" + encodeURIComponent("' + token + '") + "&email=" + encodeURIComponent(email);' +
     '      fetch(url).then(function(r) { return r.json(); }).then(function(data) {' +
     '        resBox.style.display = "block";' +
     '        if (data.success) {' +

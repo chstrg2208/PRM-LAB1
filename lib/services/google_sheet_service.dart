@@ -232,12 +232,15 @@ class GoogleSheetService {
         );
       }
 
-      return rawData.map((item) {
-        if (item is Map<String, dynamic>) {
-          return Student.fromJson(item);
-        }
-        return Student.fromJson(Map<String, dynamic>.from(item as Map));
-      }).toList();
+      return rawData
+          .map((item) {
+            if (item is Map<String, dynamic>) {
+              return Student.fromJson(item);
+            }
+            return Student.fromJson(Map<String, dynamic>.from(item as Map));
+          })
+          .where((s) => Student.isValidStudentId(s.rollNumber) && Student.isValidStudentId(s.member))
+          .toList();
     } on GoogleSheetException {
       rethrow;
     } on SocketException catch (e) {
