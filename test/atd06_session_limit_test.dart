@@ -6,6 +6,7 @@ import 'package:birdle/screens/attendance_view.dart';
 import 'package:birdle/screens/main_desktop_screen.dart';
 import 'package:birdle/services/google_sheet_service.dart';
 import 'package:birdle/state/attendance_session_manager.dart';
+import 'package:birdle/widgets/weekly_schedule_view.dart';
 
 class MockAtd06ApiClient implements AttendanceApiClient {
   Future<List<Student>> Function(String url, String className)? onFetchStudents;
@@ -320,13 +321,12 @@ void main() {
 
       // Initially at Overview Hub (index 0)
       expect(find.text('Attendance / Overview'), findsOneWidget);
-      expect(find.text('LỚP HÔM NAY'), findsOneWidget);
-      expect(find.text('CÁC LỚP KHÁC'), findsOneWidget);
+      expect(find.byType(WeeklyScheduleView), findsOneWidget);
 
-      // Tap on SE1801 card action 'Điểm danh ngay'
-      final actionBtn = find.text('Điểm danh ngay');
-      expect(actionBtn, findsOneWidget);
-      await tester.tap(actionBtn);
+      // Tap on SE1801 class cell on the timetable
+      final classCell = find.textContaining('SE1801').first;
+      expect(classCell, findsOneWidget);
+      await tester.tap(classCell);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
@@ -344,7 +344,7 @@ void main() {
       expect(find.text('Attendance / Overview'), findsOneWidget);
 
       // Now tap into detail again
-      await tester.tap(find.text('Điểm danh ngay'));
+      await tester.tap(find.textContaining('SE1801').first);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('Attendance / Workspace'), findsOneWidget);

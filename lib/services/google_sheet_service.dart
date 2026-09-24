@@ -406,7 +406,7 @@ class GoogleSheetService {
 
       final response = await httpClient.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'text/plain;charset=utf-8'},
         body: payload,
       ).timeout(const Duration(seconds: 15));
 
@@ -463,7 +463,7 @@ class GoogleSheetService {
 
       final response = await httpClient.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'text/plain;charset=utf-8'},
         body: payload,
       ).timeout(const Duration(seconds: 15));
 

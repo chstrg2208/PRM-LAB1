@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:birdle/models/class_overview_item.dart';
 import 'package:birdle/screens/attendance_overview_view.dart';
 import 'package:birdle/widgets/attendance_class_card.dart';
+import 'package:birdle/widgets/weekly_schedule_view.dart';
 
 void main() {
   group('ATD-05: Attendance Hub UI & Card Tests', () {
@@ -58,7 +59,7 @@ void main() {
       lastStatus: 'absent',
     );
 
-    testWidgets('1. Render đủ 2 khu vực card: LỚP HÔM NAY và CÁC LỚP KHÁC', (tester) async {
+    testWidgets('1. Render lịch dạy tuần WeeklyScheduleView với các lớp học', (tester) async {
       final overview = AttendanceOverview(
         todayClasses: [sampleTodayClass, sampleDoneTodayClass],
         otherClasses: [sampleOtherClass],
@@ -78,14 +79,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Attendance'), findsOneWidget);
-      expect(find.text('LỚP HÔM NAY'), findsOneWidget);
-      expect(find.text('CÁC LỚP KHÁC'), findsOneWidget);
+      expect(find.byType(WeeklyScheduleView), findsOneWidget);
 
-      // 3 cards được render
-      expect(find.byType(AttendanceClassCard), findsNWidgets(3));
-      expect(find.text('SE1801_PRM393'), findsOneWidget);
-      expect(find.text('IA1801_CSN101'), findsOneWidget);
-      expect(find.text('SE1802_PRM393'), findsOneWidget);
+      // Các lớp học xuất hiện trên lịch tuần
+      expect(find.textContaining('SE1801_PRM393'), findsWidgets);
+      expect(find.textContaining('IA1801_CSN101'), findsWidgets);
+      expect(find.textContaining('SE1802_PRM393'), findsWidgets);
     });
 
     testWidgets('2. Card hiển thị đầy đủ 7 thông số nghiệp vụ', (tester) async {
@@ -172,7 +171,7 @@ void main() {
       expect(selectedClass, 'SE1802_PRM393');
     });
 
-    testWidgets('5. Bấm nút "Điểm danh ngay" gọi đúng callback onSelectClass', (tester) async {
+    testWidgets('5. Bấm vào lớp trên lịch tuần gọi đúng callback onSelectClass', (tester) async {
       String? selected;
 
       final overview = AttendanceOverview(
@@ -193,11 +192,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Điểm danh ngay'));
+      await tester.tap(find.textContaining('SE1801_PRM393').first);
       expect(selected, 'SE1801_PRM393');
     });
 
-    testWidgets('6. Loading state hiển thị Skeleton cards', (tester) async {
+    testWidgets('6. Loading state hiển thị loading indicator', (tester) async {
       final completer = Completer<AttendanceOverview>();
 
       await tester.pumpWidget(
@@ -213,7 +212,7 @@ void main() {
       );
       await tester.pump(); // build initial frame in loading state
 
-      expect(find.byType(AttendanceClassCardSkeleton), findsWidgets);
+      expect(find.byType(CircularProgressIndicator), findsWidgets);
 
       // Complete future to clean up pending async operations
       completer.complete(const AttendanceOverview());
@@ -234,7 +233,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Chưa có lớp học nào'), findsOneWidget);
+      expect(find.text('Chưa có lịch dạy nào'), findsOneWidget);
     });
 
     testWidgets('8. Empty state khi chưa kết nối Google Sheet', (tester) async {

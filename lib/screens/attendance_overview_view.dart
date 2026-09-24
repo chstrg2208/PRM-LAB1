@@ -3,14 +3,12 @@ import 'package:intl/intl.dart';
 import '../models/class_overview_item.dart';
 import '../services/google_sheet_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/attendance_class_card.dart';
+import '../widgets/weekly_schedule_view.dart';
 
-/// ATD-05: Màn hình Hub tổng quan điểm danh (Attendance Overview Hub).
+/// Màn hình Lịch dạy điểm danh (Attendance Timetable Hub).
 ///
-/// Hiển thị danh sách tất cả lớp học được phân chia thành 2 khu vực:
-/// - **LỚP HỌC HÔM NAY**: Các lớp có lịch học khớp với ngày hiện tại (hoặc nextDate)
-/// - **CÁC LỚP KHÁC**: Các lớp học không có lịch hôm nay (xem/sửa lịch sử các buổi đã qua)
-///
+/// Hiển thị trực tiếp Lịch dạy theo tuần (Lecture of week) chuẩn FAP
+/// với đầy đủ các Slot (1–6) × Thứ trong tuần (T2–CN).
 /// Hỗ trợ Dependency Injection cho `onLoadOverview` và `initialOverview` phục vụ testing độc lập.
 class AttendanceOverviewView extends StatefulWidget {
   /// URL Google Apps Script đã cấu hình
@@ -109,7 +107,7 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = 'Lỗi tải tổng quan: $e';
+          _error = 'Lỗi tải lịch dạy: $e';
           _isLoading = false;
         });
       }
@@ -121,6 +119,16 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
     final dayName = days[dt.weekday - 1];
     final dateStr = DateFormat('dd/MM/yyyy').format(dt);
     return '$dayName, $dateStr';
+  }
+
+  /// Xử lý khi bấm vào một ô lớp học trên lịch tuần
+  void _handleClassItemTap(ClassOverviewItem item) {
+    if (widget.onSelectClassItem != null) {
+      final isToday = _overview?.todayClasses.any((c) => c.className == item.className) ?? false;
+      widget.onSelectClassItem!(item, isToday);
+    } else {
+      widget.onSelectClass(item.className);
+    }
   }
 
   @override
@@ -139,7 +147,7 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
                   const Text('Attendance', style: BirdleTypography.pageTitle),
                   const SizedBox(height: 4),
                   Text(
-                    'Tổng quan buổi học · ${_formatHeaderDate(DateTime.now())}',
+                    'Lịch dạy tuần · ${_formatHeaderDate(DateTime.now())}',
                     style: BirdleTypography.metadata,
                   ),
                 ],
@@ -148,9 +156,9 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
               _buildRefreshButton(),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
-          // ── Body ─────────────────────────────────────────────────────────────
+          // ── Body: Lịch dạy tuần dạng Calendar ───────────────────────────────
           Expanded(child: _buildBody()),
         ],
       ),
@@ -189,7 +197,9 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
     }
 
     if (_isLoading) {
-      return _buildSkeletonGrid();
+      return const Center(
+        child: CircularProgressIndicator(color: BirdleColors.brand),
+      );
     }
 
     if (_error != null) {
@@ -208,8 +218,8 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
 
     if (_overview == null || _overview!.isEmpty) {
       return _buildEmptyState(
-        icon: Icons.class_outlined,
-        title: 'Chưa có lớp học nào',
+        icon: Icons.calendar_month_outlined,
+        title: 'Chưa có lịch dạy nào',
         subtitle: 'Tạo sheet lớp học trong Google Sheets rồi nhấn làm mới.',
         action: IconButton(
           onPressed: _load,
@@ -218,135 +228,10 @@ class _AttendanceOverviewViewState extends State<AttendanceOverviewView> {
       );
     }
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Khu vực 1: Lớp hôm nay ───────────────────────────────────────
-          if (_overview!.todayClasses.isNotEmpty) ...[
-            _buildSectionHeader(
-              'LỚP HÔM NAY',
-              count: _overview!.todayClasses.length,
-              color: BirdleColors.brand,
-            ),
-            const SizedBox(height: 12),
-            _buildClassGrid(_overview!.todayClasses, isToday: true),
-            const SizedBox(height: 28),
-          ],
-
-          // ── Khu vực 2: Các lớp khác ──────────────────────────────────────
-          if (_overview!.otherClasses.isNotEmpty) ...[
-            _buildSectionHeader(
-              'CÁC LỚP KHÁC',
-              count: _overview!.otherClasses.length,
-              color: BirdleColors.textMuted,
-            ),
-            const SizedBox(height: 12),
-            _buildClassGrid(_overview!.otherClasses, isToday: false),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSkeletonGrid() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionHeader('LỚP HÔM NAY', color: BirdleColors.brand),
-          const SizedBox(height: 12),
-          const Wrap(
-            spacing: 16,
-            runSpacing: 16,
-            children: [
-              AttendanceClassCardSkeleton(),
-              AttendanceClassCardSkeleton(),
-            ],
-          ),
-          const SizedBox(height: 28),
-          _buildSectionHeader('CÁC LỚP KHÁC', color: BirdleColors.textMuted),
-          const SizedBox(height: 12),
-          const Wrap(
-            spacing: 16,
-            runSpacing: 16,
-            children: [
-              AttendanceClassCardSkeleton(),
-              AttendanceClassCardSkeleton(),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String label, {int? count, Color color = BirdleColors.textMuted}) {
-    return Row(
-      children: [
-        Container(
-          width: 3.5,
-          height: 16,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11.5,
-            fontWeight: FontWeight.w700,
-            color: color,
-            letterSpacing: 0.8,
-            fontFamily: BirdleTypography.fontFamily,
-          ),
-        ),
-        if (count != null) ...[
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: color,
-                fontFamily: BirdleTypography.fontFamily,
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildClassGrid(List<ClassOverviewItem> items, {required bool isToday}) {
-    return Wrap(
-      spacing: 16,
-      runSpacing: 16,
-      children: items.map((item) => AttendanceClassCard(
-        item: item,
-        isToday: isToday,
-        onTap: () {
-          if (widget.onSelectClassItem != null) {
-            widget.onSelectClassItem!(item, isToday);
-          } else {
-            widget.onSelectClass(item.className);
-          }
-        },
-        onActionPressed: () {
-          if (widget.onSelectClassItem != null) {
-            widget.onSelectClassItem!(item, isToday);
-          } else {
-            widget.onSelectClass(item.className);
-          }
-        },
-      )).toList(),
+    // Hiển thị trực tiếp Lịch dạy theo tuần (Lecture of week)
+    return WeeklyScheduleView(
+      allClasses: _overview!.allClasses,
+      onClassTap: _handleClassItemTap,
     );
   }
 
