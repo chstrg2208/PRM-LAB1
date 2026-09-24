@@ -13,6 +13,7 @@ import 'package:birdle/screens/settings_view.dart';
 import 'package:birdle/services/google_sheet_service.dart';
 import 'package:birdle/state/attendance_session_manager.dart';
 import 'package:birdle/widgets/apps_script_template_card.dart';
+import 'package:birdle/widgets/weekly_schedule_view.dart';
 
 class MockAtd07ApiClient implements AttendanceApiClient {
   Future<List<Student>> Function(String url, String className)? onFetchStudents;
@@ -191,8 +192,7 @@ void main() {
 
       // 1. Initial tab: Attendance Overview Hub
       expect(find.byType(AttendanceOverviewView), findsOneWidget);
-      expect(find.text('LỚP HÔM NAY'), findsOneWidget);
-      expect(find.text('CÁC LỚP KHÁC'), findsOneWidget);
+      expect(find.byType(WeeklyScheduleView), findsOneWidget);
 
       // 2. Navigate to Reports
       await tester.tap(find.widgetWithText(InkWell, 'Reports'));
@@ -252,8 +252,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      // Click card action 'Điểm danh ngay' for SE1801
-      final actionBtn = find.text('Điểm danh ngay');
+      // Click class SE1801 on the timetable
+      final actionBtn = find.textContaining('SE1801').first;
       expect(actionBtn, findsOneWidget);
       await tester.tap(actionBtn);
       await tester.pump();
@@ -270,7 +270,7 @@ void main() {
 
       // Returned to Overview Hub
       expect(find.byType(AttendanceOverviewView), findsOneWidget);
-      expect(find.text('LỚP HÔM NAY'), findsOneWidget);
+      expect(find.byType(WeeklyScheduleView), findsOneWidget);
 
       manager.dispose();
     });

@@ -152,38 +152,71 @@ class _AttendanceViewState extends State<AttendanceView> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Section 12 Header
+        // Row 1: Header (Back Button + Title & Metadata + View Toggle)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            if (widget.onBackToOverview != null) ...[
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: BirdleGhostButton(
+                  key: const Key('btnBackToOverview'),
+                  icon: Icons.arrow_back,
+                  label: 'Quay lại danh sách lớp',
+                  onPressed: widget.onBackToOverview,
+                ),
+              ),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Attendance', style: BirdleTypography.pageTitle),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${widget.currentClass} · Slot ${widget.currentSlot} (${ClassSession.getSlotTime(widget.currentSlot)}) · Buổi ${widget.currentSessionNumber}/20 · $dateStr',
+                    style: BirdleTypography.metadata,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Task 8: View Toggle — Table / Matrix
+            Container(
+              decoration: BoxDecoration(
+                color: BirdleColors.surfaceSecondary,
+                borderRadius: BirdleRadius.smBorder,
+                border: Border.all(color: BirdleColors.border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildViewToggle(
+                    icon: Icons.table_rows_outlined,
+                    label: 'Bảng',
+                    isSelected: !_isMatrixView,
+                    onTap: () => setState(() => _isMatrixView = false),
+                  ),
+                  Container(width: 1, height: 24, color: BirdleColors.border),
+                  _buildViewToggle(
+                    icon: Icons.grid_view_rounded,
+                    label: 'Matrix',
+                    isSelected: _isMatrixView,
+                    onTap: () => setState(() => _isMatrixView = true),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Row 2: Session Selectors + Action Buttons (QR, Import, Save, Sync)
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (widget.onBackToOverview != null) ...[
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, right: 12),
-                  child: BirdleGhostButton(
-                    key: const Key('btnBackToOverview'),
-                    icon: Icons.arrow_back,
-                    label: 'Quay lại danh sách lớp',
-                    onPressed: widget.onBackToOverview,
-                  ),
-                ),
-              ],
-              SizedBox(
-                width: 320,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Attendance', style: BirdleTypography.pageTitle),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${widget.currentClass} · Slot ${widget.currentSlot} (${ClassSession.getSlotTime(widget.currentSlot)}) · Buổi ${widget.currentSessionNumber}/20 · $dateStr',
-                      style: BirdleTypography.metadata,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
               // Session Selectors
               _buildSessionPickers(),
               const SizedBox(width: 16),
@@ -220,84 +253,57 @@ class _AttendanceViewState extends State<AttendanceView> {
                     }
                   },
                 ),
-            const SizedBox(width: 8),
-            BirdleSecondaryButton(
-              icon: Icons.file_upload_outlined,
-              label: 'Import from FAP',
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (_) => ImportFapDialog(
-                    currentClass: widget.currentClass,
-                    onImport: widget.onImportStudents,
-                  ),
-                );
-              },
-            ),
-            const SizedBox(width: 8),
-            BirdleSecondaryButton(
-              icon: Icons.save_outlined,
-              label: 'Save to Sheet',
-              onPressed: isLocked
-                  ? () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Buổi học ngày ${DateFormat('dd/MM/yyyy').format(widget.currentDate)} chưa diễn ra! Chỉ mở sau 00:00 ngày học.'),
-                          backgroundColor: BirdleColors.warning,
-                        ),
-                      );
-                    }
-                  : () {
-                      FocusScope.of(context).unfocus();
-                      _showSaveConfirmDialog(context); // Task 7
-                    },
-            ),
-            const SizedBox(width: 8),
-            BirdlePrimaryButton(
-              icon: Icons.bolt,
-              label: 'Sync to FAP',
-              onPressed: () {
-                FocusScope.of(context).unfocus();
-                showDialog(
-                  context: context,
-                  builder: (_) => FapSyncDialog(
-                    records: widget.records,
-                    className: widget.currentClass,
-                    slot: widget.currentSlot,
-                  ),
-                );
-              },
-            ),
-            const SizedBox(width: 16),
-            // Task 8: View Toggle — Table / Matrix
-            Container(
-              decoration: BoxDecoration(
-                color: BirdleColors.surfaceSecondary,
-                borderRadius: BirdleRadius.smBorder,
-                border: Border.all(color: BirdleColors.border),
+              const SizedBox(width: 8),
+              BirdleSecondaryButton(
+                icon: Icons.file_upload_outlined,
+                label: 'Import from FAP',
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => ImportFapDialog(
+                      currentClass: widget.currentClass,
+                      onImport: widget.onImportStudents,
+                    ),
+                  );
+                },
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildViewToggle(
-                    icon: Icons.table_rows_outlined,
-                    label: 'Bảng',
-                    isSelected: !_isMatrixView,
-                    onTap: () => setState(() => _isMatrixView = false),
-                  ),
-                  Container(width: 1, height: 24, color: BirdleColors.border),
-                  _buildViewToggle(
-                    icon: Icons.grid_view_rounded,
-                    label: 'Matrix',
-                    isSelected: _isMatrixView,
-                    onTap: () => setState(() => _isMatrixView = true),
-                  ),
-                ],
+              const SizedBox(width: 8),
+              BirdleSecondaryButton(
+                icon: Icons.save_outlined,
+                label: 'Save to Sheet',
+                onPressed: isLocked
+                    ? () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Buổi học ngày ${DateFormat('dd/MM/yyyy').format(widget.currentDate)} chưa diễn ra! Chỉ mở sau 00:00 ngày học.'),
+                            backgroundColor: BirdleColors.warning,
+                          ),
+                        );
+                      }
+                    : () {
+                        FocusScope.of(context).unfocus();
+                        _showSaveConfirmDialog(context); // Task 7
+                      },
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              BirdlePrimaryButton(
+                icon: Icons.bolt,
+                label: 'Sync to FAP',
+                onPressed: () {
+                  FocusScope.of(context).unfocus();
+                  showDialog(
+                    context: context,
+                    builder: (_) => FapSyncDialog(
+                      records: widget.records,
+                      className: widget.currentClass,
+                      slot: widget.currentSlot,
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
-      ),
         const SizedBox(height: 18),
 
         // Date Lock Banner cảnh báo khi buổi học chưa đến lịch
