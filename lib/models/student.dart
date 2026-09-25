@@ -191,7 +191,10 @@ class Student {
   factory Student.fromJson(Map<String, dynamic> json) {
     final rawCode = (json['CODE'] ?? json['code'] ?? '').toString().trim();
     final rawMember = (json['MEMBER'] ?? json['member'] ?? json['rollNumber'] ?? json['RollNumber'] ?? json['id'] ?? '').toString().trim();
-    final rollNumber = rawCode.isNotEmpty ? rawCode : rawMember;
+    // MEMBER là khóa canonical để liên kết Attendance_Logs và ma trận B1..B20.
+    // CODE được giữ riêng, không được phép ghi đè khóa MEMBER.
+    final resolvedMember = rawMember.isNotEmpty ? rawMember : rawCode;
+    final resolvedCode = rawCode.isNotEmpty ? rawCode : resolvedMember;
 
     String surname = (json['SURNAME'] ?? json['surname'] ?? json['SUR_NAME'] ?? json['Họ'] ?? json['Ho'] ?? '').toString().trim();
     String middleName = (json['MIDDLE NAME'] ?? json['MIDDLE_NAME'] ?? json['middleName'] ?? json['MIDDLENAME'] ?? json['Tên đệm'] ?? json['Dem'] ?? '').toString().trim();
@@ -258,13 +261,13 @@ class Student {
       }
     }
 
-    if (isInvalidEmail && rollNumber.isNotEmpty) {
-      resolvedEmail = '${rollNumber.toLowerCase()}@fpt.edu.vn';
+    if (isInvalidEmail && resolvedMember.isNotEmpty) {
+      resolvedEmail = '${resolvedMember.toLowerCase()}@fpt.edu.vn';
     }
 
     return Student(
-      member: rollNumber,
-      code: rollNumber,
+      member: resolvedMember,
+      code: resolvedCode,
       surname: surname,
       middleName: middleName,
       givenName: givenName,

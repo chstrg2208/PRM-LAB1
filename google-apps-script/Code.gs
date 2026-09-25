@@ -277,7 +277,8 @@ function doGet(e) {
 
       students.push({
         member: member,
-        rollNumber: mssv,
+        // MEMBER là khóa định danh canonical dùng chung cho Flutter, log và ma trận.
+        rollNumber: member,
         code: code,
         surname: surname,
         middleName: middleName,
@@ -355,9 +356,8 @@ function doGet(e) {
         var l = allLogs[m];
         var logClass = (l[1] || '').toString().trim();
         var targetStr = (targetClass || '').toString().trim();
-        var isClassMatch = !targetStr ||
-                           logClass === targetStr ||
-                           logClass.split('_')[0].toUpperCase() === targetStr.split('_')[0].toUpperCase();
+        // Chỉ lấy log của đúng lớp; không gộp các lớp khác môn nhưng trùng tiền tố.
+        var isClassMatch = !targetStr || logClass.toUpperCase() === targetStr.toUpperCase();
         if (isClassMatch) {
           logs.push({
             timestamp: l[0],
