@@ -270,6 +270,10 @@ function doGet(e) {
       if (absentSlots > totalSlots && absentCountFromSlots <= totalSlots) {
         absentSlots = absentCountFromSlots;
       }
+      // Khi có ma trận B1..B20, đây là nguồn sự thật; ABSENT chỉ là cột tổng hợp.
+      if (Object.keys(colMap.slots20).length > 0) {
+        absentSlots = absentCountFromSlots;
+      }
 
       students.push({
         member: member,
@@ -348,6 +352,7 @@ function doGet(e) {
     if (logSheet) {
       var allLogs = logSheet.getDataRange().getValues();
       for (var m = 1; m < allLogs.length; m++) {
+        var l = allLogs[m];
         var logClass = (l[1] || '').toString().trim();
         var targetStr = (targetClass || '').toString().trim();
         var isClassMatch = !targetStr ||

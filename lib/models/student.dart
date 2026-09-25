@@ -229,8 +229,14 @@ class Student {
         final u = s.trim().toUpperCase();
         return u == 'A' || u == 'V' || u == 'ABSENT' || u == 'VẮNG';
       }).length;
-      // Nếu cột ABSENT bị sai lệch lớn hơn số buổi học hoặc ma trận có dữ liệu vắng
-      if (absentSlots > totalSlots || (countA > 0 && absentSlots == 0)) {
+      // Khi ma trận có dữ liệu thực tế, ma trận là nguồn sự thật thay cho
+      // cột ABSENT tổng hợp có thể đã bị stale. Nếu ma trận hoàn toàn rỗng,
+      // giữ lại ABSENT để tương thích các Sheet cũ không có dữ liệu slot.
+      final hasSlotData = parsedSlots20.any((s) {
+        final value = s.trim().toUpperCase();
+        return value.isNotEmpty && value != '-';
+      });
+      if (hasSlotData && countA != absentSlots) {
         absentSlots = countA;
       }
     }
