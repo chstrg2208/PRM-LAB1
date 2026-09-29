@@ -48,8 +48,10 @@ class DashboardView extends StatelessWidget {
 
     // Sĩ số các nhóm chuyên cần theo chuẩn ĐH FPT (Quy chế vắng > 20% cấm thi)
     final bannedStudents = students.where((s) => s.isBanned).toList();
-    final warningStudents = students.where((s) => !s.isBanned && (s.isWarning || s.hasExhaustedAbsenceAllowance)).toList();
-    final safeStudents = students.where((s) => !s.isBanned && !s.isWarning && !s.hasExhaustedAbsenceAllowance).toList();
+    // A student remains eligible at exactly 20% absence. Only values above
+    // 20% are banned; exhausted allowance must not create a false warning.
+    final warningStudents = students.where((s) => !s.isBanned && s.isWarning).toList();
+    final safeStudents = students.where((s) => !s.isBanned && !s.isWarning).toList();
 
     // Tỷ lệ chuyên cần chung của toàn bộ lớp học (tránh chia cho 0)
     final totalClassSlots = students.fold<int>(0, (sum, s) => sum + s.totalSlots);
@@ -73,7 +75,7 @@ class DashboardView extends StatelessWidget {
       overallRateColor = BirdleColors.danger;
     }
 
-    final atRiskStudents = students.where((s) => s.absentRate >= 15.0 || s.hasExhaustedAbsenceAllowance).toList();
+    final atRiskStudents = students.where((s) => s.isWarning || s.isBanned).toList();
     final formattedDate = DateFormat('EEEE, MMMM d, y').format(currentDate);
 
     return SingleChildScrollView(
@@ -164,15 +166,15 @@ class DashboardView extends StatelessWidget {
               _buildMetricCard(
                 label: 'Sĩ số an toàn',
                 value: '${safeStudents.length}',
-                subtitle: 'Vắng ≤ 15% (${totalStudents > 0 ? ((safeStudents.length / totalStudents) * 100).toStringAsFixed(0) : 0}%)',
+                subtitle: 'Absent ≤ 20% (${totalStudents > 0 ? ((safeStudents.length / totalStudents) * 100).toStringAsFixed(0) : 0}%)',
                 accentColor: BirdleColors.success,
                 icon: Icons.check_circle_outline,
               ),
               const SizedBox(width: 14),
               _buildMetricCard(
-                label: 'Nguy cơ cấm thi',
+                label: 'At risk',
                 value: '${warningStudents.length}',
-                subtitle: 'Vắng 15% - 20% (còn 0-1 buổi)',
+                subtitle: 'Absent 15%–<20%',
                 accentColor: BirdleColors.warning,
                 icon: Icons.warning_amber_outlined,
               ),
@@ -564,7 +566,7 @@ class DashboardView extends StatelessWidget {
                           padding: EdgeInsets.all(32),
                           child: Center(
                             child: Text(
-                              '✓ Tất cả sinh viên đang duy trì chuyên cần tốt (dưới 15% vắng).',
+                              '✓ All students are within the allowed absence threshold (≤20%).',
                               style: TextStyle(color: BirdleColors.textSecondary, fontSize: 13),
                             ),
                           ),
