@@ -143,7 +143,9 @@ class _AttendanceViewState extends State<AttendanceView> {
 
     // Task 6: Tính số sinh viên cảnh báo/cấm thi (dựa trên dữ liệu 20 slot)
     final warningStudents = widget.students.where((s) => s.isWarning).length;
-    final bannedStudents = widget.students.where((s) => s.isBanned || s.hasExhaustedAbsenceAllowance || s.isExactlyAtAbsenceLimit).length;
+    // Only students above the 20% absence threshold are exam-banned.
+    // Reaching exactly 20% is still allowed and must not be shown as dangerous.
+    final bannedStudents = widget.students.where((s) => s.isBanned).length;
 
     final dateStr = DateFormat('MMMM d, y').format(widget.currentDate);
 
@@ -463,7 +465,7 @@ class _AttendanceViewState extends State<AttendanceView> {
                         children: [
                           if (bannedStudents > 0)
                             TextSpan(
-                              text: '$bannedStudents sinh viên nguy hiểm (cấm thi / hết lượt vắng)',
+                              text: '$bannedStudents sinh viên bị cấm thi (>20% vắng)',
                               style: const TextStyle(fontWeight: FontWeight.w700),
                             ),
                           if (bannedStudents > 0 && warningStudents > 0)
@@ -894,7 +896,9 @@ class _AttendanceViewState extends State<AttendanceView> {
       final total = student.totalSlots;
       if (total <= 0) continue;
 
-      final wasOk = !student.isBanned && !student.hasExhaustedAbsenceAllowance && !student.isExactlyAtAbsenceLimit;
+      // Any student who is not already banned can cross the threshold after
+      // this absence. This includes students currently at exactly 20%.
+      final wasOk = !student.isBanned;
       final willBeBanned = projectedAbsent * 100 > total * 20;
       final willBeAtLimit = projectedAbsent * 100 == total * 20;
 
