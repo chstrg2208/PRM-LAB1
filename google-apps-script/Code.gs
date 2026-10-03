@@ -7,6 +7,55 @@
  * =====================================================================
  */
 
+// Chuẩn hóa khóa sinh viên dùng chung cho roster, ma trận và Attendance_Logs.
+function _normalizeStudentKey_(value) {
+  return (value === undefined || value === null ? '' : value.toString()).trim().toUpperCase();
+}
+
+function _headerName_(value) {
+  return (value === undefined || value === null ? '' : value.toString()).trim().toUpperCase();
+}
+
+function _findCanonicalStudentColumn_(headerRow) {
+  var aliases = ['MEMBER', 'ROLLNUMBER', 'MSSV', 'MÃ SINH VIÊN', 'MÃ SV', 'STUDENT ID', 'CODE', 'STUDENTCODE'];
+  for (var a = 0; a < aliases.length; a++) {
+    for (var c = 0; c < headerRow.length; c++) {
+      if (_headerName_(headerRow[c]) === aliases[a]) return c;
+    }
+  }
+  return -1;
+}
+
+function _findHeaderColumn_(headerRow, aliases) {
+  for (var c = 0; c < headerRow.length; c++) {
+    var name = _headerName_(headerRow[c]);
+    for (var a = 0; a < aliases.length; a++) {
+      if (name === aliases[a]) return c;
+    }
+  }
+  return -1;
+}
+
+function _findStudentHeaderRow_(data) {
+  for (var r = 0; r < Math.min(data.length, 10); r++) {
+    var row = data[r] || [];
+    if (_findCanonicalStudentColumn_(row) >= 0) return r;
+  }
+  return -1;
+}
+
+function _incomingStudentKey_(student) {
+  return _normalizeStudentKey_(student && (student.member || student.rollNumber || student.MEMBER || student.RollNumber || student.id || student.code || student.CODE));
+}
+
+function _incomingStudentValue_(student, keys, fallback) {
+  for (var i = 0; i < keys.length; i++) {
+    var value = student ? student[keys[i]] : undefined;
+    if (value !== undefined && value !== null && value.toString().trim() !== '') return value.toString().trim();
+  }
+  return fallback;
+}
+
 // Xử lý yêu cầu HTTP GET
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : 'test';
@@ -146,9 +195,13 @@ function doGet(e) {
       var colName = (headerRow[colIdx] || '').toString().trim().toUpperCase();
       if (!colName) continue;
 
-      if (colName === 'MSSV' || colName === 'MÃ SINH VIÊN' || colName === 'MÃ SV' || colName === 'ROLLNUMBER' || colName === 'MEMBER' || colName === 'STUDENT ID' || colName === 'STUDENTCODE' || colName === 'CODE') {
+      if (colName === 'MEMBER') {
         if (colMap.mssv === -1) colMap.mssv = colIdx;
         if (colMap.member === -1) colMap.member = colIdx;
+      } else if (colName === 'MSSV' || colName === 'MÃ SINH VIÊN' || colName === 'MÃ SV' || colName === 'ROLLNUMBER' || colName === 'STUDENT ID') {
+        if (colMap.mssv === -1) colMap.mssv = colIdx;
+        if (colMap.member === -1) colMap.member = colIdx;
+      } else if (colName === 'STUDENTCODE' || colName === 'CODE') {
         if (colMap.code === -1) colMap.code = colIdx;
       } else if (colName === 'HỌ' || colName === 'SURNAME' || colName === 'HO' || colName === 'LAST NAME') {
         colMap.surname = colIdx;
@@ -1140,45 +1193,165 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 2. Đồng bộ danh sách sinh viên theo 4-5 trường: MEMBER, CODE, SURNAME, MIDDLE NAME, GIVEN NAME
+    // 2. Đồng bộ roster theo kiểu upsert, không xóa metadata hoặc ma trận điểm danh.
     if (action === 'syncStudents') {
-      var cls = body.className || 'SE1801';
+      var cls = (body.className || '').toString().trim();
       var students = body.students || [];
 
-      var stdSheet = ss.getSheetByName(cls) || ss.insertSheet(cls);
-      stdSheet.clear();
-
-      // Tiêu đề cột chuẩn hóa theo ảnh yêu cầu
-      var headers = ['MEMBER', 'CODE', 'SURNAME', 'MIDDLE NAME', 'GIVEN NAME', 'TOTAL SLOTS', 'ABSENT', 'EMAIL'];
-      stdSheet.appendRow(headers);
-      
-      var hRange = stdSheet.getRange(1, 1, 1, headers.length);
-      hRange.setBackground('#6366F1'); // Màu xanh tím hiện đại
-      hRange.setFontColor('#FFFFFF');
-      hRange.setFontWeight('bold');
-
-      var sRows = [];
-      for (var k = 0; k < students.length; k++) {
-        var st = students[k];
-        sRows.push([
-          st.member || st.rollNumber,
-          st.code || '',
-          st.surname || '',
-          st.middleName || '',
-          st.givenName || '',
-          st.totalSlots || 20,
-          st.absentSlots || 0,
-          st.email || ''
-        ]);
+      if (!cls) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          success: false,
+          message: 'Thiếu tên lớp cần đồng bộ!'
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      if (!Array.isArray(students) || students.length === 0) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          success: false,
+          message: 'Danh sách sinh viên rỗng; từ chối đồng bộ để bảo toàn dữ liệu hiện có!'
+        })).setMimeType(ContentService.MimeType.JSON);
       }
 
-      if (sRows.length > 0) {
-        stdSheet.getRange(2, 1, sRows.length, headers.length).setValues(sRows);
+      // Validate toàn bộ payload trước khi ghi bất kỳ ô nào.
+      var incomingKeys = {};
+      for (var k = 0; k < students.length; k++) {
+        var incomingKey = _incomingStudentKey_(students[k]);
+        if (!incomingKey || _isInvalidStudentRollNumber(incomingKey)) {
+          return ContentService.createTextOutput(JSON.stringify({
+            status: 'error',
+            success: false,
+            message: 'Payload chứa sinh viên không có MEMBER hợp lệ tại vị trí ' + k + '.'
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+        if (incomingKeys[incomingKey]) {
+          return ContentService.createTextOutput(JSON.stringify({
+            status: 'error',
+            success: false,
+            message: 'Payload chứa MEMBER trùng lặp: ' + incomingKey + '.'
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+        incomingKeys[incomingKey] = true;
+      }
+
+      var stdSheet = ss.getSheetByName(cls);
+      var inserted = 0;
+      var updated = 0;
+      var retained = 0;
+
+      // Sheet mới có schema đầy đủ để những lần save sau có thể dùng B1..B20.
+      if (!stdSheet) {
+        stdSheet = ss.insertSheet(cls);
+        var newHeaders = ['MEMBER', 'CODE', 'SURNAME', 'MIDDLE NAME', 'GIVEN NAME', 'TOTAL SLOTS', 'ABSENT', 'EMAIL'];
+        for (var slotHeader = 1; slotHeader <= 20; slotHeader++) newHeaders.push('B' + slotHeader);
+        stdSheet.appendRow(newHeaders);
+        var newHeaderRange = stdSheet.getRange(1, 1, 1, newHeaders.length);
+        newHeaderRange.setBackground('#6366F1');
+        newHeaderRange.setFontColor('#FFFFFF');
+        newHeaderRange.setFontWeight('bold');
+
+        for (var newIndex = 0; newIndex < students.length; newIndex++) {
+          var newStudent = students[newIndex];
+          var newRow = [];
+          for (var blankCol = 0; blankCol < newHeaders.length; blankCol++) newRow.push('');
+          newRow[0] = _incomingStudentKey_(newStudent);
+          newRow[1] = _incomingStudentValue_(newStudent, ['code', 'CODE'], '');
+          newRow[2] = _incomingStudentValue_(newStudent, ['surname', 'SURNAME'], '');
+          newRow[3] = _incomingStudentValue_(newStudent, ['middleName', 'MIDDLE NAME'], '');
+          newRow[4] = _incomingStudentValue_(newStudent, ['givenName', 'GIVEN NAME'], '');
+          newRow[5] = parseInt(_incomingStudentValue_(newStudent, ['totalSlots', 'TOTAL SLOTS'], '20'), 10) || 20;
+          newRow[6] = 0;
+          newRow[7] = _incomingStudentValue_(newStudent, ['email', 'EMAIL'], '');
+          stdSheet.appendRow(newRow);
+          inserted++;
+        }
+      } else {
+        var currentData = stdSheet.getDataRange().getValues();
+        var currentHeaderRowIdx = _findStudentHeaderRow_(currentData);
+        if (currentHeaderRowIdx < 0) {
+          return ContentService.createTextOutput(JSON.stringify({
+            status: 'error',
+            success: false,
+            message: 'Không tìm thấy header định danh sinh viên; từ chối ghi đè sheet ' + cls + '.'
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+
+        var currentHeader = currentData[currentHeaderRowIdx] || [];
+        var canonicalCol = _findCanonicalStudentColumn_(currentHeader);
+        var codeCol = _findHeaderColumn_(currentHeader, ['CODE', 'STUDENTCODE']);
+        var surnameCol = _findHeaderColumn_(currentHeader, ['SURNAME', 'HỌ', 'HO', 'LAST NAME']);
+        var middleNameCol = _findHeaderColumn_(currentHeader, ['MIDDLE NAME', 'MIDDLE_NAME', 'MIDDLENAME', 'TÊN ĐỆM', 'TEN DEM']);
+        var givenNameCol = _findHeaderColumn_(currentHeader, ['GIVEN NAME', 'GIVEN_NAME', 'GIVENNAME', 'FIRST NAME', 'TÊN', 'TEN']);
+        var totalSlotsCol = _findHeaderColumn_(currentHeader, ['TOTAL SLOTS', 'TOTAL', 'TỔNG BUỔI', 'TỔNG TIẾT']);
+        var absentCol = _findHeaderColumn_(currentHeader, ['ABSENT', 'ABSENT SLOTS', 'VẮNG', 'SỐ BUỔI VẮNG']);
+        var emailCol = _findHeaderColumn_(currentHeader, ['EMAIL', 'MAIL', 'THƯ ĐIỆN TỬ']);
+        var existingRowsByKey = {};
+
+        for (var existingRow = currentHeaderRowIdx + 1; existingRow < currentData.length; existingRow++) {
+          var existingKey = _normalizeStudentKey_(currentData[existingRow][canonicalCol]);
+          if (!existingKey || _isInvalidStudentRollNumber(existingKey)) continue;
+          if (existingRowsByKey[existingKey] !== undefined) {
+            return ContentService.createTextOutput(JSON.stringify({
+              status: 'error',
+              success: false,
+              message: 'Sheet ' + cls + ' chứa MEMBER trùng lặp: ' + existingKey + '; không thể sync an toàn.'
+            })).setMimeType(ContentService.MimeType.JSON);
+          }
+          existingRowsByKey[existingKey] = existingRow;
+        }
+
+        var setCell = function(rowIndex, colIndex, value) {
+          if (colIndex >= 0 && colIndex !== absentCol) {
+            stdSheet.getRange(rowIndex + 1, colIndex + 1).setValue(value);
+          }
+        };
+        var setIncomingCell = function(rowIndex, colIndex, student, keys) {
+          var value = _incomingStudentValue_(student, keys, null);
+          if (value !== null) setCell(rowIndex, colIndex, value);
+        };
+
+        for (var incomingIndex = 0; incomingIndex < students.length; incomingIndex++) {
+          var incomingStudent = students[incomingIndex];
+          var key = _incomingStudentKey_(incomingStudent);
+          var rowIndex = existingRowsByKey[key];
+          if (rowIndex === undefined) {
+            var appendedRow = [];
+            for (var colIndex = 0; colIndex < currentHeader.length; colIndex++) appendedRow.push('');
+            appendedRow[canonicalCol] = key;
+            if (codeCol >= 0 && codeCol !== canonicalCol) appendedRow[codeCol] = _incomingStudentValue_(incomingStudent, ['code', 'CODE'], '');
+            if (surnameCol >= 0) appendedRow[surnameCol] = _incomingStudentValue_(incomingStudent, ['surname', 'SURNAME'], '');
+            if (middleNameCol >= 0) appendedRow[middleNameCol] = _incomingStudentValue_(incomingStudent, ['middleName', 'MIDDLE NAME'], '');
+            if (givenNameCol >= 0) appendedRow[givenNameCol] = _incomingStudentValue_(incomingStudent, ['givenName', 'GIVEN NAME'], '');
+            if (totalSlotsCol >= 0) appendedRow[totalSlotsCol] = parseInt(_incomingStudentValue_(incomingStudent, ['totalSlots', 'TOTAL SLOTS'], '20'), 10) || 20;
+            if (absentCol >= 0) appendedRow[absentCol] = 0;
+            if (emailCol >= 0) appendedRow[emailCol] = _incomingStudentValue_(incomingStudent, ['email', 'EMAIL'], '');
+            stdSheet.appendRow(appendedRow);
+            inserted++;
+          } else {
+            // Chỉ cập nhật roster fields; ABSENT và B1..B20 không bao giờ bị ghi đè.
+            if (codeCol >= 0 && codeCol !== canonicalCol) setIncomingCell(rowIndex, codeCol, incomingStudent, ['code', 'CODE']);
+            setIncomingCell(rowIndex, surnameCol, incomingStudent, ['surname', 'SURNAME']);
+            setIncomingCell(rowIndex, middleNameCol, incomingStudent, ['middleName', 'MIDDLE NAME']);
+            setIncomingCell(rowIndex, givenNameCol, incomingStudent, ['givenName', 'GIVEN NAME']);
+            var totalSlotsValue = _incomingStudentValue_(incomingStudent, ['totalSlots', 'TOTAL SLOTS'], null);
+            if (totalSlotsValue !== null) setCell(rowIndex, totalSlotsCol, parseInt(totalSlotsValue, 10) || 20);
+            setIncomingCell(rowIndex, emailCol, incomingStudent, ['email', 'EMAIL']);
+            updated++;
+          }
+        }
+
+        for (var oldKey in existingRowsByKey) {
+          if (!incomingKeys[oldKey]) retained++;
+        }
       }
 
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Đã cập nhật ' + students.length + ' sinh viên cho lớp ' + cls + ' theo cấu trúc chuẩn!'
+        success: true,
+        inserted: inserted,
+        updated: updated,
+        retained: retained,
+        message: 'Đã đồng bộ ' + students.length + ' sinh viên cho lớp ' + cls + ' mà không xóa lịch sử điểm danh.'
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -1244,20 +1417,17 @@ function _recalculateClassAbsentCount(ss, className, logSheet) {
     }
 
     var header = classData[headerRowIdx] || [];
-    var memberColIdx = 0;
+    var memberColIdx = _findCanonicalStudentColumn_(header);
     var absentColIdx = -1;
 
     for (var h = 0; h < header.length; h++) {
       var colName = (header[h] || '').toString().trim().toUpperCase();
-      if (colName === 'MEMBER' || colName === 'ROLLNUMBER' || colName === 'MSSV' || colName === 'CODE') {
-        if (memberColIdx === 0) memberColIdx = h;
-      }
       if (colName === 'ABSENT' || colName === 'VẮNG' || colName === 'ABSENT SLOTS') {
         absentColIdx = h;
       }
     }
 
-    if (absentColIdx < 0) return;
+    if (memberColIdx < 0 || absentColIdx < 0) return;
 
     var absentValues = [];
     for (var s = headerRowIdx + 1; s < classData.length; s++) {
@@ -1307,7 +1477,7 @@ function _updateClassMatrixAttendance(ss, className, sessionNum, records) {
     var headerRowIdx = -1;
     for (var r = 0; r < Math.min(data.length, 7); r++) {
       var rowStr = data[r].map(function(c) { return (c || '').toString().trim().toUpperCase(); }).join(' ');
-      if (rowStr.indexOf('MSSV') >= 0 || rowStr.indexOf('ROLLNUMBER') >= 0 || rowStr.indexOf('MEMBER') >= 0 || rowStr.indexOf('STUDENT ID') >= 0) {
+      if (rowStr.indexOf('MSSV') >= 0 || rowStr.indexOf('ROLLNUMBER') >= 0 || rowStr.indexOf('MEMBER') >= 0 || rowStr.indexOf('STUDENT ID') >= 0 || rowStr.indexOf('CODE') >= 0) {
         headerRowIdx = r;
         break;
       }
@@ -1322,9 +1492,7 @@ function _updateClassMatrixAttendance(ss, className, sessionNum, records) {
 
     for (var c = 0; c < headerRow.length; c++) {
       var hName = (headerRow[c] || '').toString().trim().toUpperCase();
-      if (mssvCol === -1 && (hName === 'MSSV' || hName === 'ROLLNUMBER' || hName === 'MEMBER' || hName === 'CODE' || hName === 'STUDENT ID')) {
-        mssvCol = c;
-      } else if (absentCol === -1 && (hName === 'VẮNG' || hName === 'ABSENT' || hName === 'SỐ BUỔI VẮNG')) {
+      if (absentCol === -1 && (hName === 'VẮNG' || hName === 'ABSENT' || hName === 'SỐ BUỔI VẮNG')) {
         absentCol = c;
       }
 
@@ -1337,6 +1505,8 @@ function _updateClassMatrixAttendance(ss, className, sessionNum, records) {
         }
       }
     }
+
+    mssvCol = _findCanonicalStudentColumn_(headerRow);
 
     if (mssvCol < 0) return;
 
