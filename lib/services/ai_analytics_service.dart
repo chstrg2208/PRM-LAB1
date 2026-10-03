@@ -775,20 +775,16 @@ class AiAnalyticsService {
             .toList();
 
         const priorities = [
-          'gemini-2.5-flash',
-          'gemini-2.0-flash',
-          'gemini-2.0-flash-exp',
-          'gemini-1.5-flash-latest',
-          'gemini-1.5-flash',
-          'gemini-1.5-flash-001',
-          'gemini-1.5-flash-002',
-          'gemini-1.5-pro',
-          'gemini-pro',
+          'gemini-3.5-flash',
+          'gemini-flash-latest',
+          'gemini-3.1-flash-lite',
+          'gemini-flash-lite-latest',
+          'gemini-3.8-flash',
+          'gemini-3.7-flash',
         ];
 
         for (final p in priorities) {
           if (usable.contains(p)) {
-            _activeGeminiModel = p;
             return p;
           }
         }
@@ -798,18 +794,16 @@ class AiAnalyticsService {
           orElse: () => '',
         );
         if (anyFlash.isNotEmpty) {
-          _activeGeminiModel = anyFlash;
           return anyFlash;
         }
 
         if (usable.isNotEmpty) {
-          _activeGeminiModel = usable.first;
           return usable.first;
         }
       }
     } catch (_) {}
 
-    return 'gemini-2.0-flash';
+    return 'gemini-3.5-flash';
   }
 
   /// Gửi câu hỏi kèm context dữ liệu thực tế tới Google Gemini LLM API (AI Thật)
@@ -886,27 +880,27 @@ Danh sách sinh viên:
 $studentSummary
 ''';
 
-      final systemInstruction = '''
-Bạn là trợ lý AI chuyên môn cao cấp của hệ thống Quản lý Điểm danh FAP tại Đại học FPT.
-Bạn đang trò chuyện và hỗ trợ trực tiếp giảng viên.
-Quy tắc trả lời bắt buộc:
-1. Nếu giảng viên chào hỏi (xin chào, hello...), hãy chào lại một cách lịch sự, thân thiện, xưng "em" gọi "Thầy/Cô", tóm tắt 1 câu hiện trạng chuyên cần của lớp và hỏi xem Thầy/Cô cần hỗ trợ phân tích điều gì.
-2. Nếu giảng viên hỏi bạn là ai, hãy giới thiệu bạn là Trợ lý AI FAP Attendance Assistant hỗ trợ điểm danh & phân tích chuyên cần ĐH FPT.
-3. Khi trả lời về dữ liệu điểm danh, TUYỆT ĐỐI chỉ dùng số liệu thực tế được cung cấp trong context. Nghiêm cấm bịa đặt, giả định, hoặc suy diễn thêm bất kỳ số liệu định lượng nào ngoài nguồn dữ liệu.
-4. Nếu context ghi "Chưa đủ dữ liệu thống kê lịch sử", hãy thông báo trung thực rằng chưa có đủ dữ liệu lịch sử để phân tích xu hướng vắng theo buổi/thứ, không tự ý đưa ra phán đoán về slot hay ngày nghỉ.
-5. Với câu hỏi về hôm nay, buổi hiện tại, ai vắng, ai có mặt hoặc ai chưa điểm danh, chỉ dùng phần "Buổi điểm danh đang được chọn". Không dùng dữ liệu lịch sử để thay thế.
-6. Nếu buổi hiện tại chưa điểm danh hoặc dữ liệu chưa đủ, phải nói rõ chưa thể kết luận; tuyệt đối không coi tất cả sinh viên là Có mặt hoặc Vắng.
-7. Khi tư vấn giải pháp, hãy đưa ra các lời khuyên sư phạm thực tế, đúng quy chế đào tạo ĐH FPT (vắng > 20% tổng số buổi sẽ bị cấm thi / fail attendance).
-8. Trình bày đẹp mắt, tự nhiên bằng định dạng Markdown (in đậm, bullet points).
+      const systemInstruction = '''
+Bạn là trợ lý AI thông minh của hệ thống Quản lý Điểm danh FAP tại Đại học FPT.
+Bạn đang trò chuyện và hỗ trợ giảng viên.
+Quy tắc trả lời:
+1. Trả lời tự nhiên, thân thiện (xưng "em", gọi "Thầy/Cô"), trả lời đúng trọng tâm câu hỏi của Thầy/Cô.
+2. Nếu Thầy/Cô chỉ chào hỏi hoặc mở đầu (như "alo", "chào bạn", "này bạn"...), hãy chào lại ngắn gọn, tự nhiên, thân thiện và hỏi xem Thầy/Cô cần em hỗ trợ gì, KHÔNG cần phải tự động tuôn ra toàn bộ số liệu thống kê lớp trừ khi được hỏi.
+3. Khi Thầy/Cô hỏi về dữ liệu điểm danh, chuyên cần, sinh viên vắng/có mặt/cấm thi: hãy tra cứu và sử dụng chính xác số liệu trong "DỮ LIỆU ĐIỂM DANH THỰC TẾ" bên dưới. Tuyệt đối không bịa đặt số liệu ngoài context.
+4. Nếu buổi hiện tại chưa điểm danh hoặc chưa đủ dữ liệu thống kê, hãy thông báo trung thực.
+5. Thầy/Cô có thể hỏi bất kỳ chủ đề gì (từ tra cứu sinh viên, lời khuyên sư phạm, soạn email, giải đáp quy chế FPT đến trò chuyện hỗ trợ công việc), hãy trả lời linh hoạt, hữu ích.
+6. Trình bày đẹp mắt bằng định dạng Markdown (in đậm, danh sách gạch đầu dòng nếu cần).
 ''';
 
       final discoveredModel = await _resolveAvailableGeminiModel(cleanKey);
       final candidateModels = <String>{
         discoveredModel,
-        'gemini-2.0-flash',
-        'gemini-2.5-flash',
-        'gemini-1.5-flash-latest',
-        'gemini-pro',
+        'gemini-3.5-flash',
+        'gemini-flash-latest',
+        'gemini-3.1-flash-lite',
+        'gemini-flash-lite-latest',
+        'gemini-3.8-flash',
+        'gemini-3.7-flash',
       }.toList();
 
       int lastStatusCode = 0;
@@ -954,10 +948,12 @@ Quy tắc trả lời bắt buộc:
             } catch (_) {
               lastErrorMessage = 'Mã phản hồi: ${response.statusCode}';
             }
-            if (response.statusCode == 404) {
-              continue; // Model not supported, try next model
+            if (response.statusCode == 404 ||
+                response.statusCode == 503 ||
+                response.statusCode == 429) {
+              continue; // Model not supported or temporarily busy, try next model
             } else {
-              break; // Auth error or quota error
+              break; // Auth error (401/403)
             }
           }
         } catch (e) {
