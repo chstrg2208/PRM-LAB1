@@ -7,6 +7,552 @@
  * =====================================================================
  */
 
+// Chuẩn hóa khóa sinh viên dùng chung cho roster, ma trận và Attendance_Logs.
+function _normalizeStudentKey_(value) {
+  return (value === undefined || value === null ? '' : value.toString()).trim().toUpperCase();
+}
+
+function _headerName_(value) {
+  return (value === undefined || value === null ? '' : value.toString()).trim().toUpperCase();
+}
+
+function _findCanonicalStudentColumn_(headerRow) {
+  var aliases = ['MEMBER', 'ROLLNUMBER', 'MSSV', 'MÃ SINH VIÊN', 'MÃ SV', 'STUDENT ID', 'CODE', 'STUDENTCODE'];
+  for (var a = 0; a < aliases.length; a++) {
+    for (var c = 0; c < headerRow.length; c++) {
+      if (_headerName_(headerRow[c]) === aliases[a]) return c;
+    }
+  }
+  return -1;
+}
+
+function _findHeaderColumn_(headerRow, aliases) {
+  for (var c = 0; c < headerRow.length; c++) {
+    var name = _headerName_(headerRow[c]);
+    for (var a = 0; a < aliases.length; a++) {
+      if (name === aliases[a]) return c;
+    }
+  }
+  return -1;
+}
+
+function _findStudentHeaderRow_(data) {
+  for (var r = 0; r < Math.min(data.length, 10); r++) {
+    var row = data[r] || [];
+    if (_findCanonicalStudentColumn_(row) >= 0) return r;
+  }
+  return -1;
+}
+
+function _incomingStudentKey_(student) {
+  return _normalizeStudentKey_(student && (student.member || student.rollNumber || student.MEMBER || student.RollNumber || student.id || student.code || student.CODE));
+}
+
+function _incomingStudentValue_(student, keys, fallback) {
+  for (var i = 0; i < keys.length; i++) {
+    var value = student ? student[keys[i]] : undefined;
+    if (value !== undefined && value !== null && value.toString().trim() !== '') return value.toString().trim();
+  }
+  return fallback;
+}
+
+function _findClassSheet_(ss, className) {
+  var requested = (className || '').toString().trim();
+  if (!requested) return null;
+  var exact = ss.getSheetByName(requested);
+  if (exact) return exact;
+  var allSheets = ss.getSheets();
+  for (var i = 0; i < allSheets.length; i++) {
+    var sheetName = allSheets[i].getName().toString().trim();
+    var lowerSheet = sheetName.toLowerCase();
+    var lowerRequested = requested.toLowerCase();
+    if (lowerSheet === lowerRequested ||
+        lowerSheet.indexOf(lowerRequested + '_') === 0 ||
+        lowerRequested.indexOf(lowerSheet + '_') === 0) {
+      return allSheets[i];
+    }
+  }
+  return null;
+}
+
+function _buildStudentIdentityMap_(sheet) {
+  var result = { aliases: {}, codeByMember: {} };
+  if (!sheet) return result;
+  var data = sheet.getDataRange().getValues();
+  var headerRowIdx = _findStudentHeaderRow_(data);
+  if (headerRowIdx < 0) return result;
+  var header = data[headerRowIdx] || [];
+  var memberCol = _findCanonicalStudentColumn_(header);
+  var codeCol = _findHeaderColumn_(header, ['CODE', 'STUDENTCODE']);
+  if (memberCol < 0) return result;
+
+  for (var row = headerRowIdx + 1; row < data.length; row++) {
+    var member = _normalizeStudentKey_(data[row][memberCol]);
+    if (!member || _isInvalidStudentRollNumber(member)) continue;
+    result.aliases[member] = member;
+    if (codeCol >= 0 && codeCol !== memberCol) {
+      var code = _normalizeStudentKey_(data[row][codeCol]);
+      if (code && !_isInvalidStudentRollNumber(code)) {
+        result.aliases[code] = member;
+        result.codeByMember[member] = code;
+      }
+    }
+  }
+  return result;
+}
+
+function _canonicalStudentKey_(value, identityMap) {
+  var normalized = _normalizeStudentKey_(value);
+  if (!normalized || !identityMap || !identityMap.aliases) return normalized;
+  return identityMap.aliases[normalized] || normalized;
+}
+
+// Chuẩn hóa ngày dùng khi đối chiếu Attendance_Logs và lịch học.
+function _normalizeAttendanceDate_(value) {
+  if (!value) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
+    var y = value.getFullYear();
+    var m = ('0' + (value.getMonth() + 1)).slice(-2);
+    var d = ('0' + value.getDate()).slice(-2);
+    return y + '-' + m + '-' + d;
+  }
+  var text = value.toString().trim();
+  var normalized = _normalizeDateToIso(text);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+
+  // Google Sheets đôi khi serialize Date thành chuỗi JavaScript như
+  // "Sat Oct 03 2026 00:00:00 GMT+0700 (...)".
+  var parsed = new Date(text);
+  if (!isNaN(parsed.getTime())) {
+    var parsedYear = parsed.getFullYear();
+    var parsedMonth = ('0' + (parsed.getMonth() + 1)).slice(-2);
+    var parsedDay = ('0' + parsed.getDate()).slice(-2);
+    return parsedYear + '-' + parsedMonth + '-' + parsedDay;
+  }
+  return '';
+}
+
+function _attendanceStatusIsTerminal_(value) {
+  var status = (value === undefined || value === null ? '' : value.toString()).trim().toLowerCase();
+  return [
+    'present', 'absent', 'late',
+    'có mặt', 'vắng', 'muộn',
+    'p', 'a', 'l', 'cm', 'v'
+  ].indexOf(status) >= 0;
+}
+
+function _attendanceAllowedWeekdays_(daysOfWeek) {
+  var days = (daysOfWeek || 'T2-T5').toString().toUpperCase();
+  if (days.indexOf('T2') >= 0 && days.indexOf('T5') >= 0) return [1, 4];
+  if (days.indexOf('T3') >= 0 && days.indexOf('T6') >= 0) return [2, 5];
+  if (days.indexOf('T4') >= 0 && days.indexOf('T7') >= 0) return [3, 6];
+  return [1, 4];
+}
+
+function _parseAttendanceDate_(value) {
+  var iso = _normalizeAttendanceDate_(value);
+  var match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+}
+
+function _readAttendanceMetadata_(sheet) {
+  var meta = {
+    subject: '',
+    days: '',
+    slot: 1,
+    startDate: '',
+    currentSession: 1,
+    totalSessions: 20,
+    nextDate: '',
+    sessionStatus: 'Chưa điểm danh'
+  };
+  if (!sheet) return meta;
+  var data = sheet.getDataRange().getValues();
+  for (var r = 0; r < Math.min(data.length, 4); r++) {
+    var row = data[r] || [];
+    for (var c = 0; c < row.length; c++) {
+      var label = _headerName_(row[c]);
+      var value = row[c + 1] !== undefined ? row[c + 1].toString().trim() : '';
+      if (label.indexOf('MÔN HỌC') >= 0 || label.indexOf('SUBJECT') >= 0) meta.subject = value;
+      else if (label.indexOf('LỊCH') >= 0 || label.indexOf('DAYS') >= 0 || label.indexOf('SLOT') >= 0) {
+        var dayMatch = value.match(/(T[2-7]-T[2-7])/i);
+        if (dayMatch) meta.days = dayMatch[1].toUpperCase();
+        var slotMatch = value.match(/Slot\s*([1-6])/i);
+        if (slotMatch) meta.slot = parseInt(slotMatch[1], 10);
+      } else if (label.indexOf('NGÀY BẮT ĐẦU') >= 0 || label.indexOf('START DATE') >= 0) {
+        meta.startDate = value;
+      } else if (label.indexOf('BUỔI HIỆN TẠI') >= 0 || label.indexOf('CURRENT SESSION') >= 0) {
+        var sessionMatch = value.match(/(\d+)/);
+        if (sessionMatch) meta.currentSession = parseInt(sessionMatch[1], 10);
+      } else if (label.indexOf('TỔNG SỐ BUỔI') >= 0 || label.indexOf('TOTAL SESSIONS') >= 0) {
+        var totalMatch = value.match(/(\d+)/);
+        if (totalMatch) meta.totalSessions = parseInt(totalMatch[1], 10);
+      } else if (label.indexOf('NGÀY HỌC TIẾP THEO') >= 0 || label.indexOf('NEXT DATE') >= 0) {
+        meta.nextDate = value;
+      } else if (label.indexOf('TRẠNG THÁI') >= 0 || label.indexOf('STATUS') >= 0) {
+        meta.sessionStatus = value;
+      }
+    }
+  }
+  return meta;
+}
+
+function _extractSubjectCode_(subject, fallback) {
+  var text = (subject || '').toString().trim();
+  var match = text.match(/^([A-Z]{2,}[A-Z0-9]*\d[A-Z0-9]*)\s*-/i);
+  if (match) return match[1].toUpperCase();
+  if (/^[A-Z0-9-]+$/i.test(text) && text.indexOf(' ') < 0) return text.toUpperCase();
+  return (fallback || 'PRM393').toString().trim().toUpperCase();
+}
+
+// Sheet lớp là nguồn chính cho tên/mã môn; schedule table chỉ là fallback.
+function _getClassSubjectInfo_(ss, className, fallbackCode, fallbackSubject) {
+  var sheet = _findClassSheet_(ss, className);
+  var metadata = sheet ? _readAttendanceMetadata_(sheet) : {};
+  var subject = (metadata.subject || fallbackSubject || '').toString().trim();
+  var subjectCode = _extractSubjectCode_(subject, fallbackCode);
+  if (!subject) subject = subjectCode;
+  return { subject: subject, subjectCode: subjectCode };
+}
+
+function _matrixValueToLogStatus_(value) {
+  var status = (value === undefined || value === null ? '' : value.toString()).trim().toUpperCase();
+  if (status === 'P' || status === 'PRESENT' || status === 'CM' || status === 'CÓ MẶT') return 'present';
+  if (status === 'A' || status === 'ABSENT' || status === 'V' || status === 'VẮNG') return 'absent';
+  if (status === 'L' || status === 'LATE' || status === 'MUỘN') return 'late';
+  return '';
+}
+
+// Tạo log bù từ ma trận khi cả buổi đã có dữ liệu nhưng Attendance_Logs chưa có.
+// Chỉ append khi chưa có bất kỳ log nào của đúng class/date/slot/session.
+function _materializeAttendanceLogsFromMatrix_(ss, className, dateIso, slot, sessionNumber, metadata, roster, matrixStatusByMember) {
+  if (!ss || !roster || roster.length === 0) return false;
+  var lock = null;
+  var hasLock = false;
+  try {
+    if (typeof LockService !== 'undefined' && LockService.getScriptLock) {
+      lock = LockService.getScriptLock();
+      hasLock = lock.tryLock(5000);
+      if (!hasLock) return false;
+    }
+
+    var canonicalClass = (className || '').toString().trim();
+    var logSheet = ss.getSheetByName('Attendance_Logs');
+    var header = ['Thời gian ghi nhận', 'Lớp', 'Ngày học', 'Slot', 'Mã Sinh Viên (MEMBER)', 'Trạng thái', 'Ghi chú', 'SESSION_NO'];
+    if (!logSheet) {
+      logSheet = ss.insertSheet('Attendance_Logs');
+      logSheet.appendRow(header);
+    } else {
+      var currentData = logSheet.getDataRange().getValues();
+      var currentHeader = currentData.length > 0 ? (currentData[0] || []) : [];
+      var sessionColumn = _findHeaderColumn_(currentHeader, ['SESSION_NO', 'SESSION', 'SESSION NUMBER', 'BUỔI']);
+      if (sessionColumn < 0) {
+        logSheet.getRange(1, currentHeader.length + 1).setValue('SESSION_NO');
+        currentHeader.push('SESSION_NO');
+      }
+      header = currentHeader.length > 0 ? currentHeader : header;
+
+      var meta = metadata || {};
+      for (var i = 1; i < currentData.length; i++) {
+        var row = currentData[i] || [];
+        var rowClass = (row[1] || '').toString().trim().toUpperCase();
+        var rowDate = _normalizeAttendanceDate_(row[2]);
+        var rowSlot = parseInt(row[3], 10);
+        var rowSession = sessionColumn >= 0 ? parseInt(row[sessionColumn], 10) : NaN;
+        if (isNaN(rowSession) && meta.startDate) {
+          var rowDateObject = _parseAttendanceDate_(rowDate);
+          if (rowDateObject) {
+            rowSession = _calcSessionNo(meta.startDate, rowDateObject, meta.days, meta.totalSessions);
+          }
+        }
+        if (rowClass === canonicalClass.toUpperCase() &&
+            rowDate === dateIso &&
+            rowSlot === parseInt(slot, 10) &&
+            rowSession === parseInt(sessionNumber, 10)) {
+          return false;
+        }
+      }
+    }
+
+    var now = new Date();
+    for (var r = 0; r < roster.length; r++) {
+      var logStatus = _matrixValueToLogStatus_(matrixStatusByMember[roster[r].key]);
+      if (!logStatus) return false;
+      var newRow = [];
+      for (var c = 0; c < header.length; c++) newRow.push('');
+      newRow[0] = now;
+      newRow[1] = canonicalClass;
+      newRow[2] = dateIso;
+      newRow[3] = parseInt(slot, 10);
+      newRow[4] = roster[r].key;
+      newRow[5] = logStatus;
+      newRow[6] = '';
+      var sessionIndex = _findHeaderColumn_(header, ['SESSION_NO', 'SESSION', 'SESSION NUMBER', 'BUỔI']);
+      if (sessionIndex < 0) sessionIndex = 7;
+      while (newRow.length <= sessionIndex) newRow.push('');
+      newRow[sessionIndex] = parseInt(sessionNumber, 10);
+      logSheet.appendRow(newRow);
+    }
+    return true;
+  } catch (_) {
+    return false;
+  } finally {
+    if (hasLock && lock) {
+      try { lock.releaseLock(); } catch (_) {}
+    }
+  }
+}
+
+function _getAttendanceSessionState_(ss, className, targetDate, slot, sessionNumber, metadata, logValues, sheetData) {
+  var sheet = _findClassSheet_(ss, className);
+  var canonicalClass = sheet ? sheet.getName().toString().trim() : (className || '').toString().trim();
+  var meta = metadata || _readAttendanceMetadata_(sheet);
+  var data = sheetData || (sheet ? sheet.getDataRange().getValues() : []);
+  var dateIso = _normalizeAttendanceDate_(targetDate);
+  var target = _parseAttendanceDate_(dateIso);
+  var totalSessions = parseInt(meta.totalSessions, 10) || 20;
+  var days = meta.days || 'T2-T5';
+  var allowedDays = _attendanceAllowedWeekdays_(days);
+  var isScheduledDate = !!target && allowedDays.indexOf(target.getDay()) >= 0;
+  var calculatedSession = 0;
+  if (meta.startDate && target) {
+    calculatedSession = _calcSessionNo(meta.startDate, target, days, totalSessions);
+  }
+  var requestedSession = parseInt(sessionNumber, 10);
+  if (isNaN(requestedSession) || requestedSession <= 0) {
+    requestedSession = calculatedSession || parseInt(meta.currentSession, 10) || 0;
+  }
+  var sessionMatchesSchedule = isScheduledDate && calculatedSession > 0 && requestedSession === calculatedSession;
+
+  var headerRowIdx = _findStudentHeaderRow_(data);
+  var header = headerRowIdx >= 0 ? (data[headerRowIdx] || []) : [];
+  var memberCol = _findCanonicalStudentColumn_(header);
+  var identityMap = _buildStudentIdentityMap_(sheet);
+  var roster = [];
+  if (headerRowIdx >= 0 && memberCol >= 0) {
+    for (var r = headerRowIdx + 1; r < data.length; r++) {
+      var member = _canonicalStudentKey_(data[r][memberCol], identityMap);
+      if (member && !_isInvalidStudentRollNumber(member)) roster.push({ key: member, row: r });
+    }
+  }
+
+  var logs = logValues || [];
+  var logStatusByMember = {};
+  var matchingLogRows = 0;
+  var expectedLogDate = dateIso;
+  var logSessionCol = -1;
+  if (logs.length > 0) {
+    var logHeader = logs[0] || [];
+    logSessionCol = _findHeaderColumn_(logHeader, ['SESSION_NO', 'SESSION', 'SESSION NUMBER', 'BUỔI']);
+    for (var i = 1; i < logs.length; i++) {
+      var logRow = logs[i] || [];
+      var logClass = (logRow[1] || '').toString().trim();
+      var logDate = _normalizeAttendanceDate_(logRow[2]);
+      var logSlot = parseInt(logRow[3], 10);
+      var logSession = logSessionCol >= 0 ? parseInt(logRow[logSessionCol], 10) : NaN;
+      if (isNaN(logSession) && meta.startDate) {
+        var logDateObject = _parseAttendanceDate_(logDate);
+        if (logDateObject) logSession = _calcSessionNo(meta.startDate, logDateObject, days, totalSessions);
+      }
+      if (logClass.toUpperCase() !== canonicalClass.toUpperCase() ||
+          logDate !== expectedLogDate ||
+          logSlot !== parseInt(slot, 10) ||
+          logSession !== requestedSession) {
+        continue;
+      }
+      matchingLogRows++;
+      var logMember = _canonicalStudentKey_(logRow[4], identityMap);
+      if (logMember && _attendanceStatusIsTerminal_(logRow[5])) {
+        logStatusByMember[logMember] = true;
+      }
+    }
+  }
+
+  var logMatched = 0;
+  for (var l = 0; l < roster.length; l++) {
+    if (logStatusByMember[roster[l].key]) logMatched++;
+  }
+  var logComplete = roster.length > 0 && logMatched === roster.length;
+
+  var matrixCol = -1;
+  if (sessionMatchesSchedule) {
+    for (var h = 0; h < header.length; h++) {
+      var headerName = _headerName_(header[h]);
+      var bHeaderMatch = headerName.match(/^B([1-9]|1[0-9]|20)$/);
+      var slotHeaderMatch = headerName.match(/^SLOT\s*([1-9]|1[0-9]|20)$/);
+      var matrixHeaderSession = bHeaderMatch
+        ? parseInt(bHeaderMatch[1], 10)
+        : (slotHeaderMatch ? parseInt(slotHeaderMatch[1], 10) : -1);
+      if (matrixHeaderSession === requestedSession) {
+        matrixCol = h;
+        break;
+      }
+    }
+  }
+  var matrixMatched = 0;
+  var matrixStatusByMember = {};
+  if (matrixCol >= 0) {
+    for (var m = 0; m < roster.length; m++) {
+      var matrixValue = data[roster[m].row][matrixCol];
+      matrixStatusByMember[roster[m].key] = matrixValue;
+      if (_attendanceStatusIsTerminal_(matrixValue)) matrixMatched++;
+    }
+  }
+  var matrixComplete = roster.length > 0 && matrixCol >= 0 && matrixMatched === roster.length;
+  var materialized = false;
+  if (matrixComplete && matchingLogRows === 0) {
+    materialized = _materializeAttendanceLogsFromMatrix_(
+      ss,
+      canonicalClass,
+      dateIso,
+      slot,
+      requestedSession,
+      meta,
+      roster,
+      matrixStatusByMember
+    );
+    if (materialized) {
+      logComplete = true;
+      logMatched = roster.length;
+    }
+  }
+  var isDone = logComplete || matrixComplete;
+
+  return {
+    isDone: isDone,
+    status: isDone ? 'Đã điểm danh' : 'Chưa điểm danh',
+    source: logComplete ? (materialized ? 'logs-materialized' : 'logs') : (matrixComplete ? 'matrix' : 'none'),
+    sessionNumber: requestedSession,
+    matchedRecords: logComplete ? logMatched : matrixMatched,
+    expectedRecords: roster.length
+  };
+}
+
+// Tính ngày học tương ứng với một session từ lịch lớp.
+function _calcAttendanceDateForSession_(startDateStr, sessionNumber, daysOfWeek, totalSessions) {
+  try {
+    var requestedSession = parseInt(sessionNumber, 10);
+    var total = parseInt(totalSessions, 10) || 20;
+    var start = _parseAttendanceDate_(startDateStr);
+    if (!start || isNaN(requestedSession) || requestedSession <= 0 || requestedSession > total) return '';
+
+    var allowedWeekdays = _attendanceAllowedWeekdays_(daysOfWeek);
+    var current = new Date(start.getTime());
+    var count = 0;
+    var guard = total * 8 + 14;
+    while (guard-- > 0 && count < requestedSession) {
+      if (allowedWeekdays.indexOf(current.getDay()) >= 0) {
+        count++;
+        if (count === requestedSession) return _normalizeAttendanceDate_(current);
+      }
+      current.setDate(current.getDate() + 1);
+    }
+  } catch (_) {}
+  return '';
+}
+
+// Trả về lastSession/lastDate/lastStatus từ cùng một session hoàn tất.
+// Không phụ thuộc vào thứ tự dòng trong Attendance_Logs.
+function _getLatestAttendanceSummary_(ss, className, metadata, logValues, sheetData, targetDate) {
+  var summary = { lastSession: 0, lastDate: '', lastStatus: 'Chưa điểm danh' };
+  var sheet = _findClassSheet_(ss, className);
+  var meta = metadata || _readAttendanceMetadata_(sheet);
+  var data = sheetData || (sheet ? sheet.getDataRange().getValues() : []);
+  var headerRowIdx = _findStudentHeaderRow_(data);
+  if (headerRowIdx < 0) return summary;
+
+  var header = data[headerRowIdx] || [];
+  var memberCol = _findCanonicalStudentColumn_(header);
+  if (memberCol < 0) return summary;
+  var identityMap = _buildStudentIdentityMap_(sheet);
+  var roster = [];
+  for (var r = headerRowIdx + 1; r < data.length; r++) {
+    var member = _canonicalStudentKey_(data[r][memberCol], identityMap);
+    if (member && !_isInvalidStudentRollNumber(member)) roster.push({ key: member, row: r });
+  }
+  if (roster.length === 0) return summary;
+
+  var maxSession = parseInt(meta.totalSessions, 10) || 20;
+  if (meta.startDate && targetDate) {
+    var currentSession = _calcCurrentSessionFromToday(meta.startDate, targetDate, meta.days, maxSession);
+    if (currentSession > 0) maxSession = currentSession;
+  }
+
+  var completeDatesBySession = {};
+  var logs = logValues || [];
+  var logSessionCol = logs.length > 0
+    ? _findHeaderColumn_(logs[0] || [], ['SESSION_NO', 'SESSION', 'SESSION NUMBER', 'BUỔI'])
+    : -1;
+  var groupedLogs = {};
+  for (var i = 1; i < logs.length; i++) {
+    var logRow = logs[i] || [];
+    var logClass = (logRow[1] || '').toString().trim();
+    var logDate = _normalizeAttendanceDate_(logRow[2]);
+    var logSlot = parseInt(logRow[3], 10);
+    var logSession = logSessionCol >= 0 ? parseInt(logRow[logSessionCol], 10) : NaN;
+    if (isNaN(logSession) && meta.startDate && logDate) {
+      var logDateObject = _parseAttendanceDate_(logDate);
+      if (logDateObject) logSession = _calcSessionNo(meta.startDate, logDateObject, meta.days, meta.totalSessions);
+    }
+    if (logClass.toUpperCase() !== sheet.getName().toString().trim().toUpperCase() ||
+        logDate === '' || logSlot !== parseInt(meta.slot, 10) ||
+        isNaN(logSession) || logSession <= 0 || logSession > maxSession) continue;
+
+    var groupKey = logSession + '|' + logDate;
+    if (!groupedLogs[groupKey]) groupedLogs[groupKey] = { session: logSession, date: logDate, members: {} };
+    var logMember = _canonicalStudentKey_(logRow[4], identityMap);
+    if (logMember && _attendanceStatusIsTerminal_(logRow[5])) groupedLogs[groupKey].members[logMember] = true;
+  }
+
+  for (var groupKey in groupedLogs) {
+    var group = groupedLogs[groupKey];
+    var complete = true;
+    for (var g = 0; g < roster.length; g++) {
+      if (!group.members[roster[g].key]) {
+        complete = false;
+        break;
+      }
+    }
+    if (complete) {
+      var existingDate = completeDatesBySession[group.session];
+      if (!existingDate || group.date > existingDate) completeDatesBySession[group.session] = group.date;
+    }
+  }
+
+  // Matrix là fallback cho các buổi đã đủ trạng thái nhưng chưa có log.
+  for (var h = 0; h < header.length; h++) {
+    var headerName = _headerName_(header[h]);
+    var bMatch = headerName.match(/^B([1-9]|1[0-9]|20)$/);
+    var slotMatch = headerName.match(/^SLOT\s*([1-9]|1[0-9]|20)$/);
+    var matrixSession = bMatch ? parseInt(bMatch[1], 10) : (slotMatch ? parseInt(slotMatch[1], 10) : -1);
+    if (matrixSession <= 0 || matrixSession > maxSession || completeDatesBySession[matrixSession]) continue;
+
+    var matrixComplete = true;
+    for (var m = 0; m < roster.length; m++) {
+      if (!_attendanceStatusIsTerminal_(data[roster[m].row][h])) {
+        matrixComplete = false;
+        break;
+      }
+    }
+    if (matrixComplete) {
+      var matrixDate = _calcAttendanceDateForSession_(meta.startDate, matrixSession, meta.days, meta.totalSessions);
+      if (matrixDate) completeDatesBySession[matrixSession] = matrixDate;
+    }
+  }
+
+  for (var sessionKey in completeDatesBySession) {
+    var session = parseInt(sessionKey, 10);
+    var date = completeDatesBySession[sessionKey];
+    if (session > summary.lastSession || (session === summary.lastSession && date > summary.lastDate)) {
+      summary.lastSession = session;
+      summary.lastDate = date;
+      summary.lastStatus = 'Đã điểm danh';
+    }
+  }
+  return summary;
+}
+
 // Xử lý yêu cầu HTTP GET
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : 'test';
@@ -146,9 +692,13 @@ function doGet(e) {
       var colName = (headerRow[colIdx] || '').toString().trim().toUpperCase();
       if (!colName) continue;
 
-      if (colName === 'MSSV' || colName === 'MÃ SINH VIÊN' || colName === 'MÃ SV' || colName === 'ROLLNUMBER' || colName === 'MEMBER' || colName === 'STUDENT ID' || colName === 'STUDENTCODE' || colName === 'CODE') {
+      if (colName === 'MEMBER') {
         if (colMap.mssv === -1) colMap.mssv = colIdx;
         if (colMap.member === -1) colMap.member = colIdx;
+      } else if (colName === 'MSSV' || colName === 'MÃ SINH VIÊN' || colName === 'MÃ SV' || colName === 'ROLLNUMBER' || colName === 'STUDENT ID') {
+        if (colMap.mssv === -1) colMap.mssv = colIdx;
+        if (colMap.member === -1) colMap.member = colIdx;
+      } else if (colName === 'STUDENTCODE' || colName === 'CODE') {
         if (colMap.code === -1) colMap.code = colIdx;
       } else if (colName === 'HỌ' || colName === 'SURNAME' || colName === 'HO' || colName === 'LAST NAME') {
         colMap.surname = colIdx;
@@ -193,9 +743,9 @@ function doGet(e) {
     // 4. Đọc từng dòng dữ liệu sinh viên
     for (var i = headerRowIdx + 1; i < data.length; i++) {
       var row = data[i];
-      var mssv = (colMap.mssv >= 0 && row[colMap.mssv] !== undefined) ? row[colMap.mssv].toString().trim() : '';
-      var code = (colMap.code >= 0 && row[colMap.code] !== undefined) ? row[colMap.code].toString().trim() : mssv;
-      var member = (colMap.member >= 0 && row[colMap.member] !== undefined) ? row[colMap.member].toString().trim() : mssv;
+      var mssv = (colMap.mssv >= 0 && row[colMap.mssv] !== undefined) ? _normalizeStudentKey_(row[colMap.mssv]) : '';
+      var code = (colMap.code >= 0 && row[colMap.code] !== undefined) ? _normalizeStudentKey_(row[colMap.code]) : mssv;
+      var member = (colMap.member >= 0 && row[colMap.member] !== undefined) ? _normalizeStudentKey_(row[colMap.member]) : mssv;
       if (!mssv) mssv = code || member;
       if (!code) code = mssv;
       if (!member) member = mssv;
@@ -292,6 +842,22 @@ function doGet(e) {
       });
     }
 
+    // Đồng bộ trạng thái buổi hiện tại và tự materialize log từ matrix nếu
+    // buổi đó đã đủ dữ liệu nhưng Attendance_Logs chưa có bản ghi.
+    var studentToday = _normalizeAttendanceDate_(new Date());
+    var studentLogSheet = ss.getSheetByName('Attendance_Logs');
+    var studentState = _getAttendanceSessionState_(
+      ss,
+      sheet.getName(),
+      studentToday,
+      meta.slot,
+      null,
+      meta,
+      studentLogSheet ? studentLogSheet.getDataRange().getValues() : [],
+      data
+    );
+    meta.sessionStatus = studentState.status;
+
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success',
       success: true,
@@ -301,10 +867,10 @@ function doGet(e) {
       days: meta.days,
       slot: meta.slot,
       slotTime: meta.slotTime || _getFptSlotTime(meta.slot),
-      startDate: meta.startDate,
+      startDate: _normalizeAttendanceDate_(meta.startDate),
       currentSession: meta.currentSession,
       totalSessions: meta.totalSessions,
-      nextDate: meta.nextDate,
+      nextDate: _normalizeAttendanceDate_(meta.nextDate),
       sessionStatus: meta.sessionStatus,
       total: students.length,
       data: students
@@ -318,18 +884,62 @@ function doGet(e) {
     var slot = e.parameter.slot ? parseInt(e.parameter.slot) : 1;
 
     var logSheet = ss.getSheetByName('Attendance_Logs');
+    var attendanceSheet = _findClassSheet_(ss, cName);
+    var attendanceData = attendanceSheet ? attendanceSheet.getDataRange().getValues() : [];
+    var attendanceMeta = _readAttendanceMetadata_(attendanceSheet);
+    var initialLogValues = logSheet ? logSheet.getDataRange().getValues() : [];
+    var attendanceState = _getAttendanceSessionState_(
+      ss,
+      cName,
+      date,
+      slot,
+      null,
+      attendanceMeta,
+      initialLogValues,
+      attendanceData
+    );
+    logSheet = ss.getSheetByName('Attendance_Logs');
+    var identityMap = _buildStudentIdentityMap_(attendanceSheet);
+    var requestedDateIso = _normalizeAttendanceDate_(date);
+    var requestedSession = attendanceState ? parseInt(attendanceState.sessionNumber, 10) : NaN;
+    var canonicalClassName = attendanceSheet
+      ? attendanceSheet.getName().toString().trim().toUpperCase()
+      : cName.toString().trim().toUpperCase();
     var records = [];
 
     if (logSheet) {
       var logData = logSheet.getDataRange().getValues();
+      var logHeader = logData.length > 0 ? logData[0] : [];
+      var logSessionCol = _findHeaderColumn_(logHeader, ['SESSION_NO', 'SESSION', 'SESSION NUMBER', 'BUỔI']);
       for (var j = 1; j < logData.length; j++) {
         var r = logData[j];
-        if (r[1] === cName && r[2] === date && parseInt(r[3]) === slot) {
+        var rowClassName = (r[1] || '').toString().trim().toUpperCase();
+        var rowDateIso = _normalizeAttendanceDate_(r[2]);
+        var rowSlot = parseInt(r[3], 10);
+        var rowSession = logSessionCol >= 0 ? parseInt(r[logSessionCol], 10) : NaN;
+        if (isNaN(rowSession) && attendanceMeta.startDate) {
+          var rowDateObject = _parseAttendanceDate_(rowDateIso);
+          if (rowDateObject) {
+            rowSession = _calcSessionNo(
+              attendanceMeta.startDate,
+              rowDateObject,
+              attendanceMeta.days,
+              attendanceMeta.totalSessions
+            );
+          }
+        }
+
+        if (rowClassName === canonicalClassName &&
+            rowDateIso === requestedDateIso &&
+            rowSlot === slot &&
+            rowSession === requestedSession) {
+          var canonicalMember = _canonicalStudentKey_(r[4], identityMap);
           records.push({
-            rollNumber: r[4],
-            member: r[4],
+            rollNumber: canonicalMember,
+            member: canonicalMember,
+            code: identityMap.codeByMember[canonicalMember] || '',
             className: cName,
-            date: date,
+            date: requestedDateIso,
             slot: slot,
             status: r[5],
             note: r[6] || ''
@@ -347,11 +957,28 @@ function doGet(e) {
   // 4. API phân tích chuyên sâu cho AI (AI Analytics Data)
   if (action === 'getAnalyticsData') {
     var targetClass = e.parameter.className || 'SE1801';
-    var logSheet = ss.getSheetByName('Attendance_Logs');
+    var analyticsSheet = _findClassSheet_(ss, targetClass);
+    var analyticsMeta = _readAttendanceMetadata_(analyticsSheet);
+    var analyticsDate = _normalizeAttendanceDate_(new Date());
+    var analyticsLogSheet = ss.getSheetByName('Attendance_Logs');
+    _getAttendanceSessionState_(
+      ss,
+      targetClass,
+      analyticsDate,
+      analyticsMeta.slot,
+      null,
+      analyticsMeta,
+      analyticsLogSheet ? analyticsLogSheet.getDataRange().getValues() : [],
+      analyticsSheet ? analyticsSheet.getDataRange().getValues() : []
+    );
+    analyticsLogSheet = ss.getSheetByName('Attendance_Logs');
+    var logSheet = analyticsLogSheet;
     var logs = [];
 
     if (logSheet) {
       var allLogs = logSheet.getDataRange().getValues();
+      var analyticsHeader = allLogs.length > 0 ? (allLogs[0] || []) : [];
+      var analyticsSessionCol = _findHeaderColumn_(analyticsHeader, ['SESSION_NO', 'SESSION', 'SESSION NUMBER', 'BUỔI']);
       for (var m = 1; m < allLogs.length; m++) {
         var l = allLogs[m];
         var logClass = (l[1] || '').toString().trim();
@@ -359,11 +986,25 @@ function doGet(e) {
         // Chỉ lấy log của đúng lớp; không gộp các lớp khác môn nhưng trùng tiền tố.
         var isClassMatch = !targetStr || logClass.toUpperCase() === targetStr.toUpperCase();
         if (isClassMatch) {
+          var analyticsDate = _normalizeAttendanceDate_(l[2]);
+          var analyticsSession = analyticsSessionCol >= 0 ? parseInt(l[analyticsSessionCol], 10) : NaN;
+          if (isNaN(analyticsSession) && analyticsMeta.startDate && analyticsDate) {
+            var analyticsDateObject = _parseAttendanceDate_(analyticsDate);
+            if (analyticsDateObject) {
+              analyticsSession = _calcSessionNo(
+                analyticsMeta.startDate,
+                analyticsDateObject,
+                analyticsMeta.days,
+                analyticsMeta.totalSessions
+              );
+            }
+          }
           logs.push({
             timestamp: l[0],
             className: l[1],
-            date: l[2],
+            date: analyticsDate,
             slot: parseInt(l[3]),
+            sessionNumber: isNaN(analyticsSession) ? null : analyticsSession,
             rollNumber: l[4],
             status: l[5],
             note: l[6] || ''
@@ -506,43 +1147,39 @@ function doGet(e) {
           if (days.indexOf('T4') >= 0 && days.indexOf('T7') >= 0 && (weekday === 3 || weekday === 6)) isMatch = true;
 
           // Khớp thêm ngày học tiếp theo
-          if (sMeta.nextDate) {
-            var ndParts = sMeta.nextDate.split(/[\/\-]/);
-            if (ndParts.length === 3) {
-              var ndIso = ndParts[2].length === 4 ? (ndParts[2] + '-' + ndParts[1] + '-' + ndParts[0]) : sMeta.nextDate;
-              if (ndIso === isoDate || sMeta.nextDate === (d + '/' + m + '/' + y)) {
-                isMatch = true;
-              }
-            }
-          }
+          var normalizedNextDate = _normalizeAttendanceDate_(sMeta.nextDate);
+          if (normalizedNextDate === isoDate) isMatch = true;
 
           if (isMatch) {
             var parts = sName.split('_');
-            var subCode = parts[1] || (sMeta.subject.split(' - ')[0] || 'PRM393');
+            var subjectInfo = _getClassSubjectInfo_(ss, sName, parts[1] || 'PRM393', sMeta.subject);
             var stuCount = Math.max(0, sData.length - 5);
 
-            var isDone = (sMeta.sessionStatus === 'Đã điểm danh');
-            for (var lg = 1; lg < logValues.length; lg++) {
-              if (logValues[lg][1] === sName && logValues[lg][2] === isoDate && parseInt(logValues[lg][3]) === sMeta.slot) {
-                isDone = true;
-                break;
-              }
-            }
+            var todayState = _getAttendanceSessionState_(
+              ss,
+              sName,
+              isoDate,
+              sMeta.slot,
+              null,
+              sMeta,
+              logValues,
+              sData
+            );
 
             seenClasses[sName] = true;
             todayClasses.push({
               className: sName,
-              subjectCode: subCode,
+              subjectCode: subjectInfo.subjectCode,
               slot: sMeta.slot,
               slotTime: _getFptSlotTime(sMeta.slot),
               daysOfWeek: days,
               room: sMeta.room,
-              sessionNumber: sMeta.currentSession,
+              sessionNumber: todayState.sessionNumber || sMeta.currentSession,
               totalSessions: sMeta.totalSessions,
               totalStudents: stuCount,
-              isAttendanceDone: isDone,
+              isAttendanceDone: todayState.isDone,
               date: isoDate,
-              nextDate: sMeta.nextDate
+              nextDate: normalizedNextDate
             });
           }
         }
@@ -572,28 +1209,39 @@ function doGet(e) {
 
             if (isMatchDay) {
               var sessNo = _calcSessionNo(startStr, targetDate, days, totalSess);
-              var isDone = false;
-              for (var lg = 1; lg < logValues.length; lg++) {
-                if (logValues[lg][1] === cName && logValues[lg][2] === isoDate && parseInt(logValues[lg][3]) === slotNum) {
-                  isDone = true;
-                  break;
-                }
-              }
 
               var cSheet = ss.getSheetByName(cName);
               var stuCount = cSheet ? Math.max(0, cSheet.getLastRow() - 1) : 0;
+              var fallbackState = _getAttendanceSessionState_(
+                ss,
+                cName,
+                isoDate,
+                slotNum,
+                sessNo,
+                {
+                  days: days,
+                  slot: slotNum,
+                  startDate: startStr,
+                  currentSession: sessNo,
+                  totalSessions: totalSess,
+                  sessionStatus: 'Chưa điểm danh'
+                },
+                logValues,
+                cSheet ? cSheet.getDataRange().getValues() : []
+              );
 
+              var fallbackSubjectInfo = _getClassSubjectInfo_(ss, cName, subCode, '');
               todayClasses.push({
                 className: cName,
-                subjectCode: subCode,
+                subjectCode: fallbackSubjectInfo.subjectCode,
                 slot: slotNum,
                 slotTime: _getFptSlotTime(slotNum),
                 daysOfWeek: days,
                 room: room,
-                sessionNumber: sessNo,
+                sessionNumber: fallbackState.sessionNumber || sessNo,
                 totalSessions: totalSess,
                 totalStudents: stuCount,
-                isAttendanceDone: isDone,
+                isAttendanceDone: fallbackState.isDone,
                 date: isoDate
               });
             }
@@ -700,95 +1348,29 @@ function doGet(e) {
         }
 
         var parts = sName.split('_');
-        var subCode = parts[1] || (sMeta.subject ? sMeta.subject.split(' - ')[0] : 'PRM393');
+        var subjectInfo = _getClassSubjectInfo_(ss, sName, parts[1] || 'PRM393', sMeta.subject);
         var stuCount = Math.max(0, sData.length - 5);
 
-        // Kiểm tra đã điểm danh buổi hôm nay chưa
+        // Trạng thái hiện tại được xác định duy nhất bởi helper dùng chung bên dưới.
         var isDoneToday = false;
-        for (var lg = 1; lg < logValues.length; lg++) {
-          var lgDate = logValues[lg][2];
-          var lgDateStr = '';
-          if (lgDate instanceof Date) {
-            var ly = lgDate.getFullYear();
-            var lm = ('0' + (lgDate.getMonth() + 1)).slice(-2);
-            var ld = ('0' + lgDate.getDate()).slice(-2);
-            lgDateStr = ly + '-' + lm + '-' + ld;
-          } else {
-            lgDateStr = (lgDate || '').toString().trim().slice(0, 10);
-          }
-          if (logValues[lg][1] === sName && (lgDateStr === isoDate || lgDateStr === dmyDate) && parseInt(logValues[lg][3]) === sMeta.slot) {
-            isDoneToday = true;
-            break;
-          }
-        }
 
-        // Quét tìm thông tin lần điểm danh gần nhất (lastSession, lastDate, lastStatus)
-        var lastSession = 0;
-        var lastDate = '';
-        var lastStatus = 'Chưa điểm danh';
+        var latestSummary = _getLatestAttendanceSummary_(ss, sName, sMeta, logValues, sData, targetDate);
+        var lastSession = latestSummary.lastSession;
+        var lastDate = latestSummary.lastDate;
+        var lastStatus = latestSummary.lastStatus;
 
-        var hRowIdx = 4;
-        for (var hr = 0; hr < Math.min(sData.length, 10); hr++) {
-          var rStr = sData[hr].join(' ').toUpperCase();
-          if (rStr.indexOf('MSSV') >= 0 || rStr.indexOf('MEMBER') >= 0 || rStr.indexOf('ROLLNUMBER') >= 0) {
-            hRowIdx = hr;
-            break;
-          }
-        }
-
-        var hRow = sData[hRowIdx] || [];
-        var colSlots = {};
-        for (var c = 0; c < hRow.length; c++) {
-          var hName = (hRow[c] || '').toString().trim().toUpperCase();
-          var bm = hName.match(/^B([1-9]|1[0-9]|20)$/);
-          if (bm) colSlots[parseInt(bm[1])] = c;
-          else {
-            var sm2 = hName.match(/^SLOT\s*([1-9]|1[0-9]|20)$/);
-            if (sm2) colSlots[parseInt(sm2[1])] = c;
-          }
-        }
-
-        // Quét lùi từ B20 về B1 xem buổi nào có dữ liệu
-        for (var b = 20; b >= 1; b--) {
-          var cIdx = colSlots[b];
-          if (cIdx !== undefined) {
-            var hasVal = false;
-            for (var r = hRowIdx + 1; r < sData.length; r++) {
-              var valStr = (sData[r][cIdx] || '').toString().trim().toUpperCase();
-              if (valStr === 'P' || valStr === 'A' || valStr === 'CM' || valStr === 'V') {
-                hasVal = true;
-                break;
-              }
-            }
-            if (hasVal) {
-              lastSession = b;
-              lastStatus = 'Đã điểm danh';
-              break;
-            }
-          }
-        }
-
-        if (lastSession > 0) {
-          for (var lg = logValues.length - 1; lg >= 1; lg--) {
-            if (logValues[lg][1] === sName) {
-              lastDate = logValues[lg][2] ? logValues[lg][2].toString().slice(0, 10) : '';
-              break;
-            }
-          }
-        }
-
-        // Kiểm tra xem cột của buổi hiện tại (currentSession) đã có dữ liệu điểm danh thực tế chưa
-        var currColIdx = colSlots[sMeta.currentSession];
-        var currSessionHasData = false;
-        if (currColIdx !== undefined) {
-          for (var r = hRowIdx + 1; r < sData.length; r++) {
-            var valStr = (sData[r][currColIdx] || '').toString().trim().toUpperCase();
-            if (valStr === 'P' || valStr === 'A' || valStr === 'CM' || valStr === 'V' || valStr === 'L') {
-              currSessionHasData = true;
-              break;
-            }
-          }
-        }
+        var overviewState = _getAttendanceSessionState_(
+          ss,
+          sName,
+          isoDate,
+          sMeta.slot,
+          null,
+          sMeta,
+          logValues,
+          sData
+        );
+        isDoneToday = overviewState.isDone;
+        sMeta.sessionStatus = overviewState.status;
 
         // Phân loại: Lớp hôm nay vs Các lớp khác
         var isMatch = false;
@@ -797,52 +1379,27 @@ function doGet(e) {
         if (days.indexOf('T3') >= 0 && days.indexOf('T6') >= 0 && (weekday === 2 || weekday === 5)) isMatch = true;
         if (days.indexOf('T4') >= 0 && days.indexOf('T7') >= 0 && (weekday === 3 || weekday === 6)) isMatch = true;
 
-        if (sMeta.nextDate) {
-          var ndParts = sMeta.nextDate.split(/[\/\-]/);
-          if (ndParts.length === 3) {
-            var ndIso = ndParts[2].length === 4 ? (ndParts[2] + '-' + ndParts[1] + '-' + ndParts[0]) : sMeta.nextDate;
-            if (ndIso === isoDate || sMeta.nextDate === dmyDate) {
-              isMatch = true;
-            }
-          }
-        }
+        var normalizedNextDate = _normalizeAttendanceDate_(sMeta.nextDate);
+        if (normalizedNextDate === isoDate) isMatch = true;
 
-        // Chỉ khi lớp này CÓ LỊCH HÔM NAY (isMatch) và (đã có dữ liệu cột hôm nay hoặc đã có log hôm nay):
-        if (isMatch && (currSessionHasData || isDoneToday || (lastSession > 0 && lastSession >= sMeta.currentSession))) {
-          isDoneToday = true;
-          sMeta.sessionStatus = 'Đã điểm danh';
-          // Đồng bộ lại ô "Trạng thái buổi" trên sheet nếu ô đó chưa cập nhật
-          try {
-            for (var mr = 0; mr < Math.min(sData.length, 4); mr++) {
-              for (var mc = 0; mc < sData[mr].length; mc++) {
-                var lbl = (sData[mr][mc] || '').toString().trim().toUpperCase();
-                if (lbl.indexOf('TRẠNG THÁI') >= 0 || lbl.indexOf('STATUS') >= 0) {
-                  aSheet.getRange(mr + 1, mc + 2).setValue('Đã điểm danh');
-                  break;
-                }
-              }
-            }
-          } catch (_) {}
-        } else if (!isMatch) {
-          // Lớp khác không học hôm nay => chắc chắn chưa điểm danh hôm nay
-          isDoneToday = false;
-        }
+        // Không ghi ngược trạng thái vào sheet trong API GET. Metadata cũ không
+        // được phép làm thay đổi kết quả của helper.
 
         var classItem = {
           className: sName,
-          subject: sMeta.subject || (subCode + ' - Môn học'),
-          subjectCode: subCode,
+          subject: sMeta.subject || subjectInfo.subject,
+          subjectCode: subjectInfo.subjectCode,
           slot: sMeta.slot,
           slotTime: sMeta.slotTime,
           daysOfWeek: days,
           room: sMeta.room,
-          currentSession: sMeta.currentSession,
+          currentSession: overviewState.sessionNumber || sMeta.currentSession,
           totalSessions: sMeta.totalSessions,
           totalStudents: stuCount,
           sessionStatus: sMeta.sessionStatus,
           isAttendanceDone: isDoneToday,
           date: isoDate,
-          nextDate: sMeta.nextDate,
+          nextDate: normalizedNextDate,
           lastSession: lastSession,
           lastDate: lastDate,
           lastStatus: lastStatus
@@ -888,11 +1445,11 @@ function doGet(e) {
           if (r[0] && r[0].toString().trim() !== '') {
             schedules.push({
               className: r[0].toString().trim(),
-              subjectCode: r[1] ? r[1].toString().trim() : 'PRM393',
+              subjectCode: _getClassSubjectInfo_(ss, r[0].toString().trim(), r[1] ? r[1].toString().trim() : 'PRM393', '').subjectCode,
               slot: r[2] ? parseInt(r[2]) : 1,
               daysOfWeek: r[3] ? r[3].toString().trim() : 'T2-T5',
               room: r[4] ? r[4].toString().trim() : 'BE-302',
-              startDate: r[5] ? r[5].toString().trim() : '2026-09-01',
+              startDate: _normalizeAttendanceDate_(r[5] || '2026-09-01'),
               totalSessions: r[6] ? parseInt(r[6]) : 20
             });
           }
@@ -908,11 +1465,12 @@ function doGet(e) {
           var sData = aSheet.getDataRange().getValues();
           if (sData.length < 4) continue;
           var metaDays = 'T2-T5', metaSlot = 1, metaRoom = 'NVH-601', metaStart = '2026-09-01', metaTotal = 20, metaSub = 'PRM393';
-          for (var mr = 0; mr < Math.min(sData.length, 4); mr++) {
-            for (var mc = 0; mc < sData[mr].length; mc++) {
-              var lbl = (sData[mr][mc] || '').toString().trim().toUpperCase();
-              var val = (sData[mr][mc + 1] !== undefined) ? sData[mr][mc + 1].toString().trim() : '';
-              if (lbl.indexOf('LỊCH') >= 0 || lbl.indexOf('SLOT') >= 0) {
+           for (var mr = 0; mr < Math.min(sData.length, 4); mr++) {
+             for (var mc = 0; mc < sData[mr].length; mc++) {
+               var lbl = (sData[mr][mc] || '').toString().trim().toUpperCase();
+               var val = (sData[mr][mc + 1] !== undefined) ? sData[mr][mc + 1].toString().trim() : '';
+               if (lbl.indexOf('MÔN HỌC') >= 0 || lbl.indexOf('SUBJECT') >= 0) metaSub = val;
+               else if (lbl.indexOf('LỊCH') >= 0 || lbl.indexOf('SLOT') >= 0) {
                 var dm = val.match(/(T[2-7]-T[2-7])/i);
                 if (dm) metaDays = dm[1].toUpperCase();
                 var sm = val.match(/Slot\s*([1-6])/i);
@@ -924,11 +1482,11 @@ function doGet(e) {
           }
           schedules.push({
             className: sName,
-            subjectCode: sName.split('_')[1] || metaSub,
+             subjectCode: _getClassSubjectInfo_(ss, sName, sName.split('_')[1] || metaSub, metaSub).subjectCode,
             slot: metaSlot,
             daysOfWeek: metaDays,
             room: metaRoom,
-            startDate: metaStart,
+             startDate: _normalizeAttendanceDate_(metaStart),
             totalSessions: metaTotal
           });
         }
@@ -1034,6 +1592,24 @@ function doPost(e) {
         })).setMimeType(ContentService.MimeType.JSON);
       }
 
+      var saveClassSheet = _findClassSheet_(ss, className);
+      var saveMetadata = _readAttendanceMetadata_(saveClassSheet);
+      var requestedSessionNumber = parseInt(body.sessionNumber, 10);
+      if ((isNaN(requestedSessionNumber) || requestedSessionNumber <= 0) && saveMetadata.startDate) {
+        var saveDateObject = _parseAttendanceDate_(date);
+        if (saveDateObject) {
+          requestedSessionNumber = _calcSessionNo(
+            saveMetadata.startDate,
+            saveDateObject,
+            saveMetadata.days,
+            saveMetadata.totalSessions
+          );
+        }
+      }
+      if (isNaN(requestedSessionNumber) || requestedSessionNumber <= 0) {
+        requestedSessionNumber = slot;
+      }
+
       // Date Lock Validation: Chỉ cho phép điểm danh sau 00:00 của ngày học (date <= today GMT+7)
       if (!bypassDateLock && date) {
         var todayGmt7 = (typeof Utilities !== 'undefined')
@@ -1054,30 +1630,52 @@ function doPost(e) {
       }
 
       var logSheet = ss.getSheetByName('Attendance_Logs');
-      var headerRow = ['Thời gian ghi nhận', 'Lớp', 'Ngày học', 'Slot', 'Mã Sinh Viên (MEMBER)', 'Trạng thái', 'Ghi chú'];
+      var headerRow = ['Thời gian ghi nhận', 'Lớp', 'Ngày học', 'Slot', 'Mã Sinh Viên (MEMBER)', 'Trạng thái', 'Ghi chú', 'SESSION_NO'];
       if (!logSheet) {
         logSheet = ss.insertSheet('Attendance_Logs');
         logSheet.appendRow(headerRow);
-        var headerRange = logSheet.getRange(1, 1, 1, 7);
+        var headerRange = logSheet.getRange(1, 1, 1, headerRow.length);
         headerRange.setBackground('#F36F21');
         headerRange.setFontColor('#FFFFFF');
         headerRange.setFontWeight('bold');
       }
+      var identityMapForSave = _buildStudentIdentityMap_(_findClassSheet_(ss, className));
 
       // Đọc toàn bộ dữ liệu hiện tại để loại bỏ các bản ghi cũ của đúng buổi học này (Idempotent)
       var existingData = logSheet.getDataRange().getValues();
       var preservedRows = [];
 
       if (existingData.length > 0) {
-        headerRow = existingData[0];
+        headerRow = (existingData[0] || []).slice();
+        var sessionColumn = _findHeaderColumn_(headerRow, ['SESSION_NO', 'SESSION', 'SESSION NUMBER', 'BUỔI']);
+        if (sessionColumn < 0) {
+          sessionColumn = headerRow.length;
+          headerRow.push('SESSION_NO');
+        }
         for (var i = 1; i < existingData.length; i++) {
-          var row = existingData[i];
+          var row = (existingData[i] || []).slice();
+          while (row.length < headerRow.length) row.push('');
           var rClass = (row[1] || '').toString().trim().toUpperCase();
-          var rDate = (row[2] || '').toString().trim();
+          var rDate = _normalizeAttendanceDate_(row[2]);
           var rSlot = parseInt(row[3], 10);
+          var rSession = parseInt(row[sessionColumn], 10);
+          if ((isNaN(rSession) || rSession <= 0) && saveMetadata.startDate) {
+            var existingDateObject = _parseAttendanceDate_(rDate);
+            if (existingDateObject) {
+              rSession = _calcSessionNo(
+                saveMetadata.startDate,
+                existingDateObject,
+                saveMetadata.days,
+                saveMetadata.totalSessions
+              );
+            }
+          }
 
-          // Nếu cùng className, date, slot thì BỎ QUA dòng cũ này để thay thế bằng dòng mới
-          if (rClass === className.toUpperCase() && rDate === date && rSlot === slot) {
+          // Idempotent theo đúng class + date + slot + session.
+          if (rClass === className.toUpperCase() &&
+              rDate === _normalizeAttendanceDate_(date) &&
+              rSlot === slot &&
+              rSession === requestedSessionNumber) {
             continue;
           }
           preservedRows.push(row);
@@ -1089,7 +1687,7 @@ function doPost(e) {
       var newRows = [];
       for (var j = 0; j < records.length; j++) {
         var rec = records[j];
-        var member = (rec.rollNumber || rec.member || '').toString().trim().toUpperCase();
+        var member = _canonicalStudentKey_(rec.rollNumber || rec.member || rec.MEMBER || rec.MSSV || rec.code || rec.CODE, identityMapForSave);
         if (!member) continue;
 
         var status = (rec.status || 'notyet').toString().trim().toLowerCase();
@@ -1106,7 +1704,8 @@ function doPost(e) {
           slot,
           member,
           status,
-          note
+          note,
+          requestedSessionNumber
         ]);
       }
 
@@ -1114,11 +1713,11 @@ function doPost(e) {
       var allRows = [headerRow].concat(preservedRows).concat(newRows);
       logSheet.clearContents();
       if (allRows.length > 0) {
-        logSheet.getRange(1, 1, allRows.length, 7).setValues(allRows);
+        logSheet.getRange(1, 1, allRows.length, headerRow.length).setValues(allRows);
       }
 
       // Cập nhật lại format header sau khi clearContents
-      var hRange = logSheet.getRange(1, 1, 1, 7);
+      var hRange = logSheet.getRange(1, 1, 1, headerRow.length);
       hRange.setBackground('#F36F21');
       hRange.setFontColor('#FFFFFF');
       hRange.setFontWeight('bold');
@@ -1127,7 +1726,7 @@ function doPost(e) {
       _recalculateClassAbsentCount(ss, className, logSheet);
 
       // Cập nhật trực tiếp ma trận điểm danh 20 buổi (B1..B20) trong sheet lớp
-      _updateClassMatrixAttendance(ss, className, body.sessionNumber || slot, records);
+      _updateClassMatrixAttendance(ss, className, requestedSessionNumber, records);
 
       return ContentService.createTextOutput(JSON.stringify({
         success: true,
@@ -1140,45 +1739,165 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 2. Đồng bộ danh sách sinh viên theo 4-5 trường: MEMBER, CODE, SURNAME, MIDDLE NAME, GIVEN NAME
+    // 2. Đồng bộ roster theo kiểu upsert, không xóa metadata hoặc ma trận điểm danh.
     if (action === 'syncStudents') {
-      var cls = body.className || 'SE1801';
+      var cls = (body.className || '').toString().trim();
       var students = body.students || [];
 
-      var stdSheet = ss.getSheetByName(cls) || ss.insertSheet(cls);
-      stdSheet.clear();
-
-      // Tiêu đề cột chuẩn hóa theo ảnh yêu cầu
-      var headers = ['MEMBER', 'CODE', 'SURNAME', 'MIDDLE NAME', 'GIVEN NAME', 'TOTAL SLOTS', 'ABSENT', 'EMAIL'];
-      stdSheet.appendRow(headers);
-      
-      var hRange = stdSheet.getRange(1, 1, 1, headers.length);
-      hRange.setBackground('#6366F1'); // Màu xanh tím hiện đại
-      hRange.setFontColor('#FFFFFF');
-      hRange.setFontWeight('bold');
-
-      var sRows = [];
-      for (var k = 0; k < students.length; k++) {
-        var st = students[k];
-        sRows.push([
-          st.member || st.rollNumber,
-          st.code || '',
-          st.surname || '',
-          st.middleName || '',
-          st.givenName || '',
-          st.totalSlots || 20,
-          st.absentSlots || 0,
-          st.email || ''
-        ]);
+      if (!cls) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          success: false,
+          message: 'Thiếu tên lớp cần đồng bộ!'
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      if (!Array.isArray(students) || students.length === 0) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          success: false,
+          message: 'Danh sách sinh viên rỗng; từ chối đồng bộ để bảo toàn dữ liệu hiện có!'
+        })).setMimeType(ContentService.MimeType.JSON);
       }
 
-      if (sRows.length > 0) {
-        stdSheet.getRange(2, 1, sRows.length, headers.length).setValues(sRows);
+      // Validate toàn bộ payload trước khi ghi bất kỳ ô nào.
+      var incomingKeys = {};
+      for (var k = 0; k < students.length; k++) {
+        var incomingKey = _incomingStudentKey_(students[k]);
+        if (!incomingKey || _isInvalidStudentRollNumber(incomingKey)) {
+          return ContentService.createTextOutput(JSON.stringify({
+            status: 'error',
+            success: false,
+            message: 'Payload chứa sinh viên không có MEMBER hợp lệ tại vị trí ' + k + '.'
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+        if (incomingKeys[incomingKey]) {
+          return ContentService.createTextOutput(JSON.stringify({
+            status: 'error',
+            success: false,
+            message: 'Payload chứa MEMBER trùng lặp: ' + incomingKey + '.'
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+        incomingKeys[incomingKey] = true;
+      }
+
+      var stdSheet = ss.getSheetByName(cls);
+      var inserted = 0;
+      var updated = 0;
+      var retained = 0;
+
+      // Sheet mới có schema đầy đủ để những lần save sau có thể dùng B1..B20.
+      if (!stdSheet) {
+        stdSheet = ss.insertSheet(cls);
+        var newHeaders = ['MEMBER', 'CODE', 'SURNAME', 'MIDDLE NAME', 'GIVEN NAME', 'TOTAL SLOTS', 'ABSENT', 'EMAIL'];
+        for (var slotHeader = 1; slotHeader <= 20; slotHeader++) newHeaders.push('B' + slotHeader);
+        stdSheet.appendRow(newHeaders);
+        var newHeaderRange = stdSheet.getRange(1, 1, 1, newHeaders.length);
+        newHeaderRange.setBackground('#6366F1');
+        newHeaderRange.setFontColor('#FFFFFF');
+        newHeaderRange.setFontWeight('bold');
+
+        for (var newIndex = 0; newIndex < students.length; newIndex++) {
+          var newStudent = students[newIndex];
+          var newRow = [];
+          for (var blankCol = 0; blankCol < newHeaders.length; blankCol++) newRow.push('');
+          newRow[0] = _incomingStudentKey_(newStudent);
+          newRow[1] = _incomingStudentValue_(newStudent, ['code', 'CODE'], '');
+          newRow[2] = _incomingStudentValue_(newStudent, ['surname', 'SURNAME'], '');
+          newRow[3] = _incomingStudentValue_(newStudent, ['middleName', 'MIDDLE NAME'], '');
+          newRow[4] = _incomingStudentValue_(newStudent, ['givenName', 'GIVEN NAME'], '');
+          newRow[5] = parseInt(_incomingStudentValue_(newStudent, ['totalSlots', 'TOTAL SLOTS'], '20'), 10) || 20;
+          newRow[6] = 0;
+          newRow[7] = _incomingStudentValue_(newStudent, ['email', 'EMAIL'], '');
+          stdSheet.appendRow(newRow);
+          inserted++;
+        }
+      } else {
+        var currentData = stdSheet.getDataRange().getValues();
+        var currentHeaderRowIdx = _findStudentHeaderRow_(currentData);
+        if (currentHeaderRowIdx < 0) {
+          return ContentService.createTextOutput(JSON.stringify({
+            status: 'error',
+            success: false,
+            message: 'Không tìm thấy header định danh sinh viên; từ chối ghi đè sheet ' + cls + '.'
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+
+        var currentHeader = currentData[currentHeaderRowIdx] || [];
+        var canonicalCol = _findCanonicalStudentColumn_(currentHeader);
+        var codeCol = _findHeaderColumn_(currentHeader, ['CODE', 'STUDENTCODE']);
+        var surnameCol = _findHeaderColumn_(currentHeader, ['SURNAME', 'HỌ', 'HO', 'LAST NAME']);
+        var middleNameCol = _findHeaderColumn_(currentHeader, ['MIDDLE NAME', 'MIDDLE_NAME', 'MIDDLENAME', 'TÊN ĐỆM', 'TEN DEM']);
+        var givenNameCol = _findHeaderColumn_(currentHeader, ['GIVEN NAME', 'GIVEN_NAME', 'GIVENNAME', 'FIRST NAME', 'TÊN', 'TEN']);
+        var totalSlotsCol = _findHeaderColumn_(currentHeader, ['TOTAL SLOTS', 'TOTAL', 'TỔNG BUỔI', 'TỔNG TIẾT']);
+        var absentCol = _findHeaderColumn_(currentHeader, ['ABSENT', 'ABSENT SLOTS', 'VẮNG', 'SỐ BUỔI VẮNG']);
+        var emailCol = _findHeaderColumn_(currentHeader, ['EMAIL', 'MAIL', 'THƯ ĐIỆN TỬ']);
+        var existingRowsByKey = {};
+
+        for (var existingRow = currentHeaderRowIdx + 1; existingRow < currentData.length; existingRow++) {
+          var existingKey = _normalizeStudentKey_(currentData[existingRow][canonicalCol]);
+          if (!existingKey || _isInvalidStudentRollNumber(existingKey)) continue;
+          if (existingRowsByKey[existingKey] !== undefined) {
+            return ContentService.createTextOutput(JSON.stringify({
+              status: 'error',
+              success: false,
+              message: 'Sheet ' + cls + ' chứa MEMBER trùng lặp: ' + existingKey + '; không thể sync an toàn.'
+            })).setMimeType(ContentService.MimeType.JSON);
+          }
+          existingRowsByKey[existingKey] = existingRow;
+        }
+
+        var setCell = function(rowIndex, colIndex, value) {
+          if (colIndex >= 0 && colIndex !== absentCol) {
+            stdSheet.getRange(rowIndex + 1, colIndex + 1).setValue(value);
+          }
+        };
+        var setIncomingCell = function(rowIndex, colIndex, student, keys) {
+          var value = _incomingStudentValue_(student, keys, null);
+          if (value !== null) setCell(rowIndex, colIndex, value);
+        };
+
+        for (var incomingIndex = 0; incomingIndex < students.length; incomingIndex++) {
+          var incomingStudent = students[incomingIndex];
+          var key = _incomingStudentKey_(incomingStudent);
+          var rowIndex = existingRowsByKey[key];
+          if (rowIndex === undefined) {
+            var appendedRow = [];
+            for (var colIndex = 0; colIndex < currentHeader.length; colIndex++) appendedRow.push('');
+            appendedRow[canonicalCol] = key;
+            if (codeCol >= 0 && codeCol !== canonicalCol) appendedRow[codeCol] = _incomingStudentValue_(incomingStudent, ['code', 'CODE'], '');
+            if (surnameCol >= 0) appendedRow[surnameCol] = _incomingStudentValue_(incomingStudent, ['surname', 'SURNAME'], '');
+            if (middleNameCol >= 0) appendedRow[middleNameCol] = _incomingStudentValue_(incomingStudent, ['middleName', 'MIDDLE NAME'], '');
+            if (givenNameCol >= 0) appendedRow[givenNameCol] = _incomingStudentValue_(incomingStudent, ['givenName', 'GIVEN NAME'], '');
+            if (totalSlotsCol >= 0) appendedRow[totalSlotsCol] = parseInt(_incomingStudentValue_(incomingStudent, ['totalSlots', 'TOTAL SLOTS'], '20'), 10) || 20;
+            if (absentCol >= 0) appendedRow[absentCol] = 0;
+            if (emailCol >= 0) appendedRow[emailCol] = _incomingStudentValue_(incomingStudent, ['email', 'EMAIL'], '');
+            stdSheet.appendRow(appendedRow);
+            inserted++;
+          } else {
+            // Chỉ cập nhật roster fields; ABSENT và B1..B20 không bao giờ bị ghi đè.
+            if (codeCol >= 0 && codeCol !== canonicalCol) setIncomingCell(rowIndex, codeCol, incomingStudent, ['code', 'CODE']);
+            setIncomingCell(rowIndex, surnameCol, incomingStudent, ['surname', 'SURNAME']);
+            setIncomingCell(rowIndex, middleNameCol, incomingStudent, ['middleName', 'MIDDLE NAME']);
+            setIncomingCell(rowIndex, givenNameCol, incomingStudent, ['givenName', 'GIVEN NAME']);
+            var totalSlotsValue = _incomingStudentValue_(incomingStudent, ['totalSlots', 'TOTAL SLOTS'], null);
+            if (totalSlotsValue !== null) setCell(rowIndex, totalSlotsCol, parseInt(totalSlotsValue, 10) || 20);
+            setIncomingCell(rowIndex, emailCol, incomingStudent, ['email', 'EMAIL']);
+            updated++;
+          }
+        }
+
+        for (var oldKey in existingRowsByKey) {
+          if (!incomingKeys[oldKey]) retained++;
+        }
       }
 
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Đã cập nhật ' + students.length + ' sinh viên cho lớp ' + cls + ' theo cấu trúc chuẩn!'
+        success: true,
+        inserted: inserted,
+        updated: updated,
+        retained: retained,
+        message: 'Đã đồng bộ ' + students.length + ' sinh viên cho lớp ' + cls + ' mà không xóa lịch sử điểm danh.'
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -1204,8 +1923,9 @@ function doPost(e) {
 // Tính lại chính xác số buổi vắng (ABSENT) từ bảng Attendance_Logs cho từng sinh viên của lớp
 function _recalculateClassAbsentCount(ss, className, logSheet) {
   try {
-    var classSheet = ss.getSheetByName(className);
+    var classSheet = _findClassSheet_(ss, className);
     if (!classSheet) return;
+    var identityMap = _buildStudentIdentityMap_(classSheet);
 
     if (!logSheet) {
       logSheet = ss.getSheetByName('Attendance_Logs');
@@ -1222,7 +1942,7 @@ function _recalculateClassAbsentCount(ss, className, logSheet) {
       if (rClass === className.toUpperCase()) {
         var status = (row[5] || '').toString().trim().toLowerCase();
         if (status === 'absent' || status === 'vắng') {
-          var member = (row[4] || '').toString().trim().toUpperCase();
+          var member = _canonicalStudentKey_(row[4], identityMap);
           if (member) {
             absentCountsByMember[member] = (absentCountsByMember[member] || 0) + 1;
           }
@@ -1244,20 +1964,17 @@ function _recalculateClassAbsentCount(ss, className, logSheet) {
     }
 
     var header = classData[headerRowIdx] || [];
-    var memberColIdx = 0;
+    var memberColIdx = _findCanonicalStudentColumn_(header);
     var absentColIdx = -1;
 
     for (var h = 0; h < header.length; h++) {
       var colName = (header[h] || '').toString().trim().toUpperCase();
-      if (colName === 'MEMBER' || colName === 'ROLLNUMBER' || colName === 'MSSV' || colName === 'CODE') {
-        if (memberColIdx === 0) memberColIdx = h;
-      }
       if (colName === 'ABSENT' || colName === 'VẮNG' || colName === 'ABSENT SLOTS') {
         absentColIdx = h;
       }
     }
 
-    if (absentColIdx < 0) return;
+    if (memberColIdx < 0 || absentColIdx < 0) return;
 
     var absentValues = [];
     for (var s = headerRowIdx + 1; s < classData.length; s++) {
@@ -1299,6 +2016,7 @@ function _updateClassMatrixAttendance(ss, className, sessionNum, records) {
       }
     }
     if (!sheet) return;
+    var identityMap = _buildStudentIdentityMap_(sheet);
 
     var data = sheet.getDataRange().getValues();
     if (data.length <= 1) return;
@@ -1307,7 +2025,7 @@ function _updateClassMatrixAttendance(ss, className, sessionNum, records) {
     var headerRowIdx = -1;
     for (var r = 0; r < Math.min(data.length, 7); r++) {
       var rowStr = data[r].map(function(c) { return (c || '').toString().trim().toUpperCase(); }).join(' ');
-      if (rowStr.indexOf('MSSV') >= 0 || rowStr.indexOf('ROLLNUMBER') >= 0 || rowStr.indexOf('MEMBER') >= 0 || rowStr.indexOf('STUDENT ID') >= 0) {
+      if (rowStr.indexOf('MSSV') >= 0 || rowStr.indexOf('ROLLNUMBER') >= 0 || rowStr.indexOf('MEMBER') >= 0 || rowStr.indexOf('STUDENT ID') >= 0 || rowStr.indexOf('CODE') >= 0) {
         headerRowIdx = r;
         break;
       }
@@ -1322,9 +2040,7 @@ function _updateClassMatrixAttendance(ss, className, sessionNum, records) {
 
     for (var c = 0; c < headerRow.length; c++) {
       var hName = (headerRow[c] || '').toString().trim().toUpperCase();
-      if (mssvCol === -1 && (hName === 'MSSV' || hName === 'ROLLNUMBER' || hName === 'MEMBER' || hName === 'CODE' || hName === 'STUDENT ID')) {
-        mssvCol = c;
-      } else if (absentCol === -1 && (hName === 'VẮNG' || hName === 'ABSENT' || hName === 'SỐ BUỔI VẮNG')) {
+      if (absentCol === -1 && (hName === 'VẮNG' || hName === 'ABSENT' || hName === 'SỐ BUỔI VẮNG')) {
         absentCol = c;
       }
 
@@ -1338,13 +2054,15 @@ function _updateClassMatrixAttendance(ss, className, sessionNum, records) {
       }
     }
 
+    mssvCol = _findCanonicalStudentColumn_(headerRow);
+
     if (mssvCol < 0) return;
 
     // Map records theo rollNumber/member
     var statusMap = {};
     for (var i = 0; i < records.length; i++) {
       var rec = records[i];
-      var rId = (rec.rollNumber || rec.member || '').toString().trim().toUpperCase();
+      var rId = _canonicalStudentKey_(rec.member || rec.rollNumber || rec.MEMBER || rec.MSSV || rec.code || rec.CODE, identityMap);
       var st = (rec.status || 'notyet').toString().trim().toLowerCase();
       var codeVal = '';
       if (st === 'present' || st === 'có mặt' || st === 'p') codeVal = 'P';
@@ -1381,14 +2099,20 @@ function _updateClassMatrixAttendance(ss, className, sessionNum, records) {
       }
     }
 
-    // Kiểm tra xem buổi học này có ít nhất 1 sinh viên thực sự được điểm danh (P, A, L) không
-    var hasActualAttendance = false;
-    for (var k in statusMap) {
-      if (statusMap[k] === 'P' || statusMap[k] === 'A' || statusMap[k] === 'L') {
-        hasActualAttendance = true;
-        break;
+    // Chỉ chốt metadata khi toàn bộ roster có trạng thái cuối. Một vài SV có
+    // dữ liệu không đủ để kết luận cả buổi đã hoàn tất.
+    var expectedStudentCount = 0;
+    var completedStudentCount = 0;
+    for (var checkRow = headerRowIdx + 1; checkRow < data.length; checkRow++) {
+      var checkId = _canonicalStudentKey_(data[checkRow][mssvCol], identityMap);
+      if (!checkId || _isInvalidStudentRollNumber(checkId)) continue;
+      expectedStudentCount++;
+      var checkStatus = statusMap[checkId];
+      if (checkStatus === 'P' || checkStatus === 'A' || checkStatus === 'L') {
+        completedStudentCount++;
       }
     }
+    var hasActualAttendance = expectedStudentCount > 0 && completedStudentCount === expectedStudentCount;
 
     // Đánh dấu trạng thái buổi là Đã điểm danh và tự động cập nhật Ngày học tiếp theo nếu có điểm danh thực tế
     if (headerRowIdx > 0) {
@@ -1601,8 +2325,10 @@ function _getFptSlotTime(slot) {
 // Tính số thứ tự buổi học (1..20) dựa trên ngày bắt đầu và cặp ngày học
 function _calcSessionNo(startDateStr, targetDate, daysOfWeek, totalSessions) {
   try {
-    var start = new Date(startDateStr);
-    var target = new Date(targetDate);
+    var start = _parseAttendanceDate_(startDateStr) || new Date(startDateStr);
+    var target = Object.prototype.toString.call(targetDate) === '[object Date]'
+      ? new Date(targetDate.getTime())
+      : (_parseAttendanceDate_(targetDate) || new Date(targetDate));
     start.setHours(0, 0, 0, 0);
     target.setHours(0, 0, 0, 0);
     if (target < start) return 1;
@@ -1796,13 +2522,13 @@ function _handleStudentCheckIn(ss, params) {
     }
 
     var headerRow = cData[headerRowIdx] || [];
-    var mssvCol = -1, emailCol = -1, hoCol = -1, demCol = -1, tenCol = -1, fullNameCol = -1;
+    var mssvCol = _findCanonicalStudentColumn_(headerRow);
+    var codeCol = _findHeaderColumn_(headerRow, ['CODE', 'STUDENTCODE']);
+    var emailCol = -1, hoCol = -1, demCol = -1, tenCol = -1, fullNameCol = -1;
     for (var h = 0; h < headerRow.length; h++) {
       var hText = (headerRow[h] || '').toString().trim().toUpperCase();
       if (hText === 'EMAIL') {
         emailCol = h;
-      } else if (hText === 'MSSV' || hText === 'MÃ SV' || hText === 'MÃ SINH VIÊN' || hText === 'ROLLNUMBER' || hText === 'MEMBER' || hText === 'CODE') {
-        if (mssvCol === -1) mssvCol = h;
       } else if (hText === 'HỌ' || hText === 'SURNAME') {
         hoCol = h;
       } else if (hText === 'TÊN ĐỆM' || hText === 'MIDDLE NAME') {
@@ -1818,10 +2544,13 @@ function _handleStudentCheckIn(ss, params) {
     for (var i = headerRowIdx + 1; i < cData.length; i++) {
       var row = cData[i];
       var rowEmail = (emailCol >= 0 && row[emailCol] !== undefined) ? row[emailCol].toString().trim().toLowerCase() : '';
-      var mssv = (mssvCol >= 0 && row[mssvCol] !== undefined) ? row[mssvCol].toString().trim() : '';
+      var mssv = (mssvCol >= 0 && row[mssvCol] !== undefined) ? _normalizeStudentKey_(row[mssvCol]) : '';
+      var code = (codeCol >= 0 && row[codeCol] !== undefined) ? _normalizeStudentKey_(row[codeCol]) : mssv;
       var defEmail = mssv ? (mssv.toLowerCase() + '@fpt.edu.vn') : '';
       var mssvLower = mssv.toLowerCase();
-      var isMssvMatch = mssvLower && (email === mssvLower || email.indexOf(mssvLower) >= 0 || mssvLower.indexOf(email) >= 0);
+      var codeLower = code.toLowerCase();
+      var isMssvMatch = (mssvLower && (email === mssvLower || email.indexOf(mssvLower) >= 0 || mssvLower.indexOf(email) >= 0)) ||
+        (codeLower && (email === codeLower || email.indexOf(codeLower) >= 0 || codeLower.indexOf(email) >= 0));
 
       if ((rowEmail && (rowEmail === email || email.indexOf(rowEmail) >= 0)) ||
           (defEmail && defEmail === email) ||
@@ -1838,6 +2567,7 @@ function _handleStudentCheckIn(ss, params) {
         studentFound = {
           rollNumber: mssv,
           member: mssv,
+          code: code,
           fullName: fName || ('Sinh viên ' + mssv),
           email: rowEmail || email
         };
@@ -1856,6 +2586,7 @@ function _handleStudentCheckIn(ss, params) {
     // Ghi nhận vào sheet lưu check-in tạm _Qr_CheckIns
     var qrSheet = _getOrCreateQrCheckInsSheet(ss);
     var qrData = qrSheet.getDataRange().getValues();
+    var checkinMeta = _readAttendanceMetadata_(cSheet);
     var nowIso = new Date().toISOString();
     var todayStr = date || nowIso.slice(0, 10);
 
@@ -1895,8 +2626,14 @@ function _handleStudentCheckIn(ss, params) {
       var matchCls = qClassNorm === _normClass(cName) || qClassNorm.indexOf(_normClass(cName)) >= 0 || _normClass(cName).indexOf(qClassNorm) >= 0;
       var matchDt = !targetDateNorm || qDateNorm === targetDateNorm;
       var matchSl = isNaN(slot) || slot <= 0 || isNaN(qSlot) || qSlot === slot;
+      var qSession = parseInt(qRow[4], 10);
+      if (isNaN(qSession) && checkinMeta.startDate) {
+        var qDateObject = _parseAttendanceDate_(qDateNorm);
+        if (qDateObject) qSession = _calcSessionNo(checkinMeta.startDate, qDateObject, checkinMeta.days, checkinMeta.totalSessions);
+      }
+      var matchSession = qSession === sessionNo;
 
-      if (matchCls && matchDt && matchSl && qEmail === email) {
+      if (matchCls && matchDt && matchSl && matchSession && qEmail === email) {
         alreadyCheckedIn = true;
         break;
       }
@@ -1932,6 +2669,7 @@ function _handleGetQrStatus(ss, params) {
   try {
     var cName = (params.className || params.class || '').toString().trim();
     var slot = parseInt(params.slot || '1', 10);
+    var sessionNo = parseInt(params.session || params.sessionNumber || '1', 10);
     var date = (params.date || new Date().toISOString().slice(0, 10)).toString().trim();
 
     function _normClass(str) {
@@ -1956,6 +2694,8 @@ function _handleGetQrStatus(ss, params) {
 
     var targetDateNorm = _normDate(date);
     var targetClassNorm = _normClass(cName);
+    var classSheet = _findClassSheet_(ss, cName);
+    var qrMeta = _readAttendanceMetadata_(classSheet);
 
     var qrSheet = ss.getSheetByName('_Qr_CheckIns');
     var checkedInList = [];
@@ -1976,8 +2716,14 @@ function _handleGetQrStatus(ss, params) {
 
         var rSlot = parseInt(r[3], 10);
         var matchSlot = isNaN(slot) || slot <= 0 || isNaN(rSlot) || rSlot === slot;
+        var rSession = parseInt(r[4], 10);
+        if (isNaN(rSession) && qrMeta.startDate) {
+          var qrDateObject = _parseAttendanceDate_(rDateNorm);
+          if (qrDateObject) rSession = _calcSessionNo(qrMeta.startDate, qrDateObject, qrMeta.days, qrMeta.totalSessions);
+        }
+        var matchSession = rSession === sessionNo;
 
-        if (matchClass && matchDate && matchSlot) {
+        if (matchClass && matchDate && matchSlot && matchSession) {
           checkedInList.push({
             email: (r[5] || '').toString().trim().toLowerCase(),
             name: r[6] || '',
@@ -1990,6 +2736,7 @@ function _handleGetQrStatus(ss, params) {
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
       status: 'success',
+      sessionNumber: sessionNo,
       total: checkedInList.length,
       data: checkedInList
     })).setMimeType(ContentService.MimeType.JSON);

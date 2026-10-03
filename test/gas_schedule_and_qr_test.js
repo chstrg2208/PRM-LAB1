@@ -239,7 +239,8 @@ console.log('=== RUNNING GOOGLE APPS SCRIPT SCHEDULE & QR TESTS ===\n');
       action: 'getQrStatus',
       className: 'SE1801',
       slot: '1',
-      date: '2026-09-21'
+      date: '2026-09-21',
+      session: '5'
     }
   };
   const statusRes = JSON.parse(sandbox.doGet(statusReq));
@@ -247,6 +248,32 @@ console.log('=== RUNNING GOOGLE APPS SCRIPT SCHEDULE & QR TESTS ===\n');
   assert.strictEqual(statusRes.data.length, 1);
   assert.strictEqual(statusRes.data[0].email, 'annvse170123@fpt.edu.vn');
   console.log('  -> PASS: getQrStatus trả về đúng email vừa check-in');
+
+  // Case 2.4: Cùng lớp/ngày/slot nhưng khác session phải được tách riêng
+  const secondSessionReq = {
+    parameter: {
+      action: 'studentCheckIn',
+      className: 'SE1801',
+      slot: '1',
+      session: '6',
+      date: '2026-09-21',
+      token: 'FAP_654321',
+      email: 'annvse170123@fpt.edu.vn'
+    }
+  };
+  const secondSessionRes = JSON.parse(sandbox.doGet(secondSessionReq));
+  assert.strictEqual(secondSessionRes.success, true);
+  assert.strictEqual(secondSessionRes.data.alreadyCheckedIn, false);
+
+  const session5Res = JSON.parse(sandbox.doGet({ parameter: {
+    action: 'getQrStatus', className: 'SE1801', slot: '1', date: '2026-09-21', session: '5'
+  }}));
+  const session6Res = JSON.parse(sandbox.doGet({ parameter: {
+    action: 'getQrStatus', className: 'SE1801', slot: '1', date: '2026-09-21', session: '6'
+  }}));
+  assert.strictEqual(session5Res.data.length, 1);
+  assert.strictEqual(session6Res.data.length, 1);
+  console.log('  -> PASS: QR status và duplicate check được cô lập theo session');
 }
 
 console.log('\n=== ALL SCHEDULE & QR GAS TESTS PASSED ===');

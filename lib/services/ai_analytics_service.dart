@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
+
 import '../models/student.dart';
 import '../models/attendance_record.dart';
 import '../models/class_session.dart';
@@ -37,11 +39,94 @@ class DayStat {
   });
 }
 
-enum AnalyticsDataStatus {
-  unconfigured,
-  empty,
-  loaded,
-  error,
+enum AnalyticsDataStatus { unconfigured, empty, loaded, error }
+
+enum AiSessionStatus { notYet, inProgress, completed }
+
+/// Dữ liệu của đúng buổi/lớp đang được chọn để trả lời các câu hỏi hiện tại.
+/// Không dùng historyLogs thay thế cho context này vì historyLogs chỉ phục vụ
+/// phân tích xu hướng theo nhiều buổi.
+class AiAttendanceContext {
+  final String className;
+  final DateTime date;
+  final int slot;
+  final int sessionNumber;
+  final AiSessionStatus sessionStatus;
+  final List<AttendanceRecord> records;
+
+  const AiAttendanceContext({
+    required this.className,
+    required this.date,
+    required this.slot,
+    required this.sessionNumber,
+    required this.sessionStatus,
+    required this.records,
+  });
+
+  factory AiAttendanceContext.fromSession({
+    required String className,
+    required DateTime date,
+    required int slot,
+    required int sessionNumber,
+    required bool isSessionCompleted,
+    required List<AttendanceRecord> records,
+  }) {
+    final hasTerminalRecord = records.any(
+      (record) => record.status != AttendanceStatus.notYet,
+    );
+    final status = isSessionCompleted
+        ? AiSessionStatus.completed
+        : hasTerminalRecord
+        ? AiSessionStatus.inProgress
+        : AiSessionStatus.notYet;
+
+    return AiAttendanceContext(
+      className: className,
+      date: date,
+      slot: slot,
+      sessionNumber: sessionNumber,
+      sessionStatus: status,
+      records: List.unmodifiable(records),
+    );
+  }
+
+  List<AttendanceRecord> get absentRecords => records
+      .where((record) => record.status == AttendanceStatus.absent)
+      .toList(growable: false);
+
+  List<AttendanceRecord> get presentRecords => records
+      .where((record) => record.status == AttendanceStatus.present)
+      .toList(growable: false);
+
+  List<AttendanceRecord> get lateRecords => records
+      .where((record) => record.status == AttendanceStatus.late)
+      .toList(growable: false);
+
+  List<AttendanceRecord> get attendedRecords => records
+      .where(
+        (record) =>
+            record.status == AttendanceStatus.present ||
+            record.status == AttendanceStatus.late,
+      )
+      .toList(growable: false);
+
+  List<AttendanceRecord> get notYetRecords => records
+      .where((record) => record.status == AttendanceStatus.notYet)
+      .toList(growable: false);
+
+  bool get hasTerminalRecords =>
+      records.any((record) => record.status != AttendanceStatus.notYet);
+
+  String get statusLabel {
+    switch (sessionStatus) {
+      case AiSessionStatus.notYet:
+        return 'Chưa điểm danh';
+      case AiSessionStatus.inProgress:
+        return 'Đang điểm danh';
+      case AiSessionStatus.completed:
+        return 'Đã điểm danh';
+    }
+  }
 }
 
 class AiAttendanceReport {
@@ -105,7 +190,10 @@ class AiAnalyticsService {
         for (final log in historyLogs) {
           final slot = int.tryParse(log['slot']?.toString() ?? '1') ?? 1;
           if (slot >= 1 && slot <= 6) {
-            final statusStr = (log['status'] ?? '').toString().toLowerCase().trim();
+            final statusStr = (log['status'] ?? '')
+                .toString()
+                .toLowerCase()
+                .trim();
             final isAbsent = statusStr == 'absent' || statusStr == 'vắng';
 
             slotTotals[slot] = (slotTotals[slot] ?? 0) + 1;
@@ -165,7 +253,9 @@ class AiAnalyticsService {
       final abs = slotAbsents[s] ?? 0;
       final tot = slotTotals[s] ?? 0;
       final rate = tot > 0 ? (abs / tot) * 100 : 0.0;
-      slotStats.add(SlotStat(slot: s, absentCount: abs, totalCount: tot, absentRate: rate));
+      slotStats.add(
+        SlotStat(slot: s, absentCount: abs, totalCount: tot, absentRate: rate),
+      );
     }
 
     // Tính toán Day Stats
@@ -183,13 +273,15 @@ class AiAnalyticsService {
       final abs = dayAbsents[d] ?? 0;
       final tot = dayTotals[d] ?? 0;
       final rate = tot > 0 ? (abs / tot) * 100 : 0.0;
-      dayStats.add(DayStat(
-        weekday: d,
-        dayName: dayNames[d] ?? 'Thứ $d',
-        absentCount: abs,
-        totalCount: tot,
-        absentRate: rate,
-      ));
+      dayStats.add(
+        DayStat(
+          weekday: d,
+          dayName: dayNames[d] ?? 'Thứ $d',
+          absentCount: abs,
+          totalCount: tot,
+          absentRate: rate,
+        ),
+      );
     }
 
     // Sắp xếp tìm worstSlot và worstDay
@@ -211,7 +303,9 @@ class AiAnalyticsService {
 
     // Lọc sinh viên Fail Attendance (> 20%) và Warning (15% - 20% hoặc đã hết lượt vắng)
     final failedStudents = students.where((s) => s.isBanned).toList();
-    final warningStudents = students.where((s) => s.isWarning || s.hasExhaustedAbsenceAllowance).toList();
+    final warningStudents = students
+        .where((s) => s.isWarning || s.hasExhaustedAbsenceAllowance)
+        .toList();
 
     // Tỷ lệ chuyên cần chung từ sinh viên
     int totalAbsences = students.fold(0, (sum, s) => sum + s.absentSlots);
@@ -230,7 +324,8 @@ class AiAnalyticsService {
         'Vui lòng cấu hình kết nối Google Apps Script để tải dữ liệu lịch sử điểm danh.',
       ];
     } else if (effectiveStatus == AnalyticsDataStatus.error) {
-      aiSummary = 'Lỗi tải dữ liệu lịch sử điểm danh: ${errorMessage ?? "Không thể kết nối cơ sở dữ liệu."}';
+      aiSummary =
+          'Lỗi tải dữ liệu lịch sử điểm danh: ${errorMessage ?? "Không thể kết nối cơ sở dữ liệu."}';
       recommendations = [
         'Kiểm tra lại kết nối mạng hoặc cấu hình URL Google Apps Script và thử lại.',
       ];
@@ -258,7 +353,9 @@ class AiAnalyticsService {
           '📅 ${worstDay.dayName} là ngày sinh viên có xu hướng vắng nhiều nhất (${worstDay.absentRate.toStringAsFixed(1)}%, ${worstDay.absentCount} lượt vắng). Nên tăng cường tương tác hoặc chấm điểm bài tập nhỏ trong ngày này.',
       ];
       if (recommendations.isEmpty) {
-        recommendations = ['Lớp học có chuyên cần xuất sắc, chưa ghi nhận lượt vắng nào trong lịch sử.'];
+        recommendations = [
+          'Lớp học có chuyên cần xuất sắc, chưa ghi nhận lượt vắng nào trong lịch sử.',
+        ];
       }
     }
 
@@ -278,23 +375,156 @@ class AiAnalyticsService {
     );
   }
 
+  static bool _hasUsableHistory(AiAttendanceReport report) {
+    return report.hasHistory &&
+        report.status == AnalyticsDataStatus.loaded &&
+        report.slotStats.any((stat) => stat.totalCount > 0);
+  }
+
+  static String _formatDate(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
+  static String _studentLabel(
+    AttendanceRecord record,
+    List<Student>? students,
+  ) {
+    final student = students
+        ?.where((s) => s.rollNumber == record.rollNumber)
+        .firstOrNull;
+    if (student == null) return record.rollNumber;
+    return '${student.member} - ${student.fullName}';
+  }
+
+  static String _studentList(
+    List<AttendanceRecord> records,
+    List<Student>? students,
+  ) {
+    if (records.isEmpty) return 'Không có';
+    return records
+        .map((record) => '• ${_studentLabel(record, students)}')
+        .join('\n');
+  }
+
+  static String _answerCurrentSessionQuestion(
+    String query,
+    AiAttendanceContext context,
+    List<Student>? students,
+  ) {
+    final q = query.toLowerCase().trim();
+    final asksNotYet = RegExp(
+      r'chưa\s*(điểm\s*danh|quét|có\s*mặt)|chưa\s+được\s+điểm\s+danh|chưa\s+check[-\s]?in',
+      caseSensitive: false,
+    ).hasMatch(q);
+    final asksAbsent = RegExp(
+      r'\b(ai|sinh\s+viên|sv|danh\s+sách).*\b(vắng|nghỉ)\b|\b(vắng|nghỉ)\b.*\b(ai|sinh\s+viên|sv)\b',
+      caseSensitive: false,
+    ).hasMatch(q);
+    final asksPresent = RegExp(
+      r'\b(ai|sinh\s+viên|sv).*\b(có\s+mặt|đi\s+học|đã\s+điểm\s+danh)\b',
+      caseSensitive: false,
+    ).hasMatch(q);
+    final asksStatus = RegExp(
+      r'(buổi|phiên|hôm\s+nay|hiện\s+tại).*(điểm\s+danh|chốt|xong|đủ\s+sĩ\s+số)|điểm\s+danh.*(chưa|xong|đủ)',
+      caseSensitive: false,
+    ).hasMatch(q);
+
+    final dateLabel = _formatDate(context.date);
+    final sessionLabel =
+        'ngày $dateLabel, Slot ${context.slot}, buổi ${context.sessionNumber}';
+
+    if (asksStatus) {
+      if (context.sessionStatus == AiSessionStatus.notYet) {
+        return '🕘 **Buổi $sessionLabel chưa điểm danh.** Chưa có sinh viên nào được ghi nhận Có mặt/Vắng.';
+      }
+      if (context.sessionStatus == AiSessionStatus.inProgress) {
+        return '⏳ **Buổi $sessionLabel đang điểm danh.** Đã ghi nhận '
+            '${context.attendedRecords.length + context.absentRecords.length}/${context.records.length} sinh viên; '
+            'còn ${context.notYetRecords.length} sinh viên chưa có trạng thái cuối.';
+      }
+      return '✅ **Buổi $sessionLabel đã điểm danh.** '
+          'Có mặt: ${context.attendedRecords.length}, Vắng: ${context.absentRecords.length}.';
+    }
+
+    final isCurrentQuestion = asksNotYet || asksAbsent || asksPresent;
+    if (!isCurrentQuestion) {
+      return '';
+    }
+
+    if (context.sessionStatus == AiSessionStatus.notYet &&
+        context.hasTerminalRecords == false) {
+      return '🕘 **Buổi $sessionLabel chưa có dữ liệu điểm danh.** '
+          'Chưa thể kết luận ai Có mặt hoặc Vắng.';
+    }
+
+    if (asksNotYet) {
+      if (context.notYetRecords.isEmpty) {
+        return '✅ **Không còn sinh viên nào chưa điểm danh** trong buổi $sessionLabel.';
+      }
+      return '🕘 **Sinh viên chưa điểm danh trong buổi $sessionLabel:** '
+          '${context.notYetRecords.length} bạn\n${_studentList(context.notYetRecords, students)}';
+    }
+
+    if (asksAbsent) {
+      if (context.absentRecords.isEmpty) {
+        return '✅ **Không ghi nhận sinh viên vắng** trong buổi $sessionLabel.';
+      }
+      return '❌ **Sinh viên vắng trong buổi $sessionLabel:** '
+          '${context.absentRecords.length} bạn\n${_studentList(context.absentRecords, students)}';
+    }
+
+    if (context.attendedRecords.isEmpty) {
+      return 'ℹ️ **Chưa ghi nhận sinh viên Có mặt** trong buổi $sessionLabel.';
+    }
+    return '✅ **Sinh viên Có mặt trong buổi $sessionLabel:** '
+        '${context.attendedRecords.length} bạn\n${_studentList(context.attendedRecords, students)}';
+  }
+
   /// Trả lời câu hỏi tương tác người dùng
-  static String answerAiQuestion(String query, AiAttendanceReport report, {List<Student>? students, ClassSchedule? schedule}) {
+  static String answerAiQuestion(
+    String query,
+    AiAttendanceReport report, {
+    List<Student>? students,
+    ClassSchedule? schedule,
+    AiAttendanceContext? attendanceContext,
+  }) {
     final q = query.toLowerCase().trim();
 
+    if (attendanceContext != null) {
+      final currentAnswer = _answerCurrentSessionQuestion(
+        query,
+        attendanceContext,
+        students,
+      );
+      if (currentAnswer.isNotEmpty) return currentAnswer;
+    }
+
+    final hasUsableHistory = _hasUsableHistory(report);
+
     // 1. Chào hỏi & Thăm hỏi tự nhiên
-    if (RegExp(r'^(xin\s+)?chào|\b(hello|hi|hey|alo)\b|\bchúc\b|good\s+(morning|afternoon|evening)|bạn\s+ơi|bot\s+ơi', caseSensitive: false).hasMatch(q)) {
+    if (RegExp(
+      r'^(xin\s+)?chào|\b(hello|hi|hey|alo)\b|\bchúc\b|good\s+(morning|afternoon|evening)|bạn\s+ơi|bot\s+ơi',
+      caseSensitive: false,
+    ).hasMatch(q)) {
+      final trendSummary = hasUsableHistory
+          ? '• Slot vắng cao nhất: **Slot ${report.worstSlot.slot}** (${report.worstSlot.absentRate.toStringAsFixed(1)}% vắng)\n'
+                '• Thứ vắng nhiều nhất: **${report.worstDay.dayName}** (${report.worstDay.absentRate.toStringAsFixed(1)}% vắng)'
+          : '• Chưa đủ dữ liệu lịch sử để kết luận xu hướng theo Slot hoặc Thứ';
       return '👋 **Xin chào Thầy/Cô!** Em là **FAP Attendance Assistant** - Trợ lý AI hỗ trợ quản lý và phân tích chuyên cần sinh viên FPTU.\n\n'
           '📊 **Tổng quan lớp hiện tại:**\n'
           '• Tỷ lệ chuyên cần chung: **${report.overallAttendanceRate.toStringAsFixed(1)}%**\n'
-          '• Slot vắng cao nhất: **Slot ${report.worstSlot.slot}** (${report.worstSlot.absentRate.toStringAsFixed(1)}% vắng)\n'
-          '• Thứ vắng nhiều nhất: **${report.worstDay.dayName}** (${report.worstDay.absentRate.toStringAsFixed(1)}% vắng)\n'
+          '$trendSummary\n'
           '• Tình trạng cấm thi (>20%): **${report.failedStudents.length} sinh viên** | Nguy cơ (15-20%): **${report.warningStudents.length} sinh viên**\n\n'
-          '💡 Thầy/Cô có thể hỏi em về danh sách sinh viên vắng, phân tích theo slot/thứ, tra cứu theo tên/MSSV hoặc đề xuất giải pháp cải thiện!';
+          '💡 Thầy/Cô có thể hỏi em về buổi hiện tại, sinh viên vắng, phân tích slot/thứ, tra cứu MSSV hoặc đề xuất giải pháp.';
     }
 
     // 2. Hỏi về danh tính AI (bạn là ai, ai tạo ra bạn)
-    if (RegExp(r'bạn\s+là\s+ai|who\s+are\s+you|bạn\s+tên\s+gì|ai\s+tạo|giới\s+thiệu\s+bạn', caseSensitive: false).hasMatch(q)) {
+    if (RegExp(
+      r'bạn\s+là\s+ai|who\s+are\s+you|bạn\s+tên\s+gì|ai\s+tạo|giới\s+thiệu\s+bạn',
+      caseSensitive: false,
+    ).hasMatch(q)) {
       return '🤖 **Em là FAP AI Assistant!**\n'
           'Trợ lý trí tuệ nhân tạo chuyên sâu về quản lý điểm danh và phân tích học vụ tại Đại học FPT.\n\n'
           'Em có khả năng:\n'
@@ -305,13 +535,19 @@ class AiAnalyticsService {
     }
 
     // 3. Cảm ơn & Lịch sự
-    if (RegExp(r'cảm\s+ơn|thank|tks|tạm\s+biệt|bye|ok\b|tốt\s+lắm|hay\s+quá|good\s+job', caseSensitive: false).hasMatch(q)) {
+    if (RegExp(
+      r'cảm\s+ơn|thank|tks|tạm\s+biệt|bye|ok\b|tốt\s+lắm|hay\s+quá|good\s+job',
+      caseSensitive: false,
+    ).hasMatch(q)) {
       return '😊 **Rất vui được đồng hành cùng Thầy/Cô!**\n'
           'Chúc Thầy/Cô có buổi dạy tràn đầy năng lượng và hiệu quả. Nếu cần kiểm tra thêm dữ liệu lớp học, Thầy/Cô cứ nhắn em nhé!';
     }
 
     // 4. Hướng dẫn sử dụng
-    if (RegExp(r'hướng\s+dẫn|giúp|help|chức\s+năng|cách\s+dùng|làm\s+được\s+gì', caseSensitive: false).hasMatch(q)) {
+    if (RegExp(
+      r'hướng\s+dẫn|giúp|help|chức\s+năng|cách\s+dùng|làm\s+được\s+gì',
+      caseSensitive: false,
+    ).hasMatch(q)) {
       return '🛠️ **Gợi ý các câu hỏi Thầy/Cô có thể hỏi em:**\n'
           '• *"Slot mấy sinh viên nghỉ nhiều nhất?"*\n'
           '• *"Thứ mấy sinh viên hay vắng?"*\n'
@@ -337,21 +573,21 @@ class AiAnalyticsService {
           final status = isFail
               ? '⛔ **CẤM THI (Fail Attendance - vắng > 20%)**'
               : (isExact20
-                  ? '⚠️ **CHẠM NGƯỠNG (Hết số buổi vắng được phép - đúng 20%)**'
-                  : (isExhausted
-                      ? '⚠️ **HẾT LƯỢT VẮNG (Đã hết số buổi vắng được phép - ${s.absentRate.toStringAsFixed(1)}%)**'
-                      : (isWarn
-                          ? '⚠️ **CẢNH BÁO NGUY CƠ (Vắng 15% - 20%)**'
-                          : '✅ **AN TOÀN (Đi học đầy đủ / Chuyên cần tốt)**')));
+                    ? '⚠️ **CHẠM NGƯỠNG (Hết số buổi vắng được phép - đúng 20%)**'
+                    : (isExhausted
+                          ? '⚠️ **HẾT LƯỢT VẮNG (Đã hết số buổi vắng được phép - ${s.absentRate.toStringAsFixed(1)}%)**'
+                          : (isWarn
+                                ? '⚠️ **CẢNH BÁO NGUY CƠ (Vắng 15% - 20%)**'
+                                : '✅ **AN TOÀN (Đi học đầy đủ / Chuyên cần tốt)**')));
           final maxAllowed = s.maxAllowedAbsences;
           final remaining = s.remainingAllowedAbsences;
           final advice = isFail
               ? 'Sinh viên đã vượt hạn mức vắng cho phép ($maxAllowed buổi) và không đủ điều kiện thi cuối môn.'
               : (remaining == 0
-                  ? 'Sinh viên đã dùng hết số buổi vắng được phép; vắng thêm 1 buổi sẽ vượt ngưỡng và bị cấm thi!'
-                  : (remaining == 1
-                      ? 'Sinh viên chỉ còn được phép vắng tối đa **1 buổi nữa** trước khi chạm mốc tối đa!'
-                      : 'Sinh viên còn được phép vắng tối đa **$remaining buổi**.'));
+                    ? 'Sinh viên đã dùng hết số buổi vắng được phép; vắng thêm 1 buổi sẽ vượt ngưỡng và bị cấm thi!'
+                    : (remaining == 1
+                          ? 'Sinh viên chỉ còn được phép vắng tối đa **1 buổi nữa** trước khi chạm mốc tối đa!'
+                          : 'Sinh viên còn được phép vắng tối đa **$remaining buổi**.'));
 
           return '👤 **Hồ sơ chuyên cần sinh viên:**\n'
               '━━━━━━━━━━━━━━━━━━━━━━━━\n'
@@ -368,11 +604,22 @@ class AiAnalyticsService {
     }
 
     // 6. Sinh viên đi học đầy đủ / chăm chỉ
-    if (RegExp(r'chăm|đầy\s+đủ|100%|không\s+vắng|chuyên\s+cần\s+tốt', caseSensitive: false).hasMatch(q)) {
+    if (RegExp(
+      r'chăm|đầy\s+đủ|100%|không\s+vắng|chuyên\s+cần\s+tốt',
+      caseSensitive: false,
+    ).hasMatch(q)) {
+      if (!hasUsableHistory) {
+        return '🌟 **Chưa đủ dữ liệu điểm danh** để xác định danh sách sinh viên đi học 100%. Vui lòng hoàn tất hoặc nạp thêm dữ liệu điểm danh.';
+      }
       if (students != null) {
         final goodStudents = students.where((s) => s.absentSlots == 0).toList();
         if (goodStudents.isNotEmpty) {
-          final names = goodStudents.take(8).map((s) => '• **${s.member} - ${s.fullName}** (Vắng 0 buổi - 100%)').join('\n');
+          final names = goodStudents
+              .take(8)
+              .map(
+                (s) => '• **${s.member} - ${s.fullName}** (Vắng 0 buổi - 100%)',
+              )
+              .join('\n');
           return '🌟 **Sinh viên đi học đầy đủ 100% (${goodStudents.length} bạn):**\n$names'
               '${goodStudents.length > 8 ? '\n• ... và ${goodStudents.length - 8} sinh viên khác.' : ''}\n\n'
               '👏 Rất đáng khen ngợi! Giảng viên có thể cộng điểm khuyến khích hoặc tuyên dương trước lớp.';
@@ -382,8 +629,13 @@ class AiAnalyticsService {
     }
 
     // 7. Hỏi về Slot / Tiết học
-    if (q.contains('slot') || q.contains('tiết') || RegExp(r'\bca\b').hasMatch(q) || q.contains('giờ')) {
-      if (!report.hasHistory || report.status == AnalyticsDataStatus.empty || report.worstSlot.totalCount == 0) {
+    if (q.contains('slot') ||
+        q.contains('tiết') ||
+        RegExp(r'\bca\b').hasMatch(q) ||
+        q.contains('giờ')) {
+      if (!report.hasHistory ||
+          report.status == AnalyticsDataStatus.empty ||
+          report.worstSlot.totalCount == 0) {
         return '⏰ **Phân tích Slot:** Chưa đủ dữ liệu thống kê lịch sử để phân tích xu hướng vắng theo Slot học.';
       }
       return '⏰ **Phân tích Slot vắng nhiều nhất:**\n'
@@ -395,8 +647,13 @@ class AiAnalyticsService {
     }
 
     // 8. Hỏi về Thứ / Ngày trong tuần
-    if (q.contains('thứ') || q.contains('ngày') || q.contains('day') || q.contains('tuần')) {
-      if (!report.hasHistory || report.status == AnalyticsDataStatus.empty || report.worstDay.totalCount == 0) {
+    if (q.contains('thứ') ||
+        q.contains('ngày') ||
+        q.contains('day') ||
+        q.contains('tuần')) {
+      if (!report.hasHistory ||
+          report.status == AnalyticsDataStatus.empty ||
+          report.worstDay.totalCount == 0) {
         return '📅 **Phân tích Thứ trong tuần:** Chưa đủ dữ liệu thống kê lịch sử để phân tích xu hướng ngày vắng trong tuần.';
       }
       return '📅 **Phân tích Thứ vắng nhiều nhất trong tuần:**\n'
@@ -408,17 +665,26 @@ class AiAnalyticsService {
     }
 
     // 9. Danh sách Cấm thi / Fail attendance / Nguy cơ
-    if (RegExp(r'fail|cấm\s+thi|thằng\s+nào|ai\s+(vắng|nghỉ|bị|fail)|danh\s+sách\s+vắng|nguy\s+cơ|cảnh\s+báo|bị\s+cấm|rớt', caseSensitive: false).hasMatch(q)) {
+    if (RegExp(
+      r'fail|cấm\s+thi|thằng\s+nào|ai\s+(vắng|nghỉ|bị|fail)|danh\s+sách\s+vắng|nguy\s+cơ|cảnh\s+báo|bị\s+cấm|rớt',
+      caseSensitive: false,
+    ).hasMatch(q)) {
       if (report.failedStudents.isEmpty && report.warningStudents.isEmpty) {
         return '🎉 **Tuyệt vời!** Hiện tại lớp chưa có sinh viên nào bị Fail Attendance (cấm thi) hoặc chạm ngưỡng cảnh báo!';
       }
 
       final buffer = StringBuffer();
       if (report.failedStudents.isNotEmpty) {
-        buffer.writeln('🚫 **Danh sách sinh viên FAIL ATTENDANCE (Cấm thi > 20%):**');
-        buffer.writeln('Hiện có **${report.failedStudents.length} sinh viên** đã vượt ngưỡng vắng 20%:');
+        buffer.writeln(
+          '🚫 **Danh sách sinh viên FAIL ATTENDANCE (Cấm thi > 20%):**',
+        );
+        buffer.writeln(
+          'Hiện có **${report.failedStudents.length} sinh viên** đã vượt ngưỡng vắng 20%:',
+        );
         for (final s in report.failedStudents) {
-          buffer.writeln('• **${s.member} - ${s.fullName}**: Vắng ${s.absentSlots}/${s.totalSlots} buổi (${s.absentRate.toStringAsFixed(0)}%) - ⛔ **CẤM THI**');
+          buffer.writeln(
+            '• **${s.member} - ${s.fullName}**: Vắng ${s.absentSlots}/${s.totalSlots} buổi (${s.absentRate.toStringAsFixed(0)}%) - ⛔ **CẤM THI**',
+          );
         }
       }
 
@@ -426,16 +692,27 @@ class AiAnalyticsService {
         if (buffer.isNotEmpty) buffer.writeln('');
         buffer.writeln('⚠️ **Sinh viên trong diện NGUY CƠ CAO (15% - 20%):**');
         for (final s in report.warningStudents) {
-          buffer.writeln('• **${s.member} - ${s.fullName}**: Vắng ${s.absentSlots}/${s.totalSlots} buổi (${s.absentRate.toStringAsFixed(0)}%) - Chỉ còn 0-1 buổi vắng!');
+          buffer.writeln(
+            '• **${s.member} - ${s.fullName}**: Vắng ${s.absentSlots}/${s.totalSlots} buổi (${s.absentRate.toStringAsFixed(0)}%) - Chỉ còn 0-1 buổi vắng!',
+          );
         }
       }
 
-      buffer.writeln('\n📢 *Đề xuất:* Giảng viên lập biên bản báo phòng Khảo thí / CTSV và gửi thông báo nhắc nhở các bạn sắp vượt ngưỡng.');
+      buffer.writeln(
+        '\n📢 *Đề xuất:* Giảng viên lập biên bản báo phòng Khảo thí / CTSV và gửi thông báo nhắc nhở các bạn sắp vượt ngưỡng.',
+      );
       return buffer.toString();
     }
 
     // 10. Tư vấn giải pháp / Khuyến nghị
-    if (RegExp(r'giải\s+pháp|lời\s+khuyên|tư\s+vấn|khuyến\s+nghị|làm\s+sao|cải\s+thiện|biện\s+pháp|đề\s+xuất', caseSensitive: false).hasMatch(q)) {
+    if (RegExp(
+      r'giải\s+pháp|lời\s+khuyên|tư\s+vấn|khuyến\s+nghị|làm\s+sao|cải\s+thiện|biện\s+pháp|đề\s+xuất',
+      caseSensitive: false,
+    ).hasMatch(q)) {
+      if (!hasUsableHistory) {
+        return '💡 **Chưa đủ dữ liệu lịch sử** để đề xuất thời điểm vắng cao điểm. '
+            'Thầy/Cô có thể bắt đầu bằng việc hoàn tất một vài buổi điểm danh để hệ thống phân tích chính xác hơn.';
+      }
       return '💡 **Đề xuất & Giải pháp nâng cao chuyên cần cho lớp học:**\n\n'
           '1. **Tập trung vào ${report.worstDay.dayName} & Slot ${report.worstSlot.slot}:** Đây là thời điểm sinh viên có tỷ lệ vắng cao nhất (**${report.worstSlot.absentRate.toStringAsFixed(1)}%**). Giảng viên nên tổ chức mini-quiz tính điểm cộng hoặc điểm danh vào 15 phút đầu giờ.\n'
           '2. **Can thiệp sớm nhóm nguy cơ:** Lớp hiện có **${report.warningStudents.length} sinh viên cảnh báo** và **${report.failedStudents.length} sinh viên cấm thi**. Hãy trao đổi trực tiếp hoặc gửi email cảnh báo trước khi các em chạm mốc 20%.\n'
@@ -443,20 +720,29 @@ class AiAnalyticsService {
     }
 
     // 11. Báo cáo tổng quan / Chuyên cần
-    if (RegExp(r'tổng\s+quan|tình\s+hình|báo\s+cáo|tỷ\s+lệ|chuyên\s+cần|overview', caseSensitive: false).hasMatch(q)) {
+    if (RegExp(
+      r'tổng\s+quan|tình\s+hình|báo\s+cáo|tỷ\s+lệ|chuyên\s+cần|overview',
+      caseSensitive: false,
+    ).hasMatch(q)) {
+      final trendLines = hasUsableHistory
+          ? '• Slot sinh viên nghỉ nhiều nhất: **Slot ${report.worstSlot.slot}** (${report.worstSlot.absentRate.toStringAsFixed(1)}%)\n'
+                '• Thứ vắng nhiều nhất trong tuần: **${report.worstDay.dayName}** (${report.worstDay.absentRate.toStringAsFixed(1)}%)'
+          : '• Phân tích Slot/Thứ: **Chưa đủ dữ liệu lịch sử**';
       return '📊 **Báo cáo tổng quan chuyên cần lớp học:**\n'
           '• Tỷ lệ chuyên cần trung bình toàn lớp: **${report.overallAttendanceRate.toStringAsFixed(1)}%**\n'
-          '• Slot sinh viên nghỉ nhiều nhất: **Slot ${report.worstSlot.slot}** (${report.worstSlot.slotTime}) với **${report.worstSlot.absentRate.toStringAsFixed(1)}%**\n'
-          '• Thứ vắng nhiều nhất trong tuần: **${report.worstDay.dayName}** với **${report.worstDay.absentRate.toStringAsFixed(1)}%**\n'
+          '$trendLines\n'
           '• Số sinh viên bị cấm thi (> 20%): **${report.failedStudents.length} sinh viên**\n'
           '• Số sinh viên cảnh báo (15-20%): **${report.warningStudents.length} sinh viên**\n\n'
           '${report.aiSummary}';
     }
 
     // Default Fallback
+    final fallbackTrend = hasUsableHistory
+        ? 'Slot ${report.worstSlot.slot} và ${report.worstDay.dayName} là các mốc thời gian vắng cao điểm nhất.'
+        : 'Chưa đủ dữ liệu lịch sử để xác định Slot hoặc Thứ vắng cao điểm.';
     return '🤖 **Em đã ghi nhận câu hỏi:** *"$query"*\n\n'
         'Hiện tại lớp đang đạt tỷ lệ chuyên cần **${report.overallAttendanceRate.toStringAsFixed(1)}%**. '
-        'Slot ${report.worstSlot.slot} và ${report.worstDay.dayName} là các mốc thời gian vắng cao điểm nhất, '
+        '$fallbackTrend\n'
         'có **${report.failedStudents.length} sinh viên** đã cấm thi và **${report.warningStudents.length} bạn** cận cấm thi.\n\n'
         '💡 *Gợi ý:* Thầy/Cô có thể hỏi các câu hỏi như: *"Thứ mấy vắng nhiều?"*, *"Slot mấy vắng nhiều?"*, *"Danh sách cấm thi"*, *"Tra cứu sinh viên [Tên/MSSV]"*, hoặc *"Lời khuyên cải thiện chuyên cần"*.\n'
         '✨ *Mẹo:* Nhập Google Gemini API Key tại tab **Cài Đặt** để kích hoạt trí tuệ nhân tạo Gemini 1.5 Flash trò chuyện tự do!';
@@ -470,7 +756,9 @@ class AiAnalyticsService {
     }
 
     try {
-      final listUrl = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey');
+      final listUrl = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey',
+      );
       final res = await http.get(listUrl).timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -480,7 +768,9 @@ class AiAnalyticsService {
               final methods = (m['supportedGenerationMethods'] as List?) ?? [];
               return methods.contains('generateContent');
             })
-            .map((m) => (m['name'] as String? ?? '').replaceFirst('models/', ''))
+            .map(
+              (m) => (m['name'] as String? ?? '').replaceFirst('models/', ''),
+            )
             .where((m) => m.isNotEmpty)
             .toList();
 
@@ -528,36 +818,67 @@ class AiAnalyticsService {
     required String prompt,
     required AiAttendanceReport report,
     required List<Student> students,
+    required AiAttendanceContext attendanceContext,
     ClassSchedule? schedule,
   }) async {
     final cleanKey = apiKey.trim();
     if (cleanKey.isEmpty) {
-      return answerAiQuestion(prompt, report, students: students, schedule: schedule);
+      return answerAiQuestion(
+        prompt,
+        report,
+        students: students,
+        schedule: schedule,
+        attendanceContext: attendanceContext,
+      );
     }
 
     try {
-      final studentSummary = students.map((s) {
-        final status = s.trainingStatusLabel;
-        return '- MSSV: ${s.member}, Họ tên: ${s.fullName} (Code: ${s.code}), Vắng: ${s.absentSlots}/${s.totalSlots} (${s.absentRate.toStringAsFixed(1)}%) -> $status';
-      }).join('\n');
+      final studentSummary = students
+          .map((s) {
+            final status = s.trainingStatusLabel;
+            return '- MSSV: ${s.member}, Họ tên: ${s.fullName} (Code: ${s.code}), Vắng: ${s.absentSlots}/${s.totalSlots} (${s.absentRate.toStringAsFixed(1)}%) -> $status';
+          })
+          .join('\n');
 
-      final historyStatusText = report.hasHistory && report.worstSlot.totalCount > 0
+      final historyStatusText =
+          report.hasHistory && report.worstSlot.totalCount > 0
           ? '- Slot vắng nhiều nhất: Slot ${report.worstSlot.slot} (${report.worstSlot.slotTime}) với ${report.worstSlot.absentCount} lượt vắng (${report.worstSlot.absentRate.toStringAsFixed(1)}%)\n'
-              '- Thứ vắng nhiều nhất trong tuần: ${report.worstDay.dayName} với ${report.worstDay.absentCount} lượt vắng (${report.worstDay.absentRate.toStringAsFixed(1)}%)'
+                '- Thứ vắng nhiều nhất trong tuần: ${report.worstDay.dayName} với ${report.worstDay.absentCount} lượt vắng (${report.worstDay.absentRate.toStringAsFixed(1)}%)'
           : '- Phân tích theo Slot & Thứ: Chưa đủ dữ liệu thống kê lịch sử để xác định xu hướng.';
 
       final scheduleSection = schedule != null
           ? '- Môn học: ${schedule.subjectCode}\n'
-            '- Phòng học: ${schedule.room}\n'
-            '- Lịch học: ${schedule.daysOfWeek} (Slot ${schedule.slot}: ${schedule.slotTime})\n'
-            '- Tiến độ buổi học: Buổi ${schedule.currentSession}/${schedule.totalSessions}\n'
+                '- Phòng học: ${schedule.room}\n'
+                '- Lịch học: ${schedule.daysOfWeek} (Slot ${schedule.slot}: ${schedule.slotTime})\n'
+                '- Tiến độ buổi học: Buổi ${schedule.currentSession}/${schedule.totalSessions}\n'
           : '';
 
-      final contextText = '''
+      final currentRecordsSection =
+          '''
+Buổi điểm danh đang được chọn:
+- Lớp: ${attendanceContext.className}
+- Ngày: ${_formatDate(attendanceContext.date)}
+- Slot: ${attendanceContext.slot}
+- Buổi: ${attendanceContext.sessionNumber}
+- Trạng thái: ${attendanceContext.statusLabel}
+- Có mặt/đi muộn: ${attendanceContext.attendedRecords.length}
+- Vắng: ${attendanceContext.absentRecords.length}
+- Chưa điểm danh: ${attendanceContext.notYetRecords.length}
+- Danh sách Có mặt/đi muộn:
+${attendanceContext.attendedRecords.isEmpty ? '- Không có' : attendanceContext.attendedRecords.map((r) => '- ${_studentLabel(r, students)} (${r.status.label})').join('\n')}
+- Danh sách Vắng:
+${attendanceContext.absentRecords.isEmpty ? '- Không có' : attendanceContext.absentRecords.map((r) => '- ${_studentLabel(r, students)}').join('\n')}
+- Danh sách Chưa điểm danh:
+${attendanceContext.notYetRecords.isEmpty ? '- Không có' : attendanceContext.notYetRecords.map((r) => '- ${_studentLabel(r, students)}').join('\n')}
+''';
+
+      final contextText =
+          '''
 Dữ liệu điểm danh thực tế lớp học:
 - Trạng thái dữ liệu lịch sử: ${report.hasHistory ? "Đã nạp từ database Google Sheets" : "Chưa đủ dữ liệu thống kê lịch sử"}
 - Tỷ lệ chuyên cần trung bình toàn lớp: ${report.overallAttendanceRate.toStringAsFixed(1)}%
 $scheduleSection$historyStatusText
+$currentRecordsSection
 - Số sinh viên bị cấm thi (>20%): ${report.failedStudents.length} sinh viên
 - Số sinh viên cảnh báo (15-20%): ${report.warningStudents.length} sinh viên
 
@@ -573,8 +894,10 @@ Quy tắc trả lời bắt buộc:
 2. Nếu giảng viên hỏi bạn là ai, hãy giới thiệu bạn là Trợ lý AI FAP Attendance Assistant hỗ trợ điểm danh & phân tích chuyên cần ĐH FPT.
 3. Khi trả lời về dữ liệu điểm danh, TUYỆT ĐỐI chỉ dùng số liệu thực tế được cung cấp trong context. Nghiêm cấm bịa đặt, giả định, hoặc suy diễn thêm bất kỳ số liệu định lượng nào ngoài nguồn dữ liệu.
 4. Nếu context ghi "Chưa đủ dữ liệu thống kê lịch sử", hãy thông báo trung thực rằng chưa có đủ dữ liệu lịch sử để phân tích xu hướng vắng theo buổi/thứ, không tự ý đưa ra phán đoán về slot hay ngày nghỉ.
-5. Khi tư vấn giải pháp, hãy đưa ra các lời khuyên sư phạm thực tế, đúng quy chế đào tạo ĐH FPT (vắng > 20% tổng số buổi sẽ bị cấm thi / fail attendance).
-6. Trình bày đẹp mắt, tự nhiên bằng định dạng Markdown (in đậm, bullet points).
+5. Với câu hỏi về hôm nay, buổi hiện tại, ai vắng, ai có mặt hoặc ai chưa điểm danh, chỉ dùng phần "Buổi điểm danh đang được chọn". Không dùng dữ liệu lịch sử để thay thế.
+6. Nếu buổi hiện tại chưa điểm danh hoặc dữ liệu chưa đủ, phải nói rõ chưa thể kết luận; tuyệt đối không coi tất cả sinh viên là Có mặt hoặc Vắng.
+7. Khi tư vấn giải pháp, hãy đưa ra các lời khuyên sư phạm thực tế, đúng quy chế đào tạo ĐH FPT (vắng > 20% tổng số buổi sẽ bị cấm thi / fail attendance).
+8. Trình bày đẹp mắt, tự nhiên bằng định dạng Markdown (in đậm, bullet points).
 ''';
 
       final discoveredModel = await _resolveAvailableGeminiModel(cleanKey);
@@ -591,26 +914,32 @@ Quy tắc trả lời bắt buộc:
 
       for (final modelName in candidateModels) {
         try {
-          final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$cleanKey');
-          final response = await http.post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'contents': [
-                {
-                  'parts': [
+          final url = Uri.parse(
+            'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$cleanKey',
+          );
+          final response = await http
+              .post(
+                url,
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode({
+                  'contents': [
                     {
-                      'text': '$systemInstruction\n\nDỮ LIỆU ĐIỂM DANH THỰC TẾ:\n$contextText\n\nCÂU HỎI CỦA GIẢNG VIÊN:\n"$prompt"'
-                    }
-                  ]
-                }
-              ]
-            }),
-          ).timeout(const Duration(seconds: 12));
+                      'parts': [
+                        {
+                          'text':
+                              '$systemInstruction\n\nDỮ LIỆU ĐIỂM DANH THỰC TẾ:\n$contextText\n\nCÂU HỎI CỦA GIẢNG VIÊN:\n"$prompt"',
+                        },
+                      ],
+                    },
+                  ],
+                }),
+              )
+              .timeout(const Duration(seconds: 12));
 
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body);
-            final text = data['candidates']?[0]?['content']?['parts']?[0]?['text'];
+            final text =
+                data['candidates']?[0]?['content']?['parts']?[0]?['text'];
             if (text != null && text.toString().trim().isNotEmpty) {
               _activeGeminiModel = modelName;
               return text.toString().trim();
@@ -619,7 +948,9 @@ Quy tắc trả lời bắt buộc:
             lastStatusCode = response.statusCode;
             try {
               final errData = jsonDecode(response.body);
-              lastErrorMessage = errData['error']?['message'] ?? 'Mã lỗi: ${response.statusCode}';
+              lastErrorMessage =
+                  errData['error']?['message'] ??
+                  'Mã lỗi: ${response.statusCode}';
             } catch (_) {
               lastErrorMessage = 'Mã phản hồi: ${response.statusCode}';
             }
@@ -634,11 +965,23 @@ Quy tắc trả lời bắt buộc:
         }
       }
 
-      final localResp = answerAiQuestion(prompt, report, students: students);
+      final localResp = answerAiQuestion(
+        prompt,
+        report,
+        students: students,
+        schedule: schedule,
+        attendanceContext: attendanceContext,
+      );
       return '⚠️ **Lỗi gọi Google Gemini API ($lastStatusCode):** $lastErrorMessage\n\n'
           '💡 *Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:*\n\n$localResp';
     } catch (e) {
-      final localResp = answerAiQuestion(prompt, report, students: students);
+      final localResp = answerAiQuestion(
+        prompt,
+        report,
+        students: students,
+        schedule: schedule,
+        attendanceContext: attendanceContext,
+      );
       return '⚠️ **Lỗi kết nối mạng tới Gemini:** $e\n\n'
           '💡 *Hệ thống tự động chuyển sang phân tích nội bộ bên dưới:*\n\n$localResp';
     }

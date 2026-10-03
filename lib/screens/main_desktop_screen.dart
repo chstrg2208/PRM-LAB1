@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../services/storage_service.dart';
 import '../state/attendance_session_manager.dart';
 import '../theme/app_theme.dart';
@@ -26,7 +27,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
   bool _isViewingAttendanceDetail = false;
   AttendanceSessionManager? _internalManager;
 
-  AttendanceSessionManager get _sessionManager => widget.sessionManager ?? _internalManager!;
+  AttendanceSessionManager get _sessionManager =>
+      widget.sessionManager ?? _internalManager!;
 
   @override
   void initState() {
@@ -63,7 +65,11 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
 
   /// Được gọi khi giảng viên click vào card lớp học trong mục Attendance.
   /// Tự động select lớp đó, nạp đúng slot & buổi học hiện tại rồi chuyển sang bảng sinh viên của lớp.
-  Future<void> _openClassFromOverview(String className, {ClassOverviewItem? item, bool isToday = false}) async {
+  Future<void> _openClassFromOverview(
+    String className, {
+    ClassOverviewItem? item,
+    bool isToday = false,
+  }) async {
     await _sessionManager.selectClass(className);
     if (item != null) {
       if (item.slot > 0) {
@@ -78,12 +84,27 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     } else {
       final overview = _sessionManager.attendanceOverview;
       if (overview != null) {
-        final found = overview.todayClasses.where((c) => c.className.trim().toUpperCase() == className.trim().toUpperCase()).firstOrNull ??
-                      overview.otherClasses.where((c) => c.className.trim().toUpperCase() == className.trim().toUpperCase()).firstOrNull;
+        final found =
+            overview.todayClasses
+                .where(
+                  (c) =>
+                      c.className.trim().toUpperCase() ==
+                      className.trim().toUpperCase(),
+                )
+                .firstOrNull ??
+            overview.otherClasses
+                .where(
+                  (c) =>
+                      c.className.trim().toUpperCase() ==
+                      className.trim().toUpperCase(),
+                )
+                .firstOrNull;
         if (found != null) {
           if (found.slot > 0) await _sessionManager.selectSlot(found.slot);
           if (isToday) await _sessionManager.selectDate(DateTime.now());
-          if (found.currentSession > 0) _sessionManager.selectSessionNumber(found.currentSession);
+          if (found.currentSession > 0) {
+            _sessionManager.selectSessionNumber(found.currentSession);
+          }
         }
       }
     }
@@ -122,7 +143,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
       context: context,
       className: _sessionManager.currentClass,
       students: _sessionManager.students,
-      onConfirmExport: (delimiter) => _sessionManager.exportCurrentReportCsv(delimiter: delimiter),
+      onConfirmExport: (delimiter) =>
+          _sessionManager.exportCurrentReportCsv(delimiter: delimiter),
     );
 
     if (!mounted || result == null) return;
@@ -134,12 +156,13 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: result.success ? BirdleColors.brand : BirdleColors.danger,
+        backgroundColor: result.success
+            ? BirdleColors.brand
+            : BirdleColors.danger,
         duration: const Duration(seconds: 4),
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -168,52 +191,86 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             children: [
                               AttendanceOverviewView(
                                 sheetUrl: _sessionManager.sheetUrl,
-                                initialOverview: _sessionManager.attendanceOverview,
-                                onLoadOverview: () => _sessionManager.apiClient.fetchAttendanceOverview(_sessionManager.sheetUrl),
+                                initialOverview:
+                                    _sessionManager.attendanceOverview,
+                                onLoadOverview: () => _sessionManager.apiClient
+                                    .fetchAttendanceOverview(
+                                      _sessionManager.sheetUrl,
+                                    ),
                                 onSelectClass: _openClassFromOverview,
-                                onSelectClassItem: (item, isToday) => _openClassFromOverview(item.className, item: item, isToday: isToday),
-                                onGoToSettings: () => setState(() => _selectedIndex = 4),
+                                onSelectClassItem: (item, isToday) =>
+                                    _openClassFromOverview(
+                                      item.className,
+                                      item: item,
+                                      isToday: isToday,
+                                    ),
+                                onGoToSettings: () =>
+                                    setState(() => _selectedIndex = 4),
                               ),
                               AttendanceView(
                                 students: _sessionManager.students,
                                 records: _sessionManager.records,
                                 currentClass: _sessionManager.currentClass,
-                                availableClasses: _sessionManager.availableClasses,
-                                isLoadingClasses: _sessionManager.isLoadingClasses,
+                                availableClasses:
+                                    _sessionManager.availableClasses,
+                                isLoadingClasses:
+                                    _sessionManager.isLoadingClasses,
                                 classesError: _sessionManager.classesError,
-                                onRetryLoadClasses: () => _sessionManager.loadClasses(),
+                                onRetryLoadClasses: () =>
+                                    _sessionManager.loadClasses(),
                                 currentSlot: _sessionManager.currentSlot,
                                 currentDate: _sessionManager.currentDate,
-                                isDateLocked: _sessionManager.isSessionDateLocked,
+                                isDateLocked:
+                                    _sessionManager.isSessionDateLocked,
                                 isLoading: _sessionManager.isLoading,
                                 errorMessage: _sessionManager.dataError,
-                                isSheetConfigured: _sessionManager.isSheetConfigured,
-                                onGoToSettings: () => setState(() => _selectedIndex = 4),
+                                isSheetConfigured:
+                                    _sessionManager.isSheetConfigured,
+                                onGoToSettings: () =>
+                                    setState(() => _selectedIndex = 4),
                                 onClassChanged: _sessionManager.selectClass,
                                 onSlotChanged: _sessionManager.selectSlot,
                                 onDateChanged: _sessionManager.selectDate,
-                                onStatusChanged: _sessionManager.updateAttendanceStatus,
+                                onStatusChanged:
+                                    _sessionManager.updateAttendanceStatus,
                                 onNoteChanged: _sessionManager.updateNote,
-                                onMarkAllPresent: _sessionManager.markAllPresent,
+                                onMarkAllPresent:
+                                    _sessionManager.markAllPresent,
                                 onMarkAllAbsent: _sessionManager.markAllAbsent,
-                                currentSessionNumber: _sessionManager.currentSessionNumber,
-                                maxAllowedSession: _sessionManager.maxAllowedSession,
-                                onSessionChanged: _sessionManager.selectSessionNumber,
+                                currentSessionNumber:
+                                    _sessionManager.currentSessionNumber,
+                                maxAllowedSession:
+                                    _sessionManager.maxAllowedSession,
+                                onSessionChanged:
+                                    _sessionManager.selectSessionNumber,
                                 onBackToOverview: () {
-                                  setState(() => _isViewingAttendanceDetail = false);
-                                  _sessionManager.loadAttendanceOverview(force: true);
+                                  setState(
+                                    () => _isViewingAttendanceDetail = false,
+                                  );
+                                  _sessionManager.loadAttendanceOverview(
+                                    force: true,
+                                  );
                                 },
-                                onStartQrAttendance: () => _sessionManager.startQrAttendanceSession(),
-                                onFinishQrAttendance: () => _sessionManager.finishQrAttendance(),
-                                onCancelQrAttendance: () => _sessionManager.cancelQrAttendance(),
-                                onPollQrStatus: () => _sessionManager.pollQrCheckIns(),
-                                isQrAttendanceLocked: _sessionManager.isQrAttendanceLocked,
-                                isSessionCompleted: _sessionManager.isSessionCompleted,
-                                onReopenQrAttendance: () => _sessionManager.reopenQrAttendanceSession(),
+                                onStartQrAttendance: () =>
+                                    _sessionManager.startQrAttendanceSession(),
+                                onFinishQrAttendance: () =>
+                                    _sessionManager.finishQrAttendance(),
+                                onCancelQrAttendance: () =>
+                                    _sessionManager.cancelQrAttendance(),
+                                onPollQrStatus: () =>
+                                    _sessionManager.pollQrCheckIns(),
+                                isQrAttendanceLocked:
+                                    _sessionManager.isQrAttendanceLocked,
+                                isSessionCompleted:
+                                    _sessionManager.isSessionCompleted,
+                                onReopenQrAttendance: () =>
+                                    _sessionManager.reopenQrAttendanceSession(),
                                 onSaveToSheet: _saveToGoogleSheet,
                                 onReloadFromSheet: _reloadFromSheet,
-                                onGoToFapSync: () => setState(() => _selectedIndex = 3),
-                                onImportStudents: _sessionManager.importStudents,
+                                onGoToFapSync: () =>
+                                    setState(() => _selectedIndex = 3),
+                                onImportStudents:
+                                    _sessionManager.importStudents,
                               ),
                             ],
                           ),
@@ -242,10 +299,19 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                             historyLogs: _sessionManager.historyLogs,
                             analyticsStatus: _sessionManager.analyticsStatus,
                             analyticsError: _sessionManager.analyticsError,
-                            isLoadingAnalytics: _sessionManager.isLoadingAnalytics,
-                            onRetryLoadAnalytics: () => _sessionManager.loadAnalyticsLogs(),
-                            onConfigureByok: () => setState(() => _selectedIndex = 4),
+                            isLoadingAnalytics:
+                                _sessionManager.isLoadingAnalytics,
+                            onRetryLoadAnalytics: () =>
+                                _sessionManager.loadAnalyticsLogs(),
+                            onConfigureByok: () =>
+                                setState(() => _selectedIndex = 4),
                             schedule: _sessionManager.currentSchedule,
+                            currentDate: _sessionManager.currentDate,
+                            currentSlot: _sessionManager.currentSlot,
+                            currentSessionNumber:
+                                _sessionManager.currentSessionNumber,
+                            isSessionCompleted:
+                                _sessionManager.isSessionCompleted,
                           ),
                           // 3: FAP Sync & Import Center
                           FapSyncView(
@@ -375,7 +441,9 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
               children: [
                 _buildConnectionRow(
                   'Google Sheets',
-                  _sessionManager.isSheetConnected ? 'Connected' : 'Not configured',
+                  _sessionManager.isSheetConnected
+                      ? 'Connected'
+                      : 'Not configured',
                   _sessionManager.isSheetConnected,
                 ),
                 const SizedBox(height: 8),
@@ -429,14 +497,18 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
             children: [
               Icon(
                 icon,
-                color: isSelected ? BirdleColors.brand : BirdleColors.textSecondary,
+                color: isSelected
+                    ? BirdleColors.brand
+                    : BirdleColors.textSecondary,
                 size: 18,
               ),
               const SizedBox(width: 10),
               Text(
                 title,
                 style: TextStyle(
-                  color: isSelected ? BirdleColors.brand : BirdleColors.textPrimary,
+                  color: isSelected
+                      ? BirdleColors.brand
+                      : BirdleColors.textPrimary,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   fontSize: 13,
                   fontFamily: BirdleTypography.fontFamily,
@@ -464,7 +536,11 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
         Expanded(
           child: Text(
             title,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: BirdleColors.textPrimary),
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: BirdleColors.textPrimary,
+            ),
           ),
         ),
         Text(
@@ -484,7 +560,9 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 32),
       decoration: const BoxDecoration(
         color: BirdleColors.surface,
-        border: Border(bottom: BorderSide(color: BirdleColors.border, width: 1)),
+        border: Border(
+          bottom: BorderSide(color: BirdleColors.border, width: 1),
+        ),
       ),
       child: Row(
         children: [
@@ -505,7 +583,9 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
 
           // Status Badges
           ConnectionStatusChip(
-            label: _sessionManager.isSheetConnected ? 'Sheets: Connected' : 'Sheets: Unlinked',
+            label: _sessionManager.isSheetConnected
+                ? 'Sheets: Connected'
+                : 'Sheets: Unlinked',
             isConnected: _sessionManager.isSheetConnected,
           ),
           const SizedBox(width: 8),
@@ -517,7 +597,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
             icon: Icons.open_in_browser,
             label: 'FAP',
             height: 32,
-            onPressed: () => StorageService.openBrowser('https://fap.fpt.edu.vn'),
+            onPressed: () =>
+                StorageService.openBrowser('https://fap.fpt.edu.vn'),
           ),
           if (_sessionManager.sheetUrl.isNotEmpty) ...[
             const SizedBox(width: 8),
@@ -526,7 +607,8 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
               label: 'Sheet',
               height: 32,
               iconColor: BirdleColors.brand,
-              onPressed: () => StorageService.openBrowser(_sessionManager.sheetUrl),
+              onPressed: () =>
+                  StorageService.openBrowser(_sessionManager.sheetUrl),
             ),
           ],
           const SizedBox(width: 8),
@@ -535,9 +617,16 @@ class _MainDesktopScreenState extends State<MainDesktopScreen> {
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: BirdleColors.brand),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: BirdleColors.brand,
+                    ),
                   )
-                : const Icon(Icons.refresh, size: 18, color: BirdleColors.textSecondary),
+                : const Icon(
+                    Icons.refresh,
+                    size: 18,
+                    color: BirdleColors.textSecondary,
+                  ),
             tooltip: 'Làm mới dữ liệu từ Google Sheets',
             onPressed: _sessionManager.isLoading ? null : _reloadFromSheet,
           ),

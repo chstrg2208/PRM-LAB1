@@ -1,6 +1,6 @@
 class Student {
   final String member; // MEMBER: Mã sinh viên (e.g. SE180001, CE190585)
-  final String code; // CODE: Mã sinh viên theo FAP (alias của rollNumber / member)
+  final String code; // CODE: Mã phụ theo FAP, tách biệt với MEMBER canonical
   final String surname; // SURNAME: Họ (e.g. Lâm, Nguyễn, Trần)
   final String middleName; // MIDDLE NAME: Tên đệm (e.g. Quốc, Văn, Thị)
   final String givenName; // GIVEN NAME: Tên gọi (e.g. Minh, An, Bình)
@@ -50,11 +50,21 @@ class Student {
     return '';
   }
 
+  static String _readFirst(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return '';
+  }
+
   /// Kiểm tra xem rollNumber có phải là dữ liệu sinh viên hợp lệ hay chỉ là tiêu đề/metadata rác từ Sheet
   static bool isValidStudentId(String id) {
     final clean = id.trim().toUpperCase();
     if (clean.isEmpty) return false;
-    if (clean == 'STT' || clean == 'MSSV' || clean == 'MEMBER' || clean == 'CODE' || clean == 'STUDENT ID') return false;
+    if (clean == 'STT' || clean == 'MSSV' || clean == 'MEMBER' || clean == 'CODE' || clean == 'ROLLNUMBER' || clean == 'STUDENT ID' || clean == 'STUDENTCODE' || clean == 'MÃ SV' || clean == 'MÃ SINH VIÊN') return false;
     if (clean.contains(':') || clean.contains('|') || clean.contains('(') || clean.contains(')')) return false;
     if (clean.contains('SLOT') || clean.contains('PHÒNG') || clean.contains('NGÀY') || clean.contains('LỊCH') || clean.contains('TRẠNG THÁI')) return false;
     if (clean.startsWith('T2-') || clean.startsWith('T3-') || clean.startsWith('T4-') || clean.startsWith('NVH-') || clean.startsWith('BE-') || clean.startsWith('DE-')) return false;
@@ -62,7 +72,7 @@ class Student {
     return true;
   }
 
-  // Alias rollNumber tương đương member và code theo FAP
+  // rollNumber là alias tương thích của MEMBER canonical.
   String get rollNumber => member.isNotEmpty ? member : code;
 
   // Họ và tên hoàn chỉnh được ghép đúng thứ tự: surname (Họ) + middleName (Tên đệm) + givenName (Tên gọi)
@@ -189,8 +199,29 @@ class Student {
   }
 
   factory Student.fromJson(Map<String, dynamic> json) {
-    final rawCode = (json['CODE'] ?? json['code'] ?? '').toString().trim();
-    final rawMember = (json['MEMBER'] ?? json['member'] ?? json['rollNumber'] ?? json['RollNumber'] ?? json['id'] ?? '').toString().trim();
+    final rawCode = _readFirst(json, [
+      'CODE',
+      'code',
+      'STUDENTCODE',
+      'studentCode',
+      'StudentCode',
+      'STUDENT CODE',
+      'student code',
+    ]);
+    final rawMember = _readFirst(json, [
+      'MEMBER',
+      'member',
+      'rollNumber',
+      'RollNumber',
+      'ROLLNUMBER',
+      'mssv',
+      'MSSV',
+      'MÃ SV',
+      'MÃ SINH VIÊN',
+      'studentId',
+      'STUDENT ID',
+      'id',
+    ]);
     // MEMBER là khóa canonical để liên kết Attendance_Logs và ma trận B1..B20.
     // CODE được giữ riêng, không được phép ghi đè khóa MEMBER.
     final resolvedMember = rawMember.isNotEmpty ? rawMember : rawCode;

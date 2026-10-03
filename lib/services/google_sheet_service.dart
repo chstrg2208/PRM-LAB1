@@ -602,6 +602,7 @@ class GoogleSheetService {
     String webAppUrl, {
     required String className,
     required int slot,
+    required int sessionNumber,
     DateTime? date,
     http.Client? client,
   }) async {
@@ -624,6 +625,7 @@ class GoogleSheetService {
         'action': 'getQrStatus',
         'className': className,
         'slot': slot.toString(),
+        'session': sessionNumber.toString(),
         'date': dateStr,
       });
 
