@@ -209,6 +209,8 @@ console.log('=== RUNNING GOOGLE APPS SCRIPT BK-13.1 STUDENT NAME NORMALIZATION T
 
   console.log('[Test 2] Kịch bản 1: Đủ họ, đệm, tên -> "Nguyễn Văn An"...');
   const student1 = response.data[0];
+  assert.strictEqual(student1.member, 'AN_NV');
+  assert.strictEqual(student1.rollNumber, 'AN_NV');
   assert.strictEqual(student1.code, 'SE170001');
   assert.strictEqual(student1.surname, 'Nguyễn');
   assert.strictEqual(student1.middleName, 'Văn');
@@ -235,7 +237,7 @@ console.log('=== RUNNING GOOGLE APPS SCRIPT BK-13.1 STUDENT NAME NORMALIZATION T
 
   console.log('[Test 5] Kịch bản 4: Cả họ tên rỗng -> fallback "Sinh viên " + member...');
   const student3 = response.data[2];
-  assert.strictEqual(student3.fullName, 'Sinh viên member_unknown', 'fullName must fallback to "Sinh viên " + member');
+  assert.strictEqual(student3.fullName, 'Sinh viên MEMBER_UNKNOWN', 'fullName must fallback to "Sinh viên " + canonical member');
   console.log('  -> PASS: fullName = ' + student3.fullName);
 
   console.log('[Test 6] Kịch bản 5: Khoảng trắng thừa được trim sạch sẽ -> "Trần Thị Hoa"...');

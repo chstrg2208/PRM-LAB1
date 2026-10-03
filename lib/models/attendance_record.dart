@@ -73,6 +73,7 @@ class AttendanceRecord {
   Map<String, dynamic> toJson() {
     return {
       'rollNumber': rollNumber,
+      'member': rollNumber,
       'className': className,
       'date': date,
       'slot': slot,
@@ -81,9 +82,30 @@ class AttendanceRecord {
     };
   }
 
+  static String _readFirst(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return '';
+  }
+
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) {
     return AttendanceRecord(
-      rollNumber: json['rollNumber'] ?? json['RollNumber'] ?? '',
+      rollNumber: _readFirst(json, [
+        'rollNumber',
+        'RollNumber',
+        'ROLLNUMBER',
+        'member',
+        'MEMBER',
+        'mssv',
+        'MSSV',
+        'MÃ SV',
+        'code',
+        'CODE',
+      ]),
       className: json['className'] ?? json['ClassName'] ?? '',
       date: json['date'] ?? json['Date'] ?? '',
       slot: int.tryParse(json['slot']?.toString() ?? '1') ?? 1,

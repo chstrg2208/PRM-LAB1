@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -13,13 +14,39 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   final List<Student> dummyStudents = [
-    Student(rollNumber: 'SE180001', fullName: 'Nguyen Van A', className: 'SE1801', email: 'a@fpt.edu.vn', totalSlots: 10, absentSlots: 1),
-    Student(rollNumber: 'SE180002', fullName: 'Tran Thi B', className: 'SE1801', email: 'b@fpt.edu.vn', totalSlots: 10, absentSlots: 3),
+    Student(
+      rollNumber: 'SE180001',
+      fullName: 'Nguyen Van A',
+      className: 'SE1801',
+      email: 'a@fpt.edu.vn',
+      totalSlots: 10,
+      absentSlots: 1,
+    ),
+    Student(
+      rollNumber: 'SE180002',
+      fullName: 'Tran Thi B',
+      className: 'SE1801',
+      email: 'b@fpt.edu.vn',
+      totalSlots: 10,
+      absentSlots: 3,
+    ),
   ];
 
   final dummyCurrentRecords = [
-    AttendanceRecord(rollNumber: 'SE180001', className: 'SE1801', date: '2026-03-10', slot: 1, status: AttendanceStatus.present),
-    AttendanceRecord(rollNumber: 'SE180002', className: 'SE1801', date: '2026-03-10', slot: 1, status: AttendanceStatus.absent),
+    AttendanceRecord(
+      rollNumber: 'SE180001',
+      className: 'SE1801',
+      date: '2026-03-10',
+      slot: 1,
+      status: AttendanceStatus.present,
+    ),
+    AttendanceRecord(
+      rollNumber: 'SE180002',
+      className: 'SE1801',
+      date: '2026-03-10',
+      slot: 1,
+      status: AttendanceStatus.absent,
+    ),
   ];
 
   group('BK-03: AiAnalyticsService Real Data & No Fake Patterns', () {
@@ -65,134 +92,322 @@ void main() {
       expect(answerDay, isNot(contains('16')));
     });
 
-    test('2. historyLogs thực tế: Tính toán chính xác theo slot và thứ thực tế', () {
-      // 2026-03-03 is Tuesday (Thứ Ba)
-      // 2026-03-05 is Thursday (Thứ Năm)
-      final sampleLogs = <Map<String, dynamic>>[
-        {'date': '2026-03-03', 'slot': 3, 'status': 'ABSENT', 'rollNumber': 'SE180001'},
-        {'date': '2026-03-03', 'slot': 3, 'status': 'ABSENT', 'rollNumber': 'SE180002'},
-        {'date': '2026-03-03', 'slot': 3, 'status': 'ABSENT', 'rollNumber': 'SE180003'},
-        {'date': '2026-03-03', 'slot': 3, 'status': 'PRESENT', 'rollNumber': 'SE180004'},
-        {'date': '2026-03-05', 'slot': 1, 'status': 'ABSENT', 'rollNumber': 'SE180001'},
-        {'date': '2026-03-05', 'slot': 1, 'status': 'PRESENT', 'rollNumber': 'SE180002'},
-      ];
+    test(
+      '2. historyLogs thực tế: Tính toán chính xác theo slot và thứ thực tế',
+      () {
+        // 2026-03-03 is Tuesday (Thứ Ba)
+        // 2026-03-05 is Thursday (Thứ Năm)
+        final sampleLogs = <Map<String, dynamic>>[
+          {
+            'date': '2026-03-03',
+            'slot': 3,
+            'status': 'ABSENT',
+            'rollNumber': 'SE180001',
+          },
+          {
+            'date': '2026-03-03',
+            'slot': 3,
+            'status': 'ABSENT',
+            'rollNumber': 'SE180002',
+          },
+          {
+            'date': '2026-03-03',
+            'slot': 3,
+            'status': 'ABSENT',
+            'rollNumber': 'SE180003',
+          },
+          {
+            'date': '2026-03-03',
+            'slot': 3,
+            'status': 'PRESENT',
+            'rollNumber': 'SE180004',
+          },
+          {
+            'date': '2026-03-05',
+            'slot': 1,
+            'status': 'ABSENT',
+            'rollNumber': 'SE180001',
+          },
+          {
+            'date': '2026-03-05',
+            'slot': 1,
+            'status': 'PRESENT',
+            'rollNumber': 'SE180002',
+          },
+        ];
 
+        final report = AiAnalyticsService.analyzeAttendance(
+          students: dummyStudents,
+          currentRecords: dummyCurrentRecords,
+          historyLogs: sampleLogs,
+        );
+
+        expect(report.status, AnalyticsDataStatus.loaded);
+        expect(report.hasHistory, isTrue);
+        // Worst slot must be Slot 3 with 3 absents
+        expect(report.worstSlot.slot, 3);
+        expect(report.worstSlot.absentCount, 3);
+        expect(report.worstSlot.totalCount, 4);
+        expect(report.worstSlot.absentRate, 75.0);
+
+        // Worst day must be Thứ Ba with 3 absents
+        expect(report.worstDay.dayName, contains('Ba'));
+        expect(report.worstDay.absentCount, 3);
+        expect(report.worstDay.totalCount, 4);
+
+        // Answer questions with real computed values
+        final answerSlot = AiAnalyticsService.answerAiQuestion(
+          'Slot mấy sinh viên nghỉ nhiều nhất?',
+          report,
+          students: dummyStudents,
+        );
+        expect(answerSlot, contains('Slot 3'));
+        expect(answerSlot, contains('3 lượt vắng'));
+        expect(answerSlot, contains('75.0%'));
+
+        final answerDay = AiAnalyticsService.answerAiQuestion(
+          'Thứ mấy sinh viên hay vắng?',
+          report,
+          students: dummyStudents,
+        );
+        expect(answerDay, contains('Thứ Ba'));
+        expect(answerDay, contains('3 lượt vắng'));
+      },
+    );
+
+    test('3. Q&A buổi hiện tại phân biệt vắng, có mặt và chưa điểm danh', () {
+      final currentRecords = [
+        AttendanceRecord(
+          rollNumber: 'SE180001',
+          className: 'SE1801',
+          date: '2026-03-10',
+          slot: 1,
+          status: AttendanceStatus.present,
+        ),
+        AttendanceRecord(
+          rollNumber: 'SE180002',
+          className: 'SE1801',
+          date: '2026-03-10',
+          slot: 1,
+          status: AttendanceStatus.absent,
+        ),
+        AttendanceRecord(
+          rollNumber: 'SE180003',
+          className: 'SE1801',
+          date: '2026-03-10',
+          slot: 1,
+          status: AttendanceStatus.notYet,
+        ),
+      ];
+      final context = AiAttendanceContext.fromSession(
+        className: 'SE1801',
+        date: DateTime(2026, 3, 10),
+        slot: 1,
+        sessionNumber: 3,
+        isSessionCompleted: false,
+        records: currentRecords,
+      );
       final report = AiAnalyticsService.analyzeAttendance(
         students: dummyStudents,
-        currentRecords: dummyCurrentRecords,
-        historyLogs: sampleLogs,
+        currentRecords: currentRecords,
+        historyLogs: [],
+        status: AnalyticsDataStatus.empty,
       );
 
-      expect(report.status, AnalyticsDataStatus.loaded);
-      expect(report.hasHistory, isTrue);
-      // Worst slot must be Slot 3 with 3 absents
-      expect(report.worstSlot.slot, 3);
-      expect(report.worstSlot.absentCount, 3);
-      expect(report.worstSlot.totalCount, 4);
-      expect(report.worstSlot.absentRate, 75.0);
+      final absentAnswer = AiAnalyticsService.answerAiQuestion(
+        'Hôm nay ai vắng?',
+        report,
+        students: dummyStudents,
+        attendanceContext: context,
+      );
+      expect(absentAnswer, contains('SE180002'));
+      expect(absentAnswer, isNot(contains('SE180001')));
 
-      // Worst day must be Thứ Ba with 3 absents
-      expect(report.worstDay.dayName, contains('Ba'));
-      expect(report.worstDay.absentCount, 3);
-      expect(report.worstDay.totalCount, 4);
+      final presentAnswer = AiAnalyticsService.answerAiQuestion(
+        'Hôm nay ai có mặt?',
+        report,
+        students: dummyStudents,
+        attendanceContext: context,
+      );
+      expect(presentAnswer, contains('SE180001'));
+      expect(presentAnswer, isNot(contains('SE180002')));
 
-      // Answer questions with real computed values
-      final answerSlot = AiAnalyticsService.answerAiQuestion(
-        'Slot mấy sinh viên nghỉ nhiều nhất?',
+      final notYetAnswer = AiAnalyticsService.answerAiQuestion(
+        'Ai chưa điểm danh?',
+        report,
+        students: dummyStudents,
+        attendanceContext: context,
+      );
+      expect(notYetAnswer, contains('SE180003'));
+      expect(notYetAnswer, contains('chưa điểm danh'));
+
+      final statusAnswer = AiAnalyticsService.answerAiQuestion(
+        'Buổi này đã điểm danh chưa?',
+        report,
+        students: dummyStudents,
+        attendanceContext: context,
+      );
+      expect(statusAnswer, contains('đang điểm danh'));
+      expect(statusAnswer, contains('còn 1 sinh viên'));
+    });
+
+    test('4. Q&A không kết luận 100% hoặc xu hướng khi dữ liệu chưa đủ', () {
+      final report = AiAnalyticsService.analyzeAttendance(
+        students: dummyStudents,
+        currentRecords: const [],
+        historyLogs: [],
+        status: AnalyticsDataStatus.empty,
+      );
+
+      final greeting = AiAnalyticsService.answerAiQuestion(
+        'Xin chào',
         report,
         students: dummyStudents,
       );
-      expect(answerSlot, contains('Slot 3'));
-      expect(answerSlot, contains('3 lượt vắng'));
-      expect(answerSlot, contains('75.0%'));
+      expect(greeting, contains('Chưa đủ dữ liệu lịch sử'));
+      expect(greeting, isNot(contains('Slot 1')));
 
-      final answerDay = AiAnalyticsService.answerAiQuestion(
-        'Thứ mấy sinh viên hay vắng?',
+      final perfectAttendance = AiAnalyticsService.answerAiQuestion(
+        'Ai đi học đầy đủ 100%?',
         report,
         students: dummyStudents,
       );
-      expect(answerDay, contains('Thứ Ba'));
-      expect(answerDay, contains('3 lượt vắng'));
+      expect(perfectAttendance, contains('Chưa đủ dữ liệu điểm danh'));
+      expect(
+        perfectAttendance,
+        isNot(contains('Sinh viên đi học đầy đủ 100%')),
+      );
+
+      final recommendation = AiAnalyticsService.answerAiQuestion(
+        'Đề xuất giải pháp cải thiện chuyên cần',
+        report,
+        students: dummyStudents,
+      );
+      expect(recommendation, contains('Chưa đủ dữ liệu lịch sử'));
+      expect(recommendation, isNot(contains('Slot 1')));
+    });
+
+    test('5. Q&A buổi hoàn tất báo đúng tổng trạng thái', () {
+      final records = [...dummyCurrentRecords];
+      final context = AiAttendanceContext.fromSession(
+        className: 'SE1801',
+        date: DateTime(2026, 3, 10),
+        slot: 1,
+        sessionNumber: 3,
+        isSessionCompleted: true,
+        records: records,
+      );
+      final report = AiAnalyticsService.analyzeAttendance(
+        students: dummyStudents,
+        currentRecords: records,
+        historyLogs: [
+          {'date': '2026-03-03', 'slot': 1, 'status': 'PRESENT'},
+        ],
+      );
+
+      final answer = AiAnalyticsService.answerAiQuestion(
+        'Buổi hiện tại đã chốt chưa?',
+        report,
+        students: dummyStudents,
+        attendanceContext: context,
+      );
+      expect(answer, contains('đã điểm danh'));
+      expect(answer, contains('Có mặt: 1'));
+      expect(answer, contains('Vắng: 1'));
     });
   });
 
   group('BK-03: GoogleSheetService.fetchAnalyticsLogs error handling', () {
-    test('Ném ngoại lệ rõ ràng khi server lỗi 500 hoặc phản hồi thất bại', () async {
-      final mockClient = MockClient((request) async {
-        return http.Response(jsonEncode({'status': 'error', 'message': 'Database error'}), 500);
-      });
+    test(
+      'Ném ngoại lệ rõ ràng khi server lỗi 500 hoặc phản hồi thất bại',
+      () async {
+        final mockClient = MockClient((request) async {
+          return http.Response(
+            jsonEncode({'status': 'error', 'message': 'Database error'}),
+            500,
+          );
+        });
 
-      expect(
-        () async => await GoogleSheetService.fetchAnalyticsLogs(
+        expect(
+          () async => await GoogleSheetService.fetchAnalyticsLogs(
+            'https://script.google.com/test',
+            'SE1801',
+            client: mockClient,
+          ),
+          throwsA(isA<Exception>()),
+        );
+      },
+    );
+
+    test(
+      'Trả về danh sách log chuẩn xác khi server phản hồi thành công',
+      () async {
+        final mockClient = MockClient((request) async {
+          return http.Response(
+            jsonEncode({
+              'status': 'success',
+              'className': 'SE1801',
+              'totalRecords': 1,
+              'logs': [
+                {
+                  'timestamp': '2026-03-03T10:00:00Z',
+                  'className': 'SE1801',
+                  'date': '2026-03-03',
+                  'slot': 2,
+                  'rollNumber': 'SE180001',
+                  'status': 'ABSENT',
+                  'note': 'Om',
+                },
+              ],
+            }),
+            200,
+          );
+        });
+
+        final logs = await GoogleSheetService.fetchAnalyticsLogs(
           'https://script.google.com/test',
           'SE1801',
           client: mockClient,
-        ),
-        throwsA(isA<Exception>()),
-      );
-    });
-
-    test('Trả về danh sách log chuẩn xác khi server phản hồi thành công', () async {
-      final mockClient = MockClient((request) async {
-        return http.Response(
-          jsonEncode({
-            'status': 'success',
-            'className': 'SE1801',
-            'totalRecords': 1,
-            'logs': [
-              {
-                'timestamp': '2026-03-03T10:00:00Z',
-                'className': 'SE1801',
-                'date': '2026-03-03',
-                'slot': 2,
-                'rollNumber': 'SE180001',
-                'status': 'ABSENT',
-                'note': 'Om',
-              }
-            ]
-          }),
-          200,
         );
-      });
 
-      final logs = await GoogleSheetService.fetchAnalyticsLogs(
-        'https://script.google.com/test',
-        'SE1801',
-        client: mockClient,
-      );
-
-      expect(logs.length, 1);
-      expect(logs.first['rollNumber'], 'SE180001');
-      expect(logs.first['slot'], 2);
-    });
+        expect(logs.length, 1);
+        expect(logs.first['rollNumber'], 'SE180001');
+        expect(logs.first['slot'], 2);
+      },
+    );
   });
 
   group('BK-03: AiInsightsView UI States', () {
-    testWidgets('Trạng thái empty: Hiển thị "Chưa đủ dữ liệu thống kê lịch sử."', (tester) async {
-      tester.view.physicalSize = const Size(1600, 1000);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() => tester.view.resetPhysicalSize());
+    testWidgets(
+      'Trạng thái empty: Hiển thị "Chưa đủ dữ liệu thống kê lịch sử."',
+      (tester) async {
+        tester.view.physicalSize = const Size(1600, 1000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() => tester.view.resetPhysicalSize());
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: AiInsightsView(
-              students: dummyStudents,
-              records: dummyCurrentRecords,
-              currentClass: 'SE1801',
-              historyLogs: const [],
-              analyticsStatus: AnalyticsDataStatus.empty,
-              onConfigureByok: () {},
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: AiInsightsView(
+                students: dummyStudents,
+                records: dummyCurrentRecords,
+                currentClass: 'SE1801',
+                historyLogs: const [],
+                analyticsStatus: AnalyticsDataStatus.empty,
+                onConfigureByok: () {},
+              ),
             ),
           ),
-        ),
-      );
+        );
 
-      await tester.pumpAndSettle();
-      expect(find.text('Chưa đủ dữ liệu thống kê lịch sử.'), findsOneWidget);
-    });
+        await tester.pumpAndSettle();
+        expect(find.text('Chưa đủ dữ liệu thống kê lịch sử.'), findsOneWidget);
+      },
+    );
 
-    testWidgets('Trạng thái error: Hiển thị thông báo lỗi và nút Thử lại', (tester) async {
+    testWidgets('Trạng thái error: Hiển thị thông báo lỗi và nút Thử lại', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
@@ -221,7 +436,10 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Lỗi tải lịch sử điểm danh: Connection timed out'), findsWidgets);
+      expect(
+        find.textContaining('Lỗi tải lịch sử điểm danh: Connection timed out'),
+        findsWidgets,
+      );
       final retryButton = find.text('Thử lại (Retry)');
       expect(retryButton, findsOneWidget);
 
@@ -230,53 +448,66 @@ void main() {
       expect(retryCalled, isTrue);
     });
 
-    testWidgets('Trạng thái unconfigured: Hiển thị cảnh báo chưa cấu hình Google Sheet', (tester) async {
-      tester.view.physicalSize = const Size(1600, 1000);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() => tester.view.resetPhysicalSize());
+    testWidgets(
+      'Trạng thái unconfigured: Hiển thị cảnh báo chưa cấu hình Google Sheet',
+      (tester) async {
+        tester.view.physicalSize = const Size(1600, 1000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() => tester.view.resetPhysicalSize());
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: AiInsightsView(
-              students: dummyStudents,
-              records: dummyCurrentRecords,
-              currentClass: 'SE1801',
-              historyLogs: null,
-              analyticsStatus: AnalyticsDataStatus.unconfigured,
-              onConfigureByok: () {},
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: AiInsightsView(
+                students: dummyStudents,
+                records: dummyCurrentRecords,
+                currentClass: 'SE1801',
+                historyLogs: null,
+                analyticsStatus: AnalyticsDataStatus.unconfigured,
+                onConfigureByok: () {},
+              ),
             ),
           ),
-        ),
-      );
+        );
 
-      await tester.pumpAndSettle();
-      expect(find.text('Chưa cấu hình Google Sheet để đồng bộ lịch sử điểm danh.'), findsOneWidget);
-    });
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Chưa cấu hình Google Sheet để đồng bộ lịch sử điểm danh.'),
+          findsOneWidget,
+        );
+      },
+    );
   });
 
   group('BK-03: Race Condition Prevention on Class Switch', () {
-    test('Request cũ đến sau không ghi đè dữ liệu của request lớp mới', () async {
-      int requestId = 0;
-      String currentActiveData = '';
+    test(
+      'Request cũ đến sau không ghi đè dữ liệu của request lớp mới',
+      () async {
+        int requestId = 0;
+        String currentActiveData = '';
 
-      Future<void> simulateFetchClass(String className, int delayMs, String returnedData) async {
-        final thisReqId = ++requestId;
-        await Future.delayed(Duration(milliseconds: delayMs));
-        if (thisReqId == requestId) {
-          currentActiveData = returnedData;
+        Future<void> simulateFetchClass(
+          String className,
+          int delayMs,
+          String returnedData,
+        ) async {
+          final thisReqId = ++requestId;
+          await Future.delayed(Duration(milliseconds: delayMs));
+          if (thisReqId == requestId) {
+            currentActiveData = returnedData;
+          }
         }
-      }
 
-      // User selects Class A (slow network: 100ms)
-      final req1 = simulateFetchClass('ClassA', 100, 'Data_ClassA');
-      // User quickly switches to Class B (fast network: 20ms)
-      final req2 = simulateFetchClass('ClassB', 20, 'Data_ClassB');
+        // User selects Class A (slow network: 100ms)
+        final req1 = simulateFetchClass('ClassA', 100, 'Data_ClassA');
+        // User quickly switches to Class B (fast network: 20ms)
+        final req2 = simulateFetchClass('ClassB', 20, 'Data_ClassB');
 
-      await Future.wait([req1, req2]);
+        await Future.wait([req1, req2]);
 
-      // When all finished, active data must be Class B, NOT overwritten by Class A
-      expect(currentActiveData, 'Data_ClassB');
-    });
+        // When all finished, active data must be Class B, NOT overwritten by Class A
+        expect(currentActiveData, 'Data_ClassB');
+      },
+    );
   });
 }

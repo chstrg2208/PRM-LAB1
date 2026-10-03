@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import '../models/student.dart';
 import '../models/attendance_record.dart';
 import '../models/class_schedule.dart';
@@ -21,6 +22,10 @@ class AiInsightsView extends StatefulWidget {
   final bool isLoadingAnalytics;
   final VoidCallback? onRetryLoadAnalytics;
   final ClassSchedule? schedule;
+  final DateTime? currentDate;
+  final int currentSlot;
+  final int currentSessionNumber;
+  final bool isSessionCompleted;
 
   const AiInsightsView({
     super.key,
@@ -36,6 +41,10 @@ class AiInsightsView extends StatefulWidget {
     this.isLoadingAnalytics = false,
     this.onRetryLoadAnalytics,
     this.schedule,
+    this.currentDate,
+    this.currentSlot = 1,
+    this.currentSessionNumber = 1,
+    this.isSessionCompleted = false,
   });
 
   @override
@@ -65,9 +74,25 @@ class _AiInsightsViewState extends State<AiInsightsView> {
         oldWidget.availableClasses != widget.availableClasses ||
         oldWidget.historyLogs != widget.historyLogs ||
         oldWidget.analyticsStatus != widget.analyticsStatus ||
-        oldWidget.analyticsError != widget.analyticsError) {
+        oldWidget.analyticsError != widget.analyticsError ||
+        oldWidget.currentDate != widget.currentDate ||
+        oldWidget.currentSlot != widget.currentSlot ||
+        oldWidget.currentSessionNumber != widget.currentSessionNumber ||
+        oldWidget.isSessionCompleted != widget.isSessionCompleted ||
+        oldWidget.schedule != widget.schedule) {
       _refreshAnalysis();
     }
+  }
+
+  AiAttendanceContext _attendanceContext() {
+    return AiAttendanceContext.fromSession(
+      className: widget.currentClass,
+      date: widget.currentDate ?? DateTime.now(),
+      slot: widget.currentSlot,
+      sessionNumber: widget.currentSessionNumber,
+      isSessionCompleted: widget.isSessionCompleted,
+      records: widget.records,
+    );
   }
 
   void _refreshAnalysis() {
@@ -96,6 +121,7 @@ class _AiInsightsViewState extends State<AiInsightsView> {
       prompt: q,
       report: _report,
       students: widget.students,
+      attendanceContext: _attendanceContext(),
       schedule: widget.schedule,
     );
 
@@ -129,7 +155,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
 
     // Khử trùng lặp theo rollNumber
     final Map<String, Student> uniqueMap = {};
-    for (final s in [..._report.failedStudents, ..._report.warningStudents, ...earlyWarning]) {
+    for (final s in [
+      ..._report.failedStudents,
+      ..._report.warningStudents,
+      ...earlyWarning,
+    ]) {
       uniqueMap[s.rollNumber] = s;
     }
     final atRiskStudents = uniqueMap.values.toList();
@@ -137,7 +167,9 @@ class _AiInsightsViewState extends State<AiInsightsView> {
     if (atRiskStudents.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✅ Chưa có sinh viên nào cần cảnh báo! Lớp đang an toàn.'),
+          content: Text(
+            '✅ Chưa có sinh viên nào cần cảnh báo! Lớp đang an toàn.',
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -161,8 +193,12 @@ class _AiInsightsViewState extends State<AiInsightsView> {
     final bodyLines = StringBuffer();
     bodyLines.writeln('Kính gửi các bạn sinh viên lớp ${widget.currentClass},');
     bodyLines.writeln('');
-    bodyLines.writeln('Giảng viên thông báo cảnh báo chuyên cần (Quy chế Đào tạo ĐH FPT - ngưỡng vắng tối đa 20%):');
-    bodyLines.writeln('Tỷ lệ chuyên cần chung của lớp: ${_report.overallAttendanceRate.toStringAsFixed(1)}%');
+    bodyLines.writeln(
+      'Giảng viên thông báo cảnh báo chuyên cần (Quy chế Đào tạo ĐH FPT - ngưỡng vắng tối đa 20%):',
+    );
+    bodyLines.writeln(
+      'Tỷ lệ chuyên cần chung của lớp: ${_report.overallAttendanceRate.toStringAsFixed(1)}%',
+    );
     bodyLines.writeln('');
     for (final s in atRiskStudents) {
       final status = s.isBanned
@@ -171,7 +207,9 @@ class _AiInsightsViewState extends State<AiInsightsView> {
       bodyLines.writeln('• ${s.rollNumber} - ${s.fullName}: $status');
     }
     bodyLines.writeln('');
-    bodyLines.writeln('Đề nghị các bạn lưu ý chuyên cần và liên hệ Giảng viên / Phòng Đào tạo nếu cần hỗ trợ.');
+    bodyLines.writeln(
+      'Đề nghị các bạn lưu ý chuyên cần và liên hệ Giảng viên / Phòng Đào tạo nếu cần hỗ trợ.',
+    );
     bodyLines.writeln('Trân trọng.');
 
     final mailBody = bodyLines.toString();
@@ -181,7 +219,8 @@ class _AiInsightsViewState extends State<AiInsightsView> {
       scheme: 'mailto',
       queryParameters: {
         'bcc': emails.join(','),
-        'subject': '[Cảnh báo chuyên cần FPT] Lớp ${widget.currentClass} - Thông báo nguy cơ cấm thi',
+        'subject':
+            '[Cảnh báo chuyên cần FPT] Lớp ${widget.currentClass} - Thông báo nguy cơ cấm thi',
         'body': mailBody,
       },
     );
@@ -193,7 +232,9 @@ class _AiInsightsViewState extends State<AiInsightsView> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Đã mở mail & sao chép ${emails.length} email vào Clipboard!'),
+          content: Text(
+            'Đã mở mail & sao chép ${emails.length} email vào Clipboard!',
+          ),
           backgroundColor: BirdleColors.success,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 5),
@@ -280,7 +321,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline, size: 16, color: BirdleColors.textSecondary),
+                  const Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: BirdleColors.textSecondary,
+                  ),
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
@@ -312,7 +357,10 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                   SizedBox(
                     width: 14,
                     height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: BirdleColors.brand),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: BirdleColors.brand,
+                    ),
                   ),
                   SizedBox(width: 10),
                   Expanded(
@@ -335,7 +383,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.link_off, size: 16, color: BirdleColors.warning),
+                  const Icon(
+                    Icons.link_off,
+                    size: 16,
+                    color: BirdleColors.warning,
+                  ),
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
@@ -362,7 +414,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.info_outline, size: 16, color: BirdleColors.textMuted),
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: BirdleColors.textMuted,
+                  ),
                   SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -384,12 +440,19 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.error_outline, size: 16, color: BirdleColors.danger),
+                  const Icon(
+                    Icons.error_outline,
+                    size: 16,
+                    color: BirdleColors.danger,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Lỗi tải lịch sử điểm danh: ${_report.errorMessage ?? "Không thể kết nối đến Google Sheets."}',
-                      style: const TextStyle(fontSize: 12, color: BirdleColors.danger),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: BirdleColors.danger,
+                      ),
                     ),
                   ),
                   if (widget.onRetryLoadAnalytics != null)
@@ -410,7 +473,9 @@ class _AiInsightsViewState extends State<AiInsightsView> {
           // Nút Gửi cảnh báo qua email (Sub-task 4.4)
           Builder(
             builder: (context) {
-              final atRiskCount = widget.students.where((s) => s.remainingAllowedAbsences <= 1 || s.isBanned).length;
+              final atRiskCount = widget.students
+                  .where((s) => s.remainingAllowedAbsences <= 1 || s.isBanned)
+                  .length;
               return Row(
                 children: [
                   BirdleSecondaryButton(
@@ -435,7 +500,10 @@ class _AiInsightsViewState extends State<AiInsightsView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Ask About Your Data', style: BirdleTypography.cardTitle),
+                const Text(
+                  'Ask About Your Data',
+                  style: BirdleTypography.cardTitle,
+                ),
                 const SizedBox(height: 6),
                 const Text(
                   'Đặt câu hỏi về dữ liệu điểm danh thực tế của lớp học. Trợ lý sử dụng số liệu xác thực từ database.',
@@ -449,12 +517,25 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                     Expanded(
                       child: TextField(
                         controller: _questionCtrl,
-                        style: const TextStyle(fontSize: 13, color: BirdleColors.textPrimary),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: BirdleColors.textPrimary,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Ask about this attendance data (e.g., Sinh viên nào có nguy cơ cấm thi?)...',
-                          hintStyle: const TextStyle(fontSize: 12.5, color: BirdleColors.textMuted),
-                          prefixIcon: const Icon(Icons.help_outline, size: 16, color: BirdleColors.textMuted),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          hintStyle: const TextStyle(
+                            fontSize: 12.5,
+                            color: BirdleColors.textMuted,
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.help_outline,
+                            size: 16,
+                            color: BirdleColors.textMuted,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
                         ),
                         onSubmitted: _askAi,
                       ),
@@ -475,14 +556,19 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                   runSpacing: 8,
                   children: [
                     _buildSuggestedChip('🔍 Ai đang có nguy cơ cấm thi?'),
-                    _buildSuggestedChip('⏰ Slot nào sinh viên nghỉ nhiều nhất?'),
+                    _buildSuggestedChip(
+                      '⏰ Slot nào sinh viên nghỉ nhiều nhất?',
+                    ),
                     _buildSuggestedChip('📅 Thứ mấy sinh viên hay vắng?'),
-                    _buildSuggestedChip('💡 Đề xuất giải pháp kéo sinh viên đi học?'),
+                    _buildSuggestedChip(
+                      '💡 Đề xuất giải pháp kéo sinh viên đi học?',
+                    ),
                   ],
                 ),
 
                 // Chat Bubble Stream (Task 5.2)
-                if (_insightsQnA.isNotEmpty || (_isLoadingAi && _currentQuery != null)) ...[
+                if (_insightsQnA.isNotEmpty ||
+                    (_isLoadingAi && _currentQuery != null)) ...[
                   const SizedBox(height: 20),
                   const Divider(),
                   const SizedBox(height: 16),
@@ -491,7 +577,9 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                     child: ListView.builder(
                       controller: _chatScrollCtrl,
                       shrinkWrap: true,
-                      itemCount: _insightsQnA.length + (_isLoadingAi && _currentQuery != null ? 1 : 0),
+                      itemCount:
+                          _insightsQnA.length +
+                          (_isLoadingAi && _currentQuery != null ? 1 : 0),
                       itemBuilder: (context, index) {
                         // Loading bubble at the end
                         if (index >= _insightsQnA.length) {
@@ -532,7 +620,6 @@ class _AiInsightsViewState extends State<AiInsightsView> {
     );
   }
 
-
   Widget _buildSuggestedChip(String label) {
     return Material(
       color: Colors.transparent,
@@ -550,7 +637,10 @@ class _AiInsightsViewState extends State<AiInsightsView> {
           ),
           child: Text(
             label,
-            style: const TextStyle(fontSize: 12.5, color: BirdleColors.textSecondary),
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: BirdleColors.textSecondary,
+            ),
           ),
         ),
       ),
@@ -580,7 +670,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
             ),
             child: Text(
               text,
-              style: const TextStyle(fontSize: 13, color: Colors.white, height: 1.4),
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.white,
+                height: 1.4,
+              ),
             ),
           ),
         ),
@@ -588,7 +682,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
         const CircleAvatar(
           radius: 14,
           backgroundColor: BirdleColors.surfaceSecondary,
-          child: Icon(Icons.person, size: 16, color: BirdleColors.textSecondary),
+          child: Icon(
+            Icons.person,
+            size: 16,
+            color: BirdleColors.textSecondary,
+          ),
         ),
       ],
     );
@@ -639,7 +737,10 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                     },
                     borderRadius: BirdleRadius.smBorder,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: BirdleColors.surface,
                         borderRadius: BirdleRadius.smBorder,
@@ -648,9 +749,19 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.copy, size: 12, color: BirdleColors.textMuted),
+                          Icon(
+                            Icons.copy,
+                            size: 12,
+                            color: BirdleColors.textMuted,
+                          ),
                           SizedBox(width: 4),
-                          Text('Sao chép', style: TextStyle(fontSize: 11, color: BirdleColors.textMuted)),
+                          Text(
+                            'Sao chép',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: BirdleColors.textMuted,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -694,12 +805,19 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               const SizedBox(
                 width: 14,
                 height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2, color: BirdleColors.brand),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: BirdleColors.brand,
+                ),
               ),
               const SizedBox(width: 10),
               Text(
                 'Đang phân tích dữ liệu...',
-                style: TextStyle(fontSize: 12.5, color: BirdleColors.textMuted, fontStyle: FontStyle.italic),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: BirdleColors.textMuted,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ],
           ),
@@ -723,31 +841,33 @@ class _AiInsightsViewState extends State<AiInsightsView> {
       for (int j = 0; j < parts.length; j++) {
         if (j % 2 == 1) {
           // Bold
-          spans.add(TextSpan(
-            text: parts[j],
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 13,
-              color: BirdleColors.textPrimary,
-              height: 1.5,
+          spans.add(
+            TextSpan(
+              text: parts[j],
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: BirdleColors.textPrimary,
+                height: 1.5,
+              ),
             ),
-          ));
+          );
         } else {
-          spans.add(TextSpan(
-            text: parts[j],
-            style: const TextStyle(
-              fontSize: 13,
-              color: BirdleColors.textPrimary,
-              height: 1.5,
+          spans.add(
+            TextSpan(
+              text: parts[j],
+              style: const TextStyle(
+                fontSize: 13,
+                color: BirdleColors.textPrimary,
+                height: 1.5,
+              ),
             ),
-          ));
+          );
         }
       }
     }
 
-    return SelectableText.rich(
-      TextSpan(children: spans),
-    );
+    return SelectableText.rich(TextSpan(children: spans));
   }
 
   Widget _buildClassDropdown() {
@@ -768,9 +888,16 @@ class _AiInsightsViewState extends State<AiInsightsView> {
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.school_outlined, size: 16, color: BirdleColors.textMuted),
+            Icon(
+              Icons.school_outlined,
+              size: 16,
+              color: BirdleColors.textMuted,
+            ),
             SizedBox(width: 8),
-            Text('Đang tải lớp...', style: TextStyle(fontSize: 13, color: BirdleColors.textMuted)),
+            Text(
+              'Đang tải lớp...',
+              style: TextStyle(fontSize: 13, color: BirdleColors.textMuted),
+            ),
           ],
         ),
       );
@@ -786,7 +913,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: selectedValue,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: BirdleColors.textSecondary),
+          icon: const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 18,
+            color: BirdleColors.textSecondary,
+          ),
           isDense: false,
           items: available.map((cls) {
             return DropdownMenuItem<String>(
@@ -794,7 +925,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.school_outlined, size: 16, color: BirdleColors.brand),
+                  const Icon(
+                    Icons.school_outlined,
+                    size: 16,
+                    color: BirdleColors.brand,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     cls,
@@ -880,13 +1015,17 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: hasAbsents ? BirdleColors.warningLight : BirdleColors.successLight,
+                  color: hasAbsents
+                      ? BirdleColors.warningLight
+                      : BirdleColors.successLight,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
                   Icons.schedule_rounded,
                   size: 20,
-                  color: hasAbsents ? BirdleColors.warning : BirdleColors.success,
+                  color: hasAbsents
+                      ? BirdleColors.warning
+                      : BirdleColors.success,
                 ),
               ),
               const SizedBox(width: 10),
@@ -946,17 +1085,29 @@ class _AiInsightsViewState extends State<AiInsightsView> {
             const SizedBox(height: 10),
             const Text(
               'Khung giờ sáng sớm sinh viên thường ngủ quên hoặc kẹt xe giờ cao điểm. Đề xuất điểm danh đột xuất đầu giờ hoặc tổ chức mini-quiz 5 phút.',
-              style: TextStyle(fontSize: 12, color: BirdleColors.textSecondary, height: 1.4),
+              style: TextStyle(
+                fontSize: 12,
+                color: BirdleColors.textSecondary,
+                height: 1.4,
+              ),
             ),
           ] else ...[
             const Row(
               children: [
-                Icon(Icons.check_circle_outline_rounded, size: 20, color: BirdleColors.success),
+                Icon(
+                  Icons.check_circle_outline_rounded,
+                  size: 20,
+                  color: BirdleColors.success,
+                ),
                 SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     'Chưa ghi nhận ca vắng nào',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: BirdleColors.success,
+                    ),
                   ),
                 ),
               ],
@@ -964,7 +1115,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
             const SizedBox(height: 8),
             const Text(
               '100% sinh viên tham gia đầy đủ và đúng giờ qua tất cả các slot học. Chuyên cần lớp đạt trạng thái lý tưởng.',
-              style: TextStyle(fontSize: 12, color: BirdleColors.textMuted, height: 1.4),
+              style: TextStyle(
+                fontSize: 12,
+                color: BirdleColors.textMuted,
+                height: 1.4,
+              ),
             ),
           ],
         ],
@@ -997,13 +1152,17 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: hasAbsents ? const Color(0xFFEDE9FE) : BirdleColors.successLight,
+                  color: hasAbsents
+                      ? const Color(0xFFEDE9FE)
+                      : BirdleColors.successLight,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
                   Icons.calendar_today_rounded,
                   size: 20,
-                  color: hasAbsents ? const Color(0xFF7C3AED) : BirdleColors.success,
+                  color: hasAbsents
+                      ? const Color(0xFF7C3AED)
+                      : BirdleColors.success,
                 ),
               ),
               const SizedBox(width: 10),
@@ -1050,19 +1209,31 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               _report.worstDay.weekday == 1
                   ? 'Thứ Hai đầu tuần sinh viên thường có tâm lý uể oải sau ngày nghỉ cuối tuần. Giảng viên nên gửi thông báo nhắc lịch học vào tối Chủ Nhật.'
                   : (_report.worstDay.weekday == 5
-                      ? 'Thứ Sáu cuối tuần sinh viên có xu hướng nghỉ sớm để về quê hoặc giải trí. Cần lưu ý giám sát sĩ số sát sao hơn.'
-                      : 'Ngày ${_report.worstDay.dayName} có số lượt vắng nổi trội trong tuần. Giảng viên nên tạo thêm các hoạt động tương tác trong lớp.'),
-              style: const TextStyle(fontSize: 12, color: BirdleColors.textSecondary, height: 1.4),
+                        ? 'Thứ Sáu cuối tuần sinh viên có xu hướng nghỉ sớm để về quê hoặc giải trí. Cần lưu ý giám sát sĩ số sát sao hơn.'
+                        : 'Ngày ${_report.worstDay.dayName} có số lượt vắng nổi trội trong tuần. Giảng viên nên tạo thêm các hoạt động tương tác trong lớp.'),
+              style: const TextStyle(
+                fontSize: 12,
+                color: BirdleColors.textSecondary,
+                height: 1.4,
+              ),
             ),
           ] else ...[
             const Row(
               children: [
-                Icon(Icons.check_circle_outline_rounded, size: 20, color: BirdleColors.success),
+                Icon(
+                  Icons.check_circle_outline_rounded,
+                  size: 20,
+                  color: BirdleColors.success,
+                ),
                 SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     'Chuyên cần đồng đều',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: BirdleColors.success,
+                    ),
                   ),
                 ),
               ],
@@ -1070,7 +1241,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
             const SizedBox(height: 8),
             const Text(
               'Tỷ lệ chuyên cần duy trì ổn định và tích cực qua tất cả các ngày trong tuần. Không có ngày nào ghi nhận tỷ lệ nghỉ bất thường.',
-              style: TextStyle(fontSize: 12, color: BirdleColors.textMuted, height: 1.4),
+              style: TextStyle(
+                fontSize: 12,
+                color: BirdleColors.textMuted,
+                height: 1.4,
+              ),
             ),
           ],
         ],
@@ -1108,17 +1283,23 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                 decoration: BoxDecoration(
                   color: earlyWarningStudents.isNotEmpty
                       ? BirdleColors.dangerLight
-                      : (bannedStudents.isNotEmpty ? BirdleColors.warningLight : BirdleColors.successLight),
+                      : (bannedStudents.isNotEmpty
+                            ? BirdleColors.warningLight
+                            : BirdleColors.successLight),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
                   earlyWarningStudents.isNotEmpty
                       ? Icons.warning_amber_rounded
-                      : (bannedStudents.isNotEmpty ? Icons.info_outline_rounded : Icons.verified_user_outlined),
+                      : (bannedStudents.isNotEmpty
+                            ? Icons.info_outline_rounded
+                            : Icons.verified_user_outlined),
                   size: 20,
                   color: earlyWarningStudents.isNotEmpty
                       ? BirdleColors.danger
-                      : (bannedStudents.isNotEmpty ? BirdleColors.warning : BirdleColors.success),
+                      : (bannedStudents.isNotEmpty
+                            ? BirdleColors.warning
+                            : BirdleColors.success),
                 ),
               ),
               const SizedBox(width: 10),
@@ -1166,11 +1347,16 @@ class _AiInsightsViewState extends State<AiInsightsView> {
               children: [
                 ...earlyWarningStudents.take(3).map((s) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: BirdleColors.dangerLight,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: BirdleColors.danger.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: BirdleColors.danger.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Text(
                       '${s.rollNumber} - ${s.fullName} (Còn ${s.remainingAllowedAbsences}b)',
@@ -1186,10 +1372,16 @@ class _AiInsightsViewState extends State<AiInsightsView> {
                   Tooltip(
                     message: earlyWarningStudents
                         .skip(3)
-                        .map((s) => '${s.rollNumber}: ${s.fullName} (Còn ${s.remainingAllowedAbsences} buổi)')
+                        .map(
+                          (s) =>
+                              '${s.rollNumber}: ${s.fullName} (Còn ${s.remainingAllowedAbsences} buổi)',
+                        )
                         .join('\n'),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: BirdleColors.surfaceSecondary,
                         borderRadius: BorderRadius.circular(6),
@@ -1210,10 +1402,13 @@ class _AiInsightsViewState extends State<AiInsightsView> {
             const SizedBox(height: 8),
             const Text(
               'Cần liên hệ nhắc nhở trước buổi học tới để tránh bị vượt ngưỡng 20% cấm thi FPT.',
-              style: TextStyle(fontSize: 11.5, color: BirdleColors.textSecondary, height: 1.3),
+              style: TextStyle(
+                fontSize: 11.5,
+                color: BirdleColors.textSecondary,
+                height: 1.3,
+              ),
             ),
           ]
-
           // Trạng thái 2: Không có SV 0-1 buổi nhưng có SV ĐÃ CẤM THI
           else if (bannedStudents.isNotEmpty) ...[
             Row(
@@ -1240,20 +1435,31 @@ class _AiInsightsViewState extends State<AiInsightsView> {
             const SizedBox(height: 8),
             const Text(
               'Lớp đã ghi nhận sinh viên vượt ngưỡng quy chế đào tạo. Các sinh viên còn lại đều trong ngưỡng an toàn.',
-              style: TextStyle(fontSize: 12, color: BirdleColors.textSecondary, height: 1.4),
+              style: TextStyle(
+                fontSize: 12,
+                color: BirdleColors.textSecondary,
+                height: 1.4,
+              ),
             ),
           ]
-
           // Trạng thái 3: Cả 2 nhóm đều bằng 0 -> 100% An toàn tuyệt đối
           else ...[
             const Row(
               children: [
-                Icon(Icons.check_circle_outline_rounded, size: 20, color: BirdleColors.success),
+                Icon(
+                  Icons.check_circle_outline_rounded,
+                  size: 20,
+                  color: BirdleColors.success,
+                ),
                 SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     '100% sinh viên an toàn',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BirdleColors.success),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: BirdleColors.success,
+                    ),
                   ),
                 ),
               ],
@@ -1261,7 +1467,11 @@ class _AiInsightsViewState extends State<AiInsightsView> {
             const SizedBox(height: 8),
             const Text(
               'Không có sinh viên nào tiệm cận ngưỡng cấm thi (>20%). Sĩ số lớp học đảm bảo điều kiện thi cử 100%.',
-              style: TextStyle(fontSize: 12, color: BirdleColors.textMuted, height: 1.4),
+              style: TextStyle(
+                fontSize: 12,
+                color: BirdleColors.textMuted,
+                height: 1.4,
+              ),
             ),
           ],
         ],
@@ -1269,4 +1479,3 @@ class _AiInsightsViewState extends State<AiInsightsView> {
     );
   }
 }
-

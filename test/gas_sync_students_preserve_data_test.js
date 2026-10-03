@@ -67,6 +67,8 @@ class MockSheet {
   }
 
   appendRow(row) { this.data.push([...row]); }
+
+  clearContents() { this.data = []; }
 }
 
 class MockSpreadsheet {
@@ -168,6 +170,31 @@ function runTests() {
   assert.strictEqual(binh[8], 'A', 'Retained student B1 must be preserved');
   assert.strictEqual(le[6], 0, 'New student ABSENT must start at zero');
   assert.strictEqual(le[8], '', 'New student B1 must start empty');
+
+  const studentsResponse = JSON.parse(sandbox.doGet({
+    parameter: { action: 'getStudents', className: 'SE1801' }
+  }).getContent());
+  const apiAn = studentsResponse.data.find(student => student.member === 'SE170001');
+  assert.ok(apiAn, 'API must expose canonical MEMBER');
+  assert.strictEqual(apiAn.rollNumber, 'SE170001');
+  assert.strictEqual(apiAn.code, 'CODE-SE170001');
+
+  const savedByLegacyCode = post(sandbox, {
+    action: 'saveAttendance',
+    className: 'SE1801',
+    date: '2026-09-22',
+    slot: 1,
+    records: [{ rollNumber: 'CODE-SE170001', status: 'absent' }]
+  });
+  assert.strictEqual(savedByLegacyCode.status, 'success');
+  const logSheet = spreadsheet.getSheetByName('Attendance_Logs');
+  assert.strictEqual(logSheet.data[1][4], 'SE170001', 'Legacy CODE input must be stored as canonical MEMBER');
+
+  const attendanceResponse = JSON.parse(sandbox.doGet({
+    parameter: { action: 'getAttendance', className: 'SE1801', date: '2026-09-22', slot: '1' }
+  }).getContent());
+  assert.strictEqual(attendanceResponse.data[0].member, 'SE170001');
+  assert.strictEqual(attendanceResponse.data[0].code, 'CODE-SE170001');
 
   const second = post(sandbox, {
     action: 'syncStudents',

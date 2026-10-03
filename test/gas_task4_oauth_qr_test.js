@@ -206,7 +206,8 @@ const qrStatusRes = context.doGet({
     action: 'getQrStatus',
     className: 'SE1801',
     slot: '1',
-    date: '2026-09-22'
+    date: '2026-09-22',
+    session: '5'
   }
 }).json();
 

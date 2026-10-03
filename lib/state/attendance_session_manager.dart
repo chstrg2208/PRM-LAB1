@@ -642,6 +642,7 @@ class AttendanceSessionManager extends ChangeNotifier {
           _sheetUrl,
           className: _currentClass,
           slot: _currentSlot,
+          sessionNumber: _activeQrSession!.sessionNumber,
           date: _currentDate,
         );
         for (final rawEmail in checkedEmails) {
@@ -832,12 +833,16 @@ class AttendanceSessionManager extends ChangeNotifier {
       _dataError = null;
       _isReloadError = false;
 
+      // Một vài bản ghi P/A không đủ để kết luận cả buổi đã hoàn tất.
+      // Chỉ khóa phiên khi toàn bộ roster đã có trạng thái cuối.
       final hasCompletedAttendance = records.isNotEmpty &&
-          records.any((r) => r.status == AttendanceStatus.present || r.status == AttendanceStatus.absent);
+          records.every((r) => r.status != AttendanceStatus.notYet);
       if (hasCompletedAttendance) {
         _isQrCompleted = true;
+        _sheetSessionStatus = 'Đã điểm danh';
       } else {
         _isQrCompleted = false;
+        _sheetSessionStatus = 'Chưa điểm danh';
       }
       _isReopenedQr = false;
 

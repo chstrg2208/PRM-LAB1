@@ -144,7 +144,7 @@ function runTests() {
     assert.strictEqual(res.subject, 'PRM393 - Lập trình Di động', 'Must extract subject metadata');
     assert.strictEqual(res.room, 'NVH-611', 'Must extract room NVH-611');
     assert.strictEqual(res.slot, 1, 'Must extract slot 1');
-    assert.strictEqual(res.nextDate, '24/09/2026', 'Must extract nextDate 24/09/2026');
+    assert.strictEqual(res.nextDate, '2026-09-24', 'nextDate phải trả theo contract YYYY-MM-DD');
     assert.strictEqual(res.currentSession, 6, 'Must extract currentSession 6');
 
     // KIỂM TRA QUAN TRỌNG: MSSV vs HỌ TÊN KHÔNG ĐƯỢC NHẦM LẪN
@@ -207,7 +207,38 @@ function runTests() {
     assert.strictEqual(res.data[0].className, 'IA1601_CSN101');
     assert.strictEqual(res.data[0].room, 'NVH-603');
     assert.strictEqual(res.data[0].slot, 2);
+    assert.strictEqual(res.data[0].subjectCode, 'CSN101');
+    assert.strictEqual(res.data[0].nextDate, '2026-09-22');
     console.log('✓ Test 3: getTodayClasses đọc trực tiếp Metadata Dòng 1-4 của tab lớp: PASS');
+  }
+
+  // Test Case 3.1: Subject code và ngày lịch phải đồng bộ giữa endpoints
+  {
+    const ss = new MockSpreadsheet();
+    const sheet = ss.insertSheet('SE1919-SWP392');
+    sheet.data = [
+      ['Môn học:', 'SWP391-Software Project', 'Buổi hiện tại:', '8 / 20'],
+      ['Lịch & Slot:', 'T4-T7 | Slot 4 (15:00 - 17:15)', 'Ngày học tiếp theo:', 'Sat Oct 03 2026 00:00:00 GMT+0700 (Giờ Đông Dương)'],
+      ['Phòng học:', 'NVH-603', 'Trạng thái buổi:', 'Chưa điểm danh'],
+      ['Ngày bắt đầu:', 'Wed Sep 09 2026 00:00:00 GMT+0700 (Giờ Đông Dương)', 'Tổng số buổi:', 20],
+      ['STT', 'MEMBER', 'HỌ', 'TÊN', 'EMAIL', 'VẮNG', 'B1'],
+      [1, 'SE170001', 'Nguyễn', 'An', 'an@fpt.edu.vn', 0, 'P']
+    ];
+    const schedule = ss.insertSheet('_Class_Schedules');
+    schedule.data = [
+      ['CLASS_NAME', 'SUBJECT_CODE', 'SLOT', 'DAYS_OF_WEEK', 'ROOM', 'START_DATE', 'TOTAL_SESSIONS'],
+      ['SE1919-SWP392', 'PRM393', 4, 'T4-T7', 'NVH-603', 'Wed Sep 09 2026 00:00:00 GMT+0700 (Giờ Đông Dương)', 20]
+    ];
+
+    const gas = createGasContext(ss);
+    const today = JSON.parse(gas.doGet({ parameter: { action: 'getTodayClasses', date: '2026-10-03' } }));
+    assert.strictEqual(today.data[0].subjectCode, 'SWP391');
+    assert.strictEqual(today.data[0].nextDate, '2026-10-03');
+
+    const schedules = JSON.parse(gas.doGet({ parameter: { action: 'getClassSchedules' } }));
+    assert.strictEqual(schedules.data[0].subjectCode, 'SWP391');
+    assert.strictEqual(schedules.data[0].startDate, '2026-09-09');
+    console.log('✓ Test 3.1: Subject code và ngày lịch đồng bộ giữa endpoints: PASS');
   }
 
   // Test Case 4: saveAttendance ghi trực tiếp vào cột B{slot/session} trên sheet
